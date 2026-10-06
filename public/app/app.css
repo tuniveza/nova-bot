@@ -1018,3 +1018,13 @@ html[data-align="center"] .q-tags { justify-content: center; }
 .feature-item { display: grid; gap: 2px; padding: 8px 2px; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.4; }
 .feature-item b { color: var(--bright); }
 .feature-detail { color: var(--muted); font-size: 13px; }
+
+/* Apps with two places to open (Nova Calendar), and apps drawn with a symbol instead of a cosmic letter */
+.suite-opens { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.suite-glyph { display: grid; place-items: center; font-size: 22px; color: #fff; border-radius: 12px; background: radial-gradient(circle at 50% 20%, var(--accent), var(--accent-3) 60%, var(--void)); }
+/* Suite tiles stack: the icon, the name and what it does, then where to open it (never squeezed) */
+.suite-app { display: grid !important; grid-template-columns: 1fr !important; justify-items: center; text-align: center; gap: 8px; }
+.suite-app .suite-words { min-width: 0; width: 100%; }
+.suite-app .suite-words p { margin: 4px auto 0; max-width: 46ch; }
+.suite-app > .suite-open, .suite-app > .suite-tag { justify-self: center; }
+.suite-app > * { grid-column: 1 / -1 !important; margin-top: 0 !important; }

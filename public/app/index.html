@@ -366,17 +366,20 @@
         <svg class="suite-badge" viewBox="0 0 512 512" aria-hidden="true"><use href="#i-mark-c"/></svg>
         <div class="suite-words">
           <strong class="suite-name">Nova Calendar</strong>
-          <p>Note cards and day cards for the studio.</p>
+          <p>Note cards and day cards. The web app keeps its own copy on each device; Nova Agent's copy (the one your quests go into) is on the studio computer.</p>
         </div>
-        <a class="btn small ghost suite-open" href="https://nova-calendar.novacane-studio.workers.dev" target="_blank" rel="noopener" aria-label="Open Nova Calendar">Open</a>
+        <div class="suite-opens">
+          <a class="btn small ghost suite-open" href="https://nova-calendar.novacane-studio.workers.dev" target="_blank" rel="noopener" aria-label="Open the Nova Calendar web app">Web app</a>
+          <a class="btn small ghost suite-open" href="http://localhost:4545/calendar/" target="_blank" rel="noopener" aria-label="Open Nova Agent's Nova Calendar (studio computer)">Studio computer</a>
+        </div>
       </li>
       <li class="suite-app">
         <svg class="suite-badge" viewBox="0 0 512 512" aria-hidden="true"><use href="#i-mark-a"/></svg>
         <div class="suite-words">
           <strong class="suite-name">Nova Agent</strong>
-          <p>Runs on the studio computer: chat, Nova Missions and Nova Quests, Acuity helper. Its quests show in the Quests tab.</p>
+          <p>Chat, Nova Missions and Nova Quests, Acuity helper. It runs on the studio computer, so it opens there; from anywhere else, its quests are in the Quests tab.</p>
         </div>
-        <span class="suite-tag">Studio computer</span>
+        <a class="btn small ghost suite-open" href="http://localhost:4545/" target="_blank" rel="noopener" aria-label="Open Nova Agent (on the studio computer)">Studio computer</a>
       </li>
       <li class="suite-app">
         <svg class="suite-badge" viewBox="0 0 512 512" aria-hidden="true"><use href="#i-mark-bot"/></svg>
@@ -385,6 +388,22 @@
           <p>The studio's website assistant: answers questions and takes bookings (with deposit).</p>
         </div>
         <a class="btn small ghost suite-open" href="https://novacane.co.uk" target="_blank" rel="noopener" aria-label="Open NovaBot on novacane.co.uk">Open</a>
+      </li>
+      <li class="suite-app">
+        <span class="suite-badge suite-glyph" aria-hidden="true">✧</span>
+        <div class="suite-words">
+          <strong class="suite-name">Nova Observatory</strong>
+          <p>Every project, its lines of code and the star map. Served by Nova Agent, on the studio computer.</p>
+        </div>
+        <a class="btn small ghost suite-open" href="http://localhost:4545/observatory/" target="_blank" rel="noopener" aria-label="Open Nova Observatory (on the studio computer)">Studio computer</a>
+      </li>
+      <li class="suite-app">
+        <span class="suite-badge suite-glyph" aria-hidden="true">⚙</span>
+        <div class="suite-words">
+          <strong class="suite-name">Admin</strong>
+          <p>Referrals, enquiries, conversations, feedback, the booking system, links and features.</p>
+        </div>
+        <a class="btn small ghost suite-open" href="/admin" target="_blank" rel="noopener" aria-label="Open the admin pages">Open</a>
       </li>
     </ul>
     <!-- Every live and testing address, fetched from /app/api/links when opened (suite.js) -->
