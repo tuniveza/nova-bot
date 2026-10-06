@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Novacane chat test</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+
+  <!-- The chat widget: the same two files the live Squarespace site loads.
+       Edit the widget's look in public/novabot.css and its behaviour in
+       public/novabot.js. -->
+  <link rel="stylesheet" href="../public/novabot.css">
+
+  <style>
+    /* =========================================
+       TEST PAGE ONLY
+       A stand-in for the Novacane homepage so you
+       can see the widget in context.
+       ========================================= */
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Jost", "Futura", Arial, sans-serif;
+      color: #fff;
+      background:
+        radial-gradient(ellipse at 20% 30%, #7a1747 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 60%, #4a1a78 0%, transparent 55%),
+        radial-gradient(ellipse at 50% 100%, #1b1f4a 0%, transparent 60%),
+        #140b1c;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- The chat starts open. Add data-closed to start it closed.
+       Add data-worker="http://localhost:8787" to test against `npm run dev`. -->
+  <script src="../public/novabot.js" defer></script>
+</body>
+</html>

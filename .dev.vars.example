@@ -1,0 +1,9 @@
+# Settings for the local sandbox (npm run sandbox). Copied to .dev.vars by
+# npm run sandbox:setup. .dev.vars stays on your computer (it's in .gitignore).
+
+# Password for the admin pages at /admin (any username)
+ADMIN_PASSWORD=sandbox
+
+# Optional: your own Claude API key (console.anthropic.com) for real answers.
+# Leave it empty for clearly labelled stand-in replies.
+ANTHROPIC_API_KEY=

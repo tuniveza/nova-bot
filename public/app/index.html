@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Nova Hub</title>
+<meta name="theme-color" content="#140b1c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nova Hub">
+<link rel="manifest" href="/app/manifest.webmanifest">
+<link rel="icon" href="/app/icon-192.png">
+<link rel="apple-touch-icon" href="/app/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,900&family=Saira:wdth,wght@100,400..700&display=swap">
+<link rel="stylesheet" href="/app/app.css">
+</head>
+<body>
+
+<!-- The sigil, used in the header and the login screen -->
+<svg class="sprite" aria-hidden="true">
+  <symbol id="sigil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1">
+    <path d="M20.19 6.26A10 10 0 0 1 6.26 20.19"/>
+    <path d="M3.81 17.74A10 10 0 0 1 17.74 3.81"/>
+    <path d="M3.9 20.1 11.3 7.5M12.5 8.3 13.5 16M14.7 16.5 20.1 3.9"/>
+  </symbol>
+</svg>
+
+<!-- Signing in -->
+<section id="login" class="login" hidden>
+  <svg class="login-sigil" aria-hidden="true"><use href="#sigil"/></svg>
+  <h1 class="wordmark">Nova Hub</h1>
+  <p class="login-sub">Staff hub for Novacane Studios</p>
+  <form id="login-form" class="login-form">
+    <label for="password">Admin password</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button class="btn" type="submit">Sign in</button>
+    <p id="login-error" class="error" role="alert"></p>
+  </form>
+</section>
+
+<!-- The app -->
+<div id="app" class="app" hidden>
+  <header class="top">
+    <!-- Voice commands: tap, say what to do ("show alerts", "call Eric") -->
+    <div class="top-left">
+      <button id="voice" class="icon-btn" type="button" aria-label="Voice command" title="Voice command">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+      </button>
+    </div>
+    <div class="brand">
+      <svg class="brand-sigil" aria-hidden="true"><use href="#sigil"/></svg>
+      <span class="wordmark small">Nova Hub</span>
+    </div>
+    <div class="top-actions">
+      <!-- Notifications: opens the "turn on notifications" panel -->
+      <button id="bell" class="icon-btn" type="button" aria-label="Notifications" title="Notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+      </button>
+      <button id="refresh" class="icon-btn" type="button" aria-label="Refresh" title="Refresh">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+      </button>
+      <button id="logout" class="icon-btn" type="button" aria-label="Sign out" title="Sign out">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Shown while hands-free listening is on -->
+  <div id="listening-bar" class="listening-bar" role="status" hidden>
+    <span class="listening-dot" aria-hidden="true"></span>
+    <span id="listening-text">Listening…</span>
+    <button id="listening-off" class="chip" type="button">Stop</button>
+  </div>
+
+  <main id="main">
+    <!-- Enquiries -->
+    <section id="view-enquiries" class="view">
+      <div class="view-head">
+        <h2>Enquiries</h2>
+        <div class="chips" role="tablist">
+          <button class="chip active" data-show="all" type="button">All</button>
+          <button class="chip" data-show="new" type="button">New</button>
+        </div>
+      </div>
+      <div id="enquiry-list" class="list"></div>
+    </section>
+
+    <!-- Conversations -->
+    <section id="view-chats" class="view" hidden>
+      <div class="view-head">
+        <h2 id="chats-title">Conversations</h2>
+        <button id="chats-back" class="chip" type="button" hidden>&larr; All chats</button>
+      </div>
+      <p class="hint" id="chats-hint">What customers asked NovaBot. Kept for 90 days.</p>
+      <div id="chat-list" class="list"></div>
+    </section>
+
+    <!-- Calendar: every booking in Acuity's diary -->
+    <section id="view-calendar" class="view" hidden>
+      <div class="view-head">
+        <h2>Calendar</h2>
+      </div>
+      <div class="cal">
+        <div class="cal-head">
+          <button id="cal-prev" class="icon-btn" type="button" aria-label="Previous month">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <div class="cal-title">
+            <span id="cal-month" class="cal-month"></span>
+            <button id="cal-today" class="chip" type="button">Today</button>
+          </div>
+          <button id="cal-next" class="icon-btn" type="button" aria-label="Next month">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+        <div class="cal-weekdays" aria-hidden="true"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+        <div id="cal-grid" class="cal-grid" role="grid" aria-label="Bookings this month"></div>
+      </div>
+      <h3 id="cal-day-title" class="cal-day-title"></h3>
+      <div id="cal-day-list" class="list"></div>
+    </section>
+
+    <!-- Alerts: the notifications that reached a phone -->
+    <section id="view-alerts" class="view" hidden>
+      <div class="view-head">
+        <h2>Alerts</h2>
+        <button id="alerts-clear" class="chip" type="button">Delete all</button>
+      </div>
+      <p class="hint">Every notification that went through to the Nova Hub app on a phone.</p>
+      <!-- The auto-delete switch: alerts delete themselves after a set time -->
+      <div class="auto-delete">
+        <label class="switch">
+          <input id="auto-delete" type="checkbox" role="switch">
+          <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+          <span>Delete alerts automatically after</span>
+        </label>
+        <select id="auto-delete-days" aria-label="How long to keep alerts"></select>
+      </div>
+      <div id="alert-list" class="list"></div>
+    </section>
+
+    <!-- Chat with NovaBot -->
+    <section id="view-bot" class="view view-bot" hidden>
+      <div class="view-head">
+        <h2>Ask NovaBot</h2>
+        <div class="chips" role="tablist">
+          <button class="chip active" data-mode="nova" type="button">Ask Nova</button>
+          <button class="chip" data-mode="customer" type="button">Customer NovaBot</button>
+          <button id="bot-clear" class="chip" type="button">New chat</button>
+        </div>
+      </div>
+      <p class="hint" id="bot-hint">Ask about your bookings, enquiries and alerts: "What time is Eric's session?", "Any new enquiries?". These chats aren't saved.</p>
+      <div id="bot-messages" class="bot-messages" aria-live="polite"></div>
+      <form id="bot-form" class="bot-form">
+        <textarea id="bot-input" rows="1" placeholder="Ask NovaBot…" aria-label="Message NovaBot"></textarea>
+        <button class="btn" type="submit">Send</button>
+      </form>
+    </section>
+  </main>
+
+  <nav class="tabs" aria-label="Sections">
+    <button class="tab active" data-view="enquiries" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+      <span>Enquiries</span><span id="new-badge" class="badge" hidden></span>
+    </button>
+    <button class="tab" data-view="chats" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>
+      <span>Chats</span>
+    </button>
+    <button class="tab" data-view="calendar" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+      <span>Calendar</span>
+    </button>
+    <button class="tab" data-view="alerts" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+      <span>Alerts</span><span id="alert-badge" class="badge" hidden></span>
+    </button>
+    <button class="tab" data-view="bot" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#sigil"/></svg>
+      <span>NovaBot</span>
+    </button>
+  </nav>
+</div>
+
+<!-- Booking link sheet -->
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <h3 id="sheet-title">Booking link</h3>
+    <p class="hint" id="sheet-for"></p>
+    <label for="sheet-session">Session</label>
+    <select id="sheet-session"></select>
+    <button id="sheet-make" class="btn" type="button">Make link</button>
+    <div id="sheet-result" hidden>
+      <input id="sheet-link" type="text" readonly aria-label="Booking link">
+      <div class="row">
+        <button id="sheet-copy" class="btn ghost" type="button">Copy</button>
+        <a id="sheet-email" class="btn" href="#">Email it to them</a>
+      </div>
+      <p class="hint">Opens the booking calendar on that session with their name and phone filled in. They pick a time and pay, and it goes into Acuity.</p>
+    </div>
+    <p id="sheet-error" class="error" role="alert"></p>
+    <button id="sheet-close" class="btn ghost" type="button">Close</button>
+  </div>
+</div>
+
+<!-- Notifications panel -->
+<div id="notify-sheet" class="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="notify-title">
+    <h3 id="notify-title">Notifications</h3>
+    <p class="hint" id="notify-status"></p>
+    <button id="notify-on" class="btn" type="button">Turn on notifications</button>
+    <button id="notify-test" class="btn ghost" type="button" hidden>Send a test</button>
+    <button id="notify-off" class="btn ghost" type="button" hidden>Turn off on this phone</button>
+    <button id="notify-close" class="btn ghost" type="button">Close</button>
+  </div>
+</div>
+
+<!-- Shown while listening for a voice command -->
+<div id="voice-sheet" class="voice-sheet" hidden>
+  <div class="voice-card" role="dialog" aria-modal="true" aria-labelledby="voice-status">
+    <div class="voice-rings" aria-hidden="true"><span></span><span></span><svg><use href="#sigil"/></svg></div>
+    <p id="voice-status" class="voice-status">Listening…</p>
+    <p id="voice-answer" class="voice-answer" hidden></p>
+    <p class="hint">Try: "show alerts", "delete all alerts", "call Eric", "new enquiries", "ask NovaBot what the prices are"</p>
+    <!-- Hands-free: always listen while Nova Hub is open (start with "Nova") -->
+    <label class="switch">
+      <input id="handsfree-switch" type="checkbox" role="switch">
+      <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+      <span>Always listen while Nova Hub is open (start with “Nova”)</span>
+    </label>
+    <button id="voice-stop" class="btn ghost" type="button">Done</button>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="/app/app.js"></script>
+</body>
+</html>
