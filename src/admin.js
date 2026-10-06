@@ -20,6 +20,7 @@
 // Protected by the ADMIN_PASSWORD secret (any username).
 
 import { checkAcuity, escapeHtml, isValidCodeFormat, normaliseCode, PAGE_STYLE } from "./referrals.js";
+import { checkedLinks, readLinks, saveLinks } from "./links.js";
 import { emailIsSetUp, emailRecipients, sendTestEmail } from "./enquiries.js";
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { feedbackCounts, recentFeedback } from "./feedback.js";
@@ -59,6 +60,7 @@ export async function handleAdmin(request, env) {
       return back("Google disconnected.", "/admin/connections");
     }
     if (url.pathname === "/admin/connections/test-email") return testBookingEmail(env);
+    if (url.pathname === "/admin/links") return saveLinksForm(env, form);
     return text("Not found", 404);
   }
 
@@ -68,6 +70,7 @@ export async function handleAdmin(request, env) {
   if (url.pathname === "/admin/feedback") return feedbackPage(env, url);
   if (url.pathname === "/admin/acuity") return acuityPage(env, url);
   if (url.pathname === "/admin/connections") return connectionsPage(env, url);
+  if (url.pathname === "/admin/links") return linksPage(env, url);
   if (url.pathname === "/admin/google") return connectGoogle(env, url);
   if (url.pathname === "/admin/google/callback") return googleCallback(request, env, url);
   if (url.pathname === "/admin" || url.pathname === "/admin/") return adminPage(env, url);
@@ -634,6 +637,64 @@ async function switchBookingSystem(env, form) {
 
 const when = (iso) => escapeHtml(String(iso || "").slice(0, 16).replace("T", " "));
 
+// ===== LINKS =====
+// The master list of Nova suite links (see links.js), each one checked as the page opens
+
+async function linksPage(env, url) {
+  const e = escapeHtml;
+  const { groups, checkedAt } = await checkedLinks(env);
+  const KIND = { live: "Live", machine: "Used by the apps", testing: "Testing", local: "Studio computer", planned: "Not set up yet" };
+  const sections = groups
+    .map(
+      (g) => `<h2>${e(g.title)}</h2>${g.note ? `<p class="dim small">${e(g.note)}</p>` : ""}
+<div class="card"><table class="links">
+<thead><tr><th>What</th><th>Address</th><th>Kind</th><th>Right now</th></tr></thead>
+<tbody>${g.items
+        .map(
+          (i) => `<tr class="kind-${i.kind} check-${i.check.state}">
+  <td><b>${e(i.name)}</b>${i.note ? `<br><span class="dim small">${e(i.note)}</span>` : ""}</td>
+  <td class="url">${/^https?:/.test(i.url) && i.kind !== "machine" ? `<a href="${e(i.url)}" target="_blank" rel="noopener">${e(i.url)}</a>` : `<code>${e(i.url)}</code>`}</td>
+  <td><span class="pill ${i.kind}">${KIND[i.kind]}</span></td>
+  <td><span class="state ${i.check.state}">${i.check.state === "up" ? "● " : i.check.state === "down" ? "✕ " : "○ "}${e(i.check.label)}</span></td>
+</tr>`
+        )
+        .join("")}</tbody></table></div>`
+    )
+    .join("");
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
+  const down = groups.reduce((n, g) => n + g.items.filter((i) => i.check.state === "down").length, 0);
+  const body = `<p class="dim">Every Nova suite address in one place: what's live, what the apps use behind the scenes, what's for testing, and what only works on the studio computer. Checked just now (${new Date(checkedAt).toLocaleString("en-GB", { timeZone: "Europe/London" })}): ${total} addresses, ${down ? `<span class="warn">${down} not answering</span>` : "all answering"}.</p>
+${groups.length ? sections : `<p class="card">The list is empty.</p>`}
+<details class="card"><summary>Edit the list</summary>
+<p class="dim small">The list is kept in the database, not in the code (the code is public). Edit it here as JSON: groups, each with a title and items (name, url, kind: live, machine, testing, local or planned, and an optional note).</p>
+<form method="post" action="/admin/links"><textarea name="json" rows="18" style="width:100%;font-family:monospace;font-size:12px">${e(JSON.stringify(await readLinks(env), null, 2))}</textarea>
+<p><button class="btn" type="submit">Save the list</button></p></form></details>
+<style>
+  table.links td.url { word-break: break-all; font-size: 13px; }
+  table.links .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; white-space: nowrap; border: 1px solid rgba(229, 194, 224, 0.3); }
+  table.links .pill.live { background: rgba(92, 255, 192, 0.12); border-color: rgba(92, 255, 192, 0.45); color: #8dffd6; }
+  table.links .pill.testing { background: rgba(255, 184, 107, 0.12); border-color: rgba(255, 184, 107, 0.45); color: #ffc98f; }
+  table.links .pill.local { background: rgba(199, 164, 255, 0.12); border-color: rgba(199, 164, 255, 0.45); color: #d9c2ff; }
+  table.links .pill.planned { opacity: 0.7; }
+  table.links .state { white-space: nowrap; font-size: 13px; }
+  table.links .state.up { color: #8dffd6; }
+  table.links .state.down { color: #ff8a9a; }
+  table.links .state.unchecked { opacity: 0.65; }
+</style>`;
+  return page(env, "Links", url, body);
+}
+
+async function saveLinksForm(env, form) {
+  let raw;
+  try {
+    raw = JSON.parse(String(form.get("json") || ""));
+  } catch {
+    return back("That isn't valid JSON, so nothing was saved.", "/admin/links");
+  }
+  const saved = await saveLinks(env, raw);
+  return back(`Saved: ${saved.groups.reduce((n, g) => n + g.items.length, 0)} links in ${saved.groups.length} groups.`, "/admin/links");
+}
+
 // The page around each admin section, with the tabs at the top
 async function page(env, title, url, body) {
   const e = escapeHtml;
@@ -645,6 +706,7 @@ async function page(env, title, url, body) {
     ["Conversations", "/admin/conversations"],
     ["Feedback", "/admin/feedback"],
     ["Booking system", "/admin/connections"],
+    ["Links", "/admin/links"],
   ]
     .map(([label, href]) => `<a href="${href}" class="${label.startsWith(title) ? "current" : ""}">${e(label)}</a>`)
     .join("");

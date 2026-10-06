@@ -7,6 +7,9 @@
 	"name": "novacane-worker",
 	"main": "src/index.js",
 	"compatibility_date": "2026-09-26",
+	// Fetches go out over the public internet, so the Links page can check the
+	// other Nova apps on this account (workers.dev) as anyone else would see them
+	"compatibility_flags": ["global_fetch_strictly_public"],
 	"observability": {
 			"logs": {
 		"enabled": true,

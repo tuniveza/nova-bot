@@ -1,0 +1,24 @@
+// The master list of links: only the expected shape is kept
+import { describe, expect, it } from "vitest";
+import { cleanLinks } from "../src/links.js";
+
+describe("the links list", () => {
+	it("keeps names, web addresses and kinds, and drops anything else", () => {
+		const clean = cleanLinks({
+			groups: [
+				{
+					title: "Live",
+					items: [
+						{ name: "Nova Hub", url: "https://example.workers.dev/app/", kind: "live" },
+						{ name: "Sandbox", url: "http://localhost:8787", kind: "testing" },
+						{ name: "Tests", url: "npx vitest run", kind: "testing" },
+						{ name: "Sneaky", url: "javascript:alert(1)", kind: "live" },
+						{ name: "Odd kind", url: "https://x.dev", kind: "whatever" },
+					],
+				},
+			],
+		});
+		expect(clean.groups[0].items.map((i) => i.name)).toEqual(["Nova Hub", "Sandbox", "Tests", "Odd kind"]);
+		expect(clean.groups[0].items.at(-1).kind).toBe("live");
+	});
+});

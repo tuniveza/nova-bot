@@ -27,12 +27,13 @@
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { askHub } from "./hub-ask.js";
 import { questsForHub, queueQuestAction } from "./agent-nova.js";
+import { checkedLinks } from "./links.js";
 import { listBookings } from "./booking-calendar.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
 import { usesNova } from "./mode.js";
 import { bookingLink as novaBookingLink, getSessionTypes as novaSessionTypes } from "./nova/booking.js";
 import { listBookings as novaListBookings } from "./nova/booking-calendar.js";
-import { AUTO_DELETE_CHOICES, autoDeleteDays, deleteAlerts, forgetPhone, listAlerts, notifyPhones, savePhone, setAutoDelete } from "./push.js";
+import { AUTO_DELETE_CHOICES, autoDeleteDays, deleteAlerts, forgetPhone, listAlerts, notifyPhones, savePhone, setAutoDelete, verifyBooking } from "./push.js";
 
 const COOKIE = "nvadmin";
 const SIGNED_IN_DAYS = 30;
@@ -67,11 +68,13 @@ export async function handleApp(request, env, ctx, answer) {
   if (route === "/push/unsubscribe" && request.method === "POST") return unsubscribe(request, env);
   if (route === "/push/test" && request.method === "POST") return testNotification(env);
   if (route === "/notifications" && request.method === "GET") return alerts(env);
+  if (route === "/verify-booking" && request.method === "GET") return json(await verifyBooking(env, url.searchParams.get("id")));
   if (route === "/notifications/delete" && request.method === "POST") return removeAlerts(request, env);
   if (route === "/notifications/settings" && request.method === "POST") return alertSettings(request, env);
   if (route === "/voice" && request.method === "POST") return voice(request, env);
   if (route === "/calendar" && request.method === "GET") return calendar(env);
   if (route === "/quests" && request.method === "GET") return json(await questsForHub(env));
+  if (route === "/links" && request.method === "GET") return json(await checkedLinks(env));
   if (route === "/quests/action" && request.method === "POST") return questAction(request, env);
   if (route === "/ask" && request.method === "POST") return (await allowed(env, request, "app-ask:")) ? askHub(request, env) : json({ error: "Too many questions. Wait a minute." }, 429);
   return json({ error: "Not found" }, 404);

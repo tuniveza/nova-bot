@@ -441,6 +441,31 @@
   }
 
   // The bookings on one day ("2026-10-22"), earliest first
+  // Nova Calendar's cards and Nova Quests on a day (sent by Nova Agent with its plan)
+  function suiteOn(key) {
+    const st = lastQuests && lastQuests.state;
+    if (!st) return [];
+    const items = [];
+    const cal = st.calendar || { notes: [], days: [] };
+    // Day cards (a whole day: birthdays, release days...), including yearly ones
+    for (const d of cal.days || []) if (d.date === key || (d.repeat === "yearly" && d.date.slice(5) === key.slice(5))) items.push({ kind: "day", title: d.title, sub: [d.info, d.location].filter(Boolean).join(" · "), sort: "" });
+    // Note cards (at a time)
+    for (const n of cal.notes || []) if (n.start.slice(0, 10) <= key && n.end.slice(0, 10) >= key) items.push({ kind: "note", title: n.title || "Note card", sub: n.body, time: n.start.slice(0, 10) === key ? hhmm(n.start) + "–" + hhmm(n.end) : "all day", sort: n.start });
+    // Planned quests
+    for (const q of st.quests || []) if (q.start && q.start.slice(0, 10) === key && q.status !== "skipped") items.push({ kind: "quest", title: (q.status === "done" ? "✓ " : "") + q.title, sub: length(q), time: hhmm(q.start) + "–" + hhmm(q.end), sort: q.start });
+    return items.sort((a, b) => a.sort.localeCompare(b.sort));
+  }
+
+  // One Nova Calendar card or quest, in the Calendar tab
+  function suiteCard(item) {
+    const card = el("article", "card cal-card suite-item " + item.kind);
+    card.appendChild(el("span", "alert-kind " + (item.kind === "quest" ? "quest" : "other"), item.kind === "quest" ? "Nova Quest" : item.kind === "day" ? "Nova Calendar · day" : "Nova Calendar"));
+    if (item.time) card.appendChild(el("p", "cal-time", item.time));
+    card.appendChild(el("h3", "card-title", item.title));
+    if (item.sub) card.appendChild(el("p", "cal-session", item.sub));
+    return card;
+  }
+
   function bookingsOn(key) {
     return calBookings.filter((b) => dayKey(b.from) === key).sort((a, b) => a.from - b.from);
   }
@@ -486,6 +511,13 @@
         dots.appendChild(dot);
       });
       if (list.length > 3) dots.appendChild(el("b", "", "+" + (list.length - 3)));
+      // A lilac dot when Nova Calendar or Nova Quests have something that day
+      if (suiteOn(key).length) {
+        const dot = el("i", "suite-dot");
+        dot.style.background = "#c7a4ff";
+        dots.appendChild(dot);
+        cell.classList.add("busy");
+      }
       cell.appendChild(dots);
       // Tapping it picks the day
       cell.addEventListener("click", () => {
@@ -520,6 +552,9 @@
     $("cal-day-title").textContent = name + (list.length ? " · " + list.length + (list.length === 1 ? " booking" : " bookings") : "");
     // The list
     const box = $("cal-day-list");
+    // Nova Calendar's cards and Nova Quests that day, after the bookings
+    const suite = suiteOn(calPicked);
+    if (suite.length) return box.replaceChildren(...list.map((b, i) => calCard(b, animate ? i : -1)), ...suite.map(suiteCard));
     // None that day: say so, and offer the next booking
     if (!list.length) {
       // The next booking after that day
@@ -730,6 +765,11 @@
     const left = open.filter((q) => q.start && q.start.startsWith(today)).length;
     $("quest-badge").hidden = !left;
     $("quest-badge").textContent = left;
+    // The Calendar tab shows Nova Calendar and quests too: redraw it with the latest
+    if (currentView === "calendar" && calMonth) {
+      drawMonth();
+      drawDay();
+    }
     if (currentView !== "quests") return;
     const cards = [];
 
@@ -889,6 +929,57 @@
     return found ? { name: found[0].slice(0, -2), key: found[1] } : null;
   }
 
+  // The label for each kind of alert
+  const KIND_LABELS = { booking: "Booking · Acuity", "nova-booking": "Booking · Nova", enquiry: "Enquiry", quest: "Nova Quest", mission: "Nova Mission", agent: "Nova Agent", health: "Acuity connection", test: "Test", other: "Alert" };
+
+  // "Tue 6 Oct 2026 · 21:02:40" (UK time, to the second)
+  function exactTime(iso) {
+    const d = new Date(iso);
+    const day = d.toLocaleDateString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    const time = d.toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return `${day} · ${time}`;
+  }
+  // "just now", "3 min ago", "2 h ago", "yesterday", "4 days ago"
+  function ago(iso) {
+    const mins = Math.round((Date.now() - Date.parse(iso)) / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return mins + " min ago";
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return hours + " h ago";
+    const days = Math.round(hours / 24);
+    return days === 1 ? "yesterday" : days + " days ago";
+  }
+
+  // What Acuity said about each booking (asked once per visit)
+  const verified = new Map();
+  // A panel that checks the booking with Acuity when it comes into view
+  function verifyPanel(id) {
+    const box = el("div", "verify checking");
+    box.append(el("p", "verify-title", "Checking with Acuity…"), el("div", "verify-lines"));
+    // Fill it in with what Acuity says
+    const fill = (r) => {
+      box.className = "verify " + r.status;
+      const icon = { real: "✓ ", cancelled: "✕ ", missing: "⚠ " }[r.status] || "";
+      box.querySelector(".verify-title").textContent = icon + r.title;
+      box.querySelector(".verify-lines").replaceChildren(...(r.lines || []).map((line) => el("span", "", line)));
+    };
+    const check = () => {
+      if (!verified.has(id)) verified.set(id, api("verify-booking?id=" + encodeURIComponent(id)).catch((err) => ({ status: "unknown", title: err.message, lines: [] })));
+      verified.get(id).then(fill);
+    };
+    // Only ask Acuity about bookings that are actually on screen
+    if ("IntersectionObserver" in window) {
+      const seen = new IntersectionObserver((entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          seen.disconnect();
+          check();
+        }
+      });
+      seen.observe(box);
+    } else check();
+    return box;
+  }
+
   // One alert, drawn as a card
   function alertCard(n) {
     // The card (with room for its delete button)
@@ -900,21 +991,28 @@
     remove.setAttribute("aria-label", "Delete this alert");
     // Delete it when tapped
     remove.addEventListener("click", () => deleteAlert(n.id));
-    // The top: title, then time
+    // What it's about, as a coloured label ("Booking", "Nova Quest", "Test"...)
+    const kind = n.kind || "other";
+    card.classList.add("kind-" + kind);
+    // The top: title, then how long ago
     const top = el("div", "card-top");
     // Put the title and time in
-    top.append(el("h3", "card-title", n.title), el("span", "card-meta", when(n.created_at)));
+    top.append(el("h3", "card-title", n.title), el("span", "card-meta", ago(n.created_at)));
+    // The exact moment it was sent, to the second
+    const exact = el("p", "alert-when", exactTime(n.created_at));
     // Then every detail (coloured), and how many phones it reached
-    card.append(remove, top, richDetails(n.body), el("p", "card-foot", "Sent to " + n.phones + (n.phones === 1 ? " phone" : " phones")));
+    card.append(remove, el("span", "alert-kind " + kind, KIND_LABELS[kind] || "Alert"), top, exact, richDetails(n.body), el("p", "card-foot", `Alert #${n.id} · delivered to ${n.phones} ${n.phones === 1 ? "phone" : "phones"}`));
+    // A booking in Acuity: check it with Acuity itself, so a real booking can't be mistaken for a test or a fake
+    if (kind === "booking" && n.appointmentId) card.insertBefore(verifyPanel(n.appointmentId), exact.nextSibling);
+    // A test: say plainly that it isn't a real booking
+    if (kind === "test") card.insertBefore(el("p", "verify unknown", "A test notification: not a real booking or enquiry."), exact.nextSibling);
     // The latest from Acuity's email about this booking (if one has come through)
     if (n.email) card.appendChild(emailPanel(n.email));
     // A row of buttons
     const actions = el("div", "actions");
-    // Alerts from Nova Agent, Nova Quest and Nova Mission: a coloured label, and nothing to open
+    // Alerts from Nova Agent, Nova Quest and Nova Mission: nothing to open
     const nova = novaSource(n.title);
     if (nova) {
-      // The label, above the title
-      card.insertBefore(el("span", "nova-label " + nova.key, nova.name), top);
       // Mark the card with its colour
       card.classList.add("nova-alert", nova.key);
       // No buttons: the card is the whole message
@@ -1156,7 +1254,16 @@
   const fromHomeScreen = window.navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
 
   // Install the doorman (sw.js) as soon as the app opens, so it's ready when needed
-  if (canNotify) navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" }).catch(() => {});
+  if (canNotify) {
+    navigator.serviceWorker
+      .register("/app/sw.js", { scope: "/app/", updateViaCache: "none" })
+      // Look for a newer doorman every time Nova Hub opens (and when it comes back to the front)
+      .then((reg) => {
+        reg.update().catch(() => {});
+        document.addEventListener("visibilitychange", () => !document.hidden && reg.update().catch(() => {}));
+      })
+      .catch(() => {});
+  }
 
   // ===== Pings =====
   // When a notification arrives while Nova Hub is open, it rings out with a
