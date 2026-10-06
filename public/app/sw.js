@@ -4,6 +4,7 @@
 // How each kind of notification buzzes (on phones that can; iPhones use their own sound)
 const BUZZ = {
   checkin: [220, 90, 220, 90, 420],
+  pulse: [140],
   leave: [320, 120, 320, 120, 320],
   starting: [260, 110, 260],
   mission: [90, 60, 90, 60, 90, 60, 520],

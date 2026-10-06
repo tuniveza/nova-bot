@@ -976,6 +976,8 @@
     // A quest is starting or it's time to leave: two bright rising notes
     starting: [1318.5, 1975.5],
     leave: [1174.7, 1568, 2093],
+    // A quick repeat: one short, bright tick
+    pulse: [2093],
     // A check-in: a quick double ping, twice
     checkin: [1760, 1760, 2349.3, 2349.3],
     // A mission: a sparkling run up
@@ -1023,8 +1025,12 @@
 
   // Drop a banner from the top of the screen
   function banner(data) {
+    // A newer one about the same thing replaces the old banner (quick repeats don't stack up)
+    if (data.tag) document.querySelectorAll(".ping-banner").forEach((b) => b.dataset.tag === data.tag && b.remove());
     // The banner
     const box = el("div", "ping-banner " + (data.source || "agent"));
+    // Remember what it's about
+    box.dataset.tag = data.tag || "";
     // Its title and text
     box.append(el("strong", "", data.title || "Nova Hub"), el("p", "", data.body || ""));
     // Tapping it opens the Alerts tab

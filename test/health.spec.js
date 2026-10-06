@@ -110,6 +110,12 @@ describe("alerts from Nova Agent", () => {
 		expect(titles).toEqual(["Nova Agent: Odd", "Nova Mission: Mission complete", "Nova Quest: Up next at 19:30: Vocals"]);
 	});
 
+	it("rings the phone for quick repeats without filling the Alerts list", async () => {
+		await notify({ title: "Drink water", message: "every 2 s", source: "quest", kind: "pulse", tag: "q1", keep: false }, "agent-nova-test-key");
+		expect(pushes).toBe(1);
+		expect(await alerts()).toEqual([]);
+	});
+
 	it("turns away a wrong or missing key", async () => {
 		expect((await notify({ title: "Hi" }, "wrong")).status).toBe(401);
 		expect((await notify({ title: "Hi" })).status).toBe(401);

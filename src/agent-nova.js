@@ -15,7 +15,7 @@
 //
 //   POST /hub/agent/next     { dryRun, bookingsPerVisitor, wait } -> { job } the oldest waiting job, or { job: null }
 //   POST /hub/agent/result   { id, ok, message }   -> staff phones get the result
-//   POST /hub/notify         { title, message, source?, kind?, tag?, ttl?, urgent? }
+//   POST /hub/notify         { title, message, source?, kind?, tag?, ttl?, urgent?, keep? }
 //                            -> staff phones get Nova Agent's, Nova Quest's and Nova Mission's alerts
 //
 // All three need header Authorization: Bearer <AGENT_NOVA_KEY>.
@@ -187,7 +187,8 @@ async function sendAlert(env, body) {
   const tag = typeof body.tag === "string" ? body.tag.replace(/[^\w-]/g, "").slice(0, 64) : "";
   const ttl = Math.min(Math.max(Number(body.ttl) || 86400, 60), 86400);
   const style = { source, kind, tag: tag ? `${source}-${tag}` : "", ttl, urgent: body.urgent === true };
-  const delivered = await notifyPhones(env, { title: `${ALERT_SOURCES[source]}: ${title}`, body: message, url: "/app/#nova", style });
+  // `keep: false` (quick repeats): ring the phone but leave it out of the Alerts list
+  const delivered = await notifyPhones(env, { title: `${ALERT_SOURCES[source]}: ${title}`, body: message, url: "/app/#nova", style, save: body.keep !== false });
   return Response.json({ ok: true, phones: delivered });
 }
 
