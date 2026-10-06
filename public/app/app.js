@@ -1177,6 +1177,8 @@
   function addBubble(text, me) {
     const bubble = el("div", "bubble" + (me ? " me" : ""));
     linkify(bubble, text);
+    // NovaBot's answer arriving: a soft two-note chime (not for "is typing…")
+    if (!me && !/typing…$/.test(text) && window.NovaSfx) window.NovaSfx.play("message");
     $("bot-messages").appendChild(bubble);
     bubble.scrollIntoView({ block: "end", behavior: "smooth" });
     return bubble;

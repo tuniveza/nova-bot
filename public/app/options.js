@@ -63,6 +63,14 @@
   // Refresh and Sign out (handled by app.js) close the sheet first
   ["refresh", "logout"].forEach((id) => $(id) && $(id).addEventListener("click", close));
 
+  // Sound effects (sfx.js keeps this one itself)
+  const sfx = $("sfx-switch");
+  if (sfx && window.NovaSfx) {
+    sfx.checked = window.NovaSfx.enabled();
+    sfx.addEventListener("change", () => window.NovaSfx.setEnabled(sfx.checked));
+    window.addEventListener("novasfxchange", (e) => (sfx.checked = e.detail.on));
+  }
+
   // The music starts at the saved volume
   if (window.NovaAmbient) window.NovaAmbient.setVolume(window.NovaOptions.get().volume / 100);
 })();

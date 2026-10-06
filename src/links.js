@@ -8,7 +8,8 @@
 // what's up.
 //
 // Shape: { groups: [{ title, note?, items: [{ name, url, kind, note? }] }],
-//          features: [{ app, note?, items: [{ name, detail }] }] }   (everything the suite can do)
+//          features: [{ app, note?, items: [{ name, detail }] }],   (everything the suite can do)
+//          changelog: [{ date, app, size: small|big|major, title, what, why, benefit }] }   (newest first)
 // kind: "live" (in use), "machine" (used by apps, not people), "testing",
 //       "local" (only on the studio computer), "planned" (not set up yet)
 
@@ -41,7 +42,22 @@ export function cleanLinks(raw) {
     note: text(f?.note, 300),
     items: (Array.isArray(f?.items) ? f.items : []).slice(0, 80).map((i) => ({ name: text(i?.name, 120), detail: text(i?.detail, 600) })).filter((i) => i.name),
   }));
-  return { groups, features };
+  // What's changed, newest first: every small, big and major change, in plain words
+  const SIZES = ["small", "big", "major"];
+  const changelog = (Array.isArray(raw?.changelog) ? raw.changelog : [])
+    .slice(0, 1000)
+    .map((c) => ({
+      date: /^\d{4}-\d{2}-\d{2}$/.test(c?.date) ? c.date : "",
+      app: text(c?.app, 60) || "Nova suite",
+      size: SIZES.includes(c?.size) ? c.size : "small",
+      title: text(c?.title, 140),
+      what: text(c?.what, 400),
+      why: text(c?.why, 400),
+      benefit: text(c?.benefit, 400),
+    }))
+    .filter((c) => c.date && c.title)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  return { groups, features, changelog };
 }
 
 export async function saveLinks(env, raw) {
@@ -75,5 +91,5 @@ async function check(url, kind) {
 export async function checkedLinks(env) {
   const list = await readLinks(env);
   const groups = await Promise.all(list.groups.map(async (g) => ({ ...g, items: await Promise.all(g.items.map(async (i) => ({ ...i, check: await check(i.url, i.kind) }))) })));
-  return { groups, features: list.features, checkedAt: new Date().toISOString() };
+  return { groups, features: list.features, changelog: list.changelog, checkedAt: new Date().toISOString() };
 }

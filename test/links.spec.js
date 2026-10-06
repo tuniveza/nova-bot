@@ -27,4 +27,13 @@ describe("the links list", () => {
 		expect(clean.features[0]).toEqual({ app: "Nova Agent", note: "", items: [{ name: "Pulses", detail: "Every second" }] });
 		expect(clean.features[1].app).toBe("Nova suite");
 	});
+
+	it("keeps the changelog newest first, with a size for every change", () => {
+		const clean = cleanLinks({ changelog: [
+			{ date: "2026-10-05", app: "Nova Hub", size: "big", title: "Themes", what: "a", why: "b", benefit: "c" },
+			{ date: "2026-10-06", app: "Nova Agent", size: "huge", title: "Pulses", what: "a", why: "b", benefit: "c" },
+			{ date: "yesterday", title: "No date" },
+		] });
+		expect(clean.changelog.map((c) => [c.date, c.size])).toEqual([["2026-10-06", "small"], ["2026-10-05", "big"]]);
+	});
 });

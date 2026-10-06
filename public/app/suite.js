@@ -117,6 +117,52 @@
     return box;
   }
 
+  // What's changed: one section per day (newest first, the latest open); each change says what, why and the benefit
+  function changelogBlocks(changelog) {
+    if (!changelog.length) return [];
+    const days = new Map();
+    for (const c of changelog) (days.get(c.date) || days.set(c.date, []).get(c.date)).push(c);
+    const head = make("p", "links-features-head", "📜 What's changed");
+    return [head, ...[...days.entries()].map(([date, list], i) => {
+      const box = make("details", "links-group changelog-day");
+      if (i === 0) box.open = true;
+      const summary = make("summary", "");
+      const name = new Date(date + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+      summary.append(make("span", "links-group-title", name), make("span", "links-count", list.length));
+      box.appendChild(summary);
+      // One group per app inside the day (most changes first; majors first within each)
+      const rank = { major: 0, big: 1, small: 2 };
+      const apps = new Map();
+      for (const c of list) (apps.get(c.app) || apps.set(c.app, []).get(c.app)).push(c);
+      const groups = [...apps.entries()].sort((x, y) => y[1].length - x[1].length);
+      for (const [app, changes] of groups) {
+        const appBox = make("details", "change-app");
+        const appSummary = make("summary", "");
+        appSummary.append(make("span", "links-group-title", app), make("span", "links-count", changes.length));
+        appBox.appendChild(appSummary);
+        for (const c of changes.sort((x, y) => rank[x.size] - rank[y.size])) appBox.appendChild(changeCard(c));
+        box.appendChild(appBox);
+      }
+      return box;
+    })];
+  }
+
+  // One change: its size and app, its title, then what, why and the benefit
+  function changeCard(c) {
+    const SIZE = { major: "★ Major", big: "◆ Big", small: "● Small" };
+    const card = make("article", "change " + c.size);
+    const tags = make("p", "change-tags");
+    tags.append(make("span", "size " + c.size, SIZE[c.size] || c.size), make("span", "change-app-name", c.app));
+    card.append(tags, make("h4", "change-title", c.title));
+    for (const [label, words] of [["What", c.what], ["Why", c.why], ["Better because", c.benefit]]) {
+      if (!words) continue;
+      const line = make("p", "change-line");
+      line.append(make("b", "", label + ": "), document.createTextNode(words));
+      card.appendChild(line);
+    }
+    return card;
+  }
+
   // Everything the Nova suite can do: one section per app, after the links
   function featureBlocks(features) {
     if (!features.length) return [];
@@ -162,7 +208,7 @@
       checked.textContent = at && !isNaN(at) ? "Checked " + at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "Not checked yet";
       if (!groups.length) return message("No links yet.");
       // The links, then everything the Nova suite can do (app by app)
-      groupsBox.replaceChildren(...groups.map(groupBlock), ...featureBlocks(data.features || []));
+      groupsBox.replaceChildren(...groups.map(groupBlock), ...changelogBlocks(data.changelog || []), ...featureBlocks(data.features || []));
     } catch (err) {
       checked.textContent = "";
       message(err.message || "Couldn't load the links.");

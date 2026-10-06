@@ -642,7 +642,7 @@ const when = (iso) => escapeHtml(String(iso || "").slice(0, 16).replace("T", " "
 
 async function linksPage(env, url) {
   const e = escapeHtml;
-  const { groups, features, checkedAt } = await checkedLinks(env);
+  const { groups, features, changelog, checkedAt } = await checkedLinks(env);
   const KIND = { live: "Live", machine: "Used by the apps", testing: "Testing", local: "Studio computer", planned: "Not set up yet" };
   const sections = groups
     .map(
@@ -665,6 +665,7 @@ async function linksPage(env, url) {
   const down = groups.reduce((n, g) => n + g.items.filter((i) => i.check.state === "down").length, 0);
   const body = `<p class="dim">Every Nova suite address in one place: what's live, what the apps use behind the scenes, what's for testing, and what only works on the studio computer. Checked just now (${new Date(checkedAt).toLocaleString("en-GB", { timeZone: "Europe/London" })}): ${total} addresses, ${down ? `<span class="warn">${down} not answering</span>` : "all answering"}.</p>
 ${groups.length ? sections : `<p class="card">The list is empty.</p>`}
+${changelog.length ? changelogSection(changelog) : ""}
 ${features.length ? `<h2 id="features">Everything the Nova suite can do</h2>
 <p class="dim">Every feature, app by app.</p>
 <div class="features">${features
@@ -674,11 +675,50 @@ ${features.length ? `<h2 id="features">Everything the Nova suite can do</h2>
   )
   .join("")}</div>` : ""}
 <details class="card"><summary>Edit the list</summary>
-<p class="dim small">The list is kept in the database, not in the code (the code is public). Edit it here as JSON: groups, each with a title and items (name, url, kind: live, machine, testing, local or planned, and an optional note); and features, each with an app and items (name, detail).</p>
+<p class="dim small">The list is kept in the database, not in the code (the code is public). Edit it here as JSON: groups, each with a title and items (name, url, kind: live, machine, testing, local or planned, and an optional note); features, each with an app and items (name, detail); and changelog entries (date, app, size: small, big or major, title, what, why, benefit).</p>
 <form method="post" action="/admin/links"><textarea name="json" rows="18" style="width:100%;font-family:monospace;font-size:12px">${e(JSON.stringify(await readLinks(env), null, 2))}</textarea>
 <p><button class="btn" type="submit">Save the list</button></p></form></details>
 `;
   return page(env, "Links", url, body);
+}
+
+// A day's changes, one group per app (most changes first), majors before bigs before smalls
+function appGroups(list) {
+  const rank = { major: 0, big: 1, small: 2 };
+  const apps = new Map();
+  for (const c of list) (apps.get(c.app) || apps.set(c.app, []).get(c.app)).push(c);
+  return [...apps.entries()].map(([app, cs]) => [app, cs.sort((a, b) => rank[a.size] - rank[b.size])]).sort((a, b) => b[1].length - a[1].length);
+}
+
+// What's changed: every change, newest first, grouped by day and app; each says what, why and the benefit
+function changelogSection(changelog) {
+  const e = escapeHtml;
+  const SIZE = { major: "★ Major", big: "◆ Big", small: "● Small" };
+  const byDay = new Map();
+  for (const c of changelog) (byDay.get(c.date) || byDay.set(c.date, []).get(c.date)).push(c);
+  const day = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  const counts = { major: 0, big: 0, small: 0 };
+  for (const c of changelog) counts[c.size]++;
+  return `<h2 id="changelog">What's changed</h2>
+<p class="dim">Every change to the Nova suite, newest first: what changed, why, and what's better. ${changelog.length} changes: ${counts.major} major, ${counts.big} big, ${counts.small} small.</p>
+<div class="changelog">${[...byDay.entries()]
+    .map(
+      ([d, list], i) => `<details class="card change-day"${i < 3 ? " open" : ""}><summary><b>${e(day(d))}</b> <span class="dim small">${list.length} change${list.length === 1 ? "" : "s"}</span></summary>
+${appGroups(list)
+  .map(
+    ([app, changes], j) => `<details class="change-app"${j === 0 ? " open" : ""}><summary><b>${e(app)}</b> <span class="dim small">${changes.length} · ${changes.filter((c) => c.size === "major").length} major</span></summary>${changes
+  .map(
+    (c) => `<article class="change ${c.size}">
+  <p class="change-tags"><span class="size ${c.size}">${SIZE[c.size]}</span><span class="change-app-name">${e(c.app)}</span></p>
+  <h3>${e(c.title)}</h3>
+  <dl><div><dt>What</dt><dd>${e(c.what)}</dd></div><div><dt>Why</dt><dd>${e(c.why)}</dd></div><div><dt>Better because</dt><dd>${e(c.benefit)}</dd></div></dl>
+</article>`
+  )
+  .join("")}</details>`
+  )
+  .join("")}</details>`
+    )
+    .join("")}</div>`;
 }
 
 async function saveLinksForm(env, form) {
@@ -779,6 +819,25 @@ const ADMIN_STYLE = `
   .theme-swatch[aria-checked="true"], .theme-swatch.active, .theme-swatch[aria-pressed="true"] { border-color: var(--hi); box-shadow: 0 0 0 1px var(--hi), 0 0 18px -6px var(--glow-accent); }
   .theme-preview { display: block; height: 34px; border-radius: 9px; }
   .theme-name { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
+  /* What's changed */
+  .changelog { display: grid; gap: 12px; }
+  .change-day summary { cursor: pointer; font-size: 17px; color: var(--bright); }
+  .change-app { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .change-app > summary { cursor: pointer; font-size: 15.5px; color: var(--lilac); }
+  .change { padding: 14px 4px; border-top: 1px solid var(--line); }
+  .change-tags { margin: 0 0 6px; display: flex; gap: 8px; flex-wrap: wrap; }
+  html[data-align="center"] .change-tags { justify-content: center; }
+  .change-tags span { padding: 2px 10px; border-radius: 999px; font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; border: 1px solid var(--line-strong); }
+  .size.major { background: linear-gradient(120deg, var(--gold), #fff3d6, var(--gold)); color: #1a1206; border-color: transparent; }
+  .size.big { background: var(--grad); color: var(--on-accent); border-color: transparent; }
+  .size.small { color: var(--muted); }
+  .change-tags .change-app-name { color: var(--lilac); }
+  .change h3 { margin: 0 0 8px; font-size: 17px; font-family: var(--f-display); font-stretch: 110%; color: var(--bright); background: none; -webkit-text-fill-color: currentColor; text-transform: none; }
+  .change dl { margin: 0; display: grid; gap: 6px; }
+  .change dl div { display: grid; grid-template-columns: 130px 1fr; gap: 10px; text-align: left; }
+  .change dt { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hi); padding-top: 3px; }
+  .change dd { margin: 0; line-height: 1.45; }
+  @media (max-width: 640px) { .change dl div { grid-template-columns: 1fr; gap: 2px; } }
   /* Everything the suite can do */
   .features { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; align-items: start; }
   .feature-app summary { cursor: pointer; font-size: 17px; color: var(--bright); }
@@ -846,6 +905,7 @@ async function page(env, title, url, body) {
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Saira:wght@300..700&family=Source+Code+Pro:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/app/themes.css">
 <script src="/app/themes.js"></script>
+<script src="/app/sfx.js" defer></script>
 <style>${ADMIN_STYLE}</style>
 </head>
 <body>

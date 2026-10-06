@@ -1028,3 +1028,16 @@ html[data-align="center"] .q-tags { justify-content: center; }
 .suite-app .suite-words p { margin: 4px auto 0; max-width: 46ch; }
 .suite-app > .suite-open, .suite-app > .suite-tag { justify-self: center; }
 .suite-app > * { grid-column: 1 / -1 !important; margin-top: 0 !important; }
+
+/* What's changed (in the All links section) */
+.change { padding: 12px 2px; border-top: 1px solid var(--line); }
+.change-tags { margin: 0 0 6px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.change-tags span { padding: 2px 9px; border-radius: 999px; font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; border: 1px solid var(--line-strong); color: var(--muted); }
+.change-tags .size.major { background: linear-gradient(120deg, var(--gold), #fff3d6, var(--gold)); color: #1a1206; border-color: transparent; }
+.change-tags .size.big { background: var(--grad); color: var(--on-accent); border-color: transparent; }
+.change-tags .change-app-name { color: var(--lilac); }
+.change-title { margin: 0 0 6px; font-family: var(--f-display); font-stretch: 110%; font-weight: 800; font-size: 15.5px; color: var(--bright); }
+.change-line { margin: 4px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--text); }
+.change-line b { color: var(--hi); font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; }
+.change-app { margin: 6px 0 0; border-top: 1px solid var(--line); }
+.change-app > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 4px; cursor: pointer; color: var(--lilac); }
