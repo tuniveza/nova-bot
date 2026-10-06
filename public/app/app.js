@@ -121,6 +121,8 @@
   function showApp() {
     $("login").hidden = true;
     $("app").hidden = false;
+    // Opened from a Nova Agent, Nova Quest or Nova Mission notification: go straight to Alerts
+    if (location.hash === "#nova") currentView = "alerts";
     show(currentView);
     // Light the bell up if this phone already gets notifications
     updateNotifyPanel();
@@ -671,6 +673,16 @@
     }
   }
 
+  // Which Nova app an alert came from (from the start of its title), or null
+  function novaSource(title) {
+    // The three Nova apps that send alerts, and their colour names
+    const sources = [["Nova Quest: ", "quest"], ["Nova Mission: ", "mission"], ["Nova Agent: ", "agent"]];
+    // Find the one the title starts with
+    const found = sources.find(([prefix]) => String(title).startsWith(prefix));
+    // Its name (without the colon) and colour, or nothing
+    return found ? { name: found[0].slice(0, -2), key: found[1] } : null;
+  }
+
   // One alert, drawn as a card
   function alertCard(n) {
     // The card (with room for its delete button)
@@ -692,6 +704,16 @@
     if (n.email) card.appendChild(emailPanel(n.email));
     // A row of buttons
     const actions = el("div", "actions");
+    // Alerts from Nova Agent, Nova Quest and Nova Mission: a coloured label, and nothing to open
+    const nova = novaSource(n.title);
+    if (nova) {
+      // The label, above the title
+      card.insertBefore(el("span", "nova-label " + nova.key, nova.name), top);
+      // Mark the card with its colour
+      card.classList.add("nova-alert", nova.key);
+      // No buttons: the card is the whole message
+      return card;
+    }
     // Enquiry alerts open the Enquiries tab; booking alerts open Acuity
     const open = el(n.url.startsWith("/app/") ? "button" : "a", "btn small", n.url.startsWith("/app/") ? "Open enquiry" : /acuityscheduling/.test(n.url) ? "Open in Acuity" : "Open in Google Calendar");
     // An enquiry: switch tabs when tapped
@@ -929,6 +951,116 @@
 
   // Install the doorman (sw.js) as soon as the app opens, so it's ready when needed
   if (canNotify) navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" }).catch(() => {});
+
+  // ===== Pings =====
+  // When a notification arrives while Nova Hub is open, it rings out with a
+  // bright ping (a different one for each kind) and drops a banner from the top.
+
+  // The sound maker (made on the first tap, because phones only allow sound after a tap)
+  let sound = null;
+  // Make it (or wake it up) on the first tap anywhere
+  function wakeSound() {
+    // Try it, ignoring phones that can't
+    try {
+      // Make it the first time
+      if (!sound) sound = new (window.AudioContext || window.webkitAudioContext)();
+      // Wake it if the phone put it to sleep
+      if (sound.state === "suspended") sound.resume();
+    } catch (err) {}
+  }
+  // Listen for that first tap (and later ones, in case the phone sends it back to sleep)
+  ["pointerdown", "touchstart", "keydown"].forEach((type) => document.addEventListener(type, wakeSound, { passive: true }));
+
+  // The notes for each kind of ping (in hertz), played one after another
+  const PINGS = {
+    // A quest is starting or it's time to leave: two bright rising notes
+    starting: [1318.5, 1975.5],
+    leave: [1174.7, 1568, 2093],
+    // A check-in: a quick double ping, twice
+    checkin: [1760, 1760, 2349.3, 2349.3],
+    // A mission: a sparkling run up
+    mission: [1046.5, 1318.5, 1568, 2093, 2637],
+    // Nova Agent: one clear, lower bell
+    agent: [880, 1318.5],
+  };
+
+  // Play a ping (bright bell-like notes, each with a shimmer an octave up)
+  function ping(kind) {
+    // Wake the sound maker if it's allowed
+    wakeSound();
+    // No sound on this phone: just buzz (where phones allow it)
+    if (!sound || sound.state !== "running") return navigator.vibrate && navigator.vibrate([200, 100, 200]);
+    // The notes to play
+    const notes = PINGS[kind] || PINGS.starting;
+    // Now, in the sound maker's clock
+    const t0 = sound.currentTime + 0.02;
+    // Play each note a little after the last
+    notes.forEach((freq, i) => {
+      // When this note starts
+      const t = t0 + i * 0.11;
+      // The note and its shimmer
+      [[freq, 0.22, "sine"], [freq * 2, 0.06, "triangle"]].forEach(([f, loud, wave]) => {
+        // The tone
+        const osc = sound.createOscillator();
+        // Its volume
+        const gain = sound.createGain();
+        // Set the tone
+        osc.type = wave;
+        osc.frequency.value = f;
+        // A sharp strike that rings away, like a bell
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(loud, t + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+        // Wire it up and play it
+        osc.connect(gain).connect(sound.destination);
+        osc.start(t);
+        osc.stop(t + 1);
+      });
+    });
+    // A buzz too, on phones that can
+    if (navigator.vibrate) navigator.vibrate([180, 80, 180]);
+  }
+
+  // Drop a banner from the top of the screen
+  function banner(data) {
+    // The banner
+    const box = el("div", "ping-banner " + (data.source || "agent"));
+    // Its title and text
+    box.append(el("strong", "", data.title || "Nova Hub"), el("p", "", data.body || ""));
+    // Tapping it opens the Alerts tab
+    box.addEventListener("click", () => {
+      box.remove();
+      show("alerts");
+    });
+    // Put it on the page
+    document.body.appendChild(box);
+    // Check-ins and problems stay a while; the rest go after 7 seconds
+    setTimeout(() => box.classList.add("going"), data.urgent ? 30000 : 7000);
+    setTimeout(() => box.remove(), data.urgent ? 30600 : 7600);
+  }
+
+  // Messages from the doorman
+  if (canNotify) {
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      // A notification just arrived: ping, show the banner and refresh the Alerts
+      if (event.data?.type === "nova-push") {
+        ping(event.data.kind || event.data.source);
+        banner(event.data);
+        loadAlerts();
+      }
+      // A notification was tapped: show the Alerts tab
+      if (event.data?.type === "nova-open") show(String(event.data.url).includes("#nova") ? "alerts" : currentView);
+    });
+  }
+
+  // Opening Nova Hub clears the dot on its Home Screen icon
+  function clearIconDot() {
+    // Only where the phone supports it
+    if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
+  }
+  // Now, and every time Nova Hub comes back to the front
+  clearIconDot();
+  document.addEventListener("visibilitychange", () => !document.hidden && clearIconDot());
 
   // Turn the public key (text) into the raw bytes the phone wants
   function keyBytes(text) {

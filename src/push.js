@@ -49,12 +49,16 @@ const KEEP_ALERTS_DAYS = 90;
 // Send one notification to every signed-up phone. Returns how many it reached.
 // `url` is what opens when the notification is tapped. `save: false` keeps it
 // out of Nova Hub's Alerts tab (used for test notifications). `appointmentId`
-// or `enquiryId` says which booking or enquiry it's about.
-export async function notifyPhones(env, { title, body, url = "/app/", save = true, appointmentId = null, enquiryId = null }) {
+// or `enquiryId` says which booking or enquiry it's about. `style` (optional)
+// says how the phone should show it: which Nova app it's from (`source`), what
+// kind it is, a `tag` (a newer one replaces an older one with the same tag), how
+// long it's worth delivering (`ttl`, in seconds) and whether it's `urgent` (it
+// stays on screen until it's answered, with a stronger buzz).
+export async function notifyPhones(env, { title, body, url = "/app/", save = true, appointmentId = null, enquiryId = null, style = null }) {
   // Keep the text short enough for Apple (it allows about 4,000 characters in all)
   body = String(body).slice(0, 1500);
   // Send it to every phone and count how many Apple accepted it for
-  const delivered = await sendToPhones(env, { title, body, url });
+  const delivered = await sendToPhones(env, { title, body, url, style });
   // Only list it in Nova Hub if it actually went through to a phone
   if (save && delivered > 0) await saveAlert(env, { title, body, url, phones: delivered, appointmentId, enquiryId });
   // Report how many phones it reached
@@ -187,7 +191,7 @@ async function novaAlert(env, n) {
 }
 
 // Seal and post one notification to every signed-up phone
-async function sendToPhones(env, { title, body, url }) {
+async function sendToPhones(env, { title, body, url, style }) {
   // No seal set up yet: nothing can be sent, so stop quietly
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return 0;
   // Our seal: the contact address Apple sees, plus the two halves of our key
@@ -211,8 +215,8 @@ async function sendToPhones(env, { title, body, url }) {
       const subscription = { endpoint: phone.endpoint, expirationTime: null, keys: { p256dh: phone.p256dh, auth: phone.auth } };
       // Seal the message for this phone (it holds the title, text and where to go on tap)
       const letter = await buildPushPayload(
-        // The message itself, and how long Apple should keep trying (1 day)
-        { data: JSON.stringify({ title, body, url }), options: { ttl: 86400, urgency: "high" } },
+        // The message itself (with how to show it), and how long Apple should keep trying (1 day, or less for reminders)
+        { data: JSON.stringify({ title, body, url, ...(style || {}) }), options: { ttl: style?.ttl || 86400, urgency: "high" } },
         // Which phone it's for
         subscription,
         // Our seal

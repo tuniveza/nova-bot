@@ -15,7 +15,8 @@
 //
 //   POST /hub/agent/next     { dryRun, bookingsPerVisitor, wait } -> { job } the oldest waiting job, or { job: null }
 //   POST /hub/agent/result   { id, ok, message }   -> staff phones get the result
-//   POST /hub/notify         { title, message }    -> staff phones get Nova Agent's alerts
+//   POST /hub/notify         { title, message, source?, kind?, tag?, ttl?, urgent? }
+//                            -> staff phones get Nova Agent's, Nova Quest's and Nova Mission's alerts
 //
 // All three need header Authorization: Bearer <AGENT_NOVA_KEY>.
 
@@ -173,12 +174,21 @@ async function reportResult(env, body) {
 }
 
 // An alert from Nova Agent itself (e.g. "can't log in to Acuity")
+// Which Nova app an alert is from, and the name shown in front of its title
+const ALERT_SOURCES = { agent: "Nova Agent", quest: "Nova Quest", mission: "Nova Mission" };
+
 async function sendAlert(env, body) {
   const title = typeof body.title === "string" ? body.title.trim().slice(0, 100) : "";
   const message = typeof body.message === "string" ? body.message.trim().slice(0, 1000) : "";
   if (!title) return Response.json({ error: "A title is needed" }, { status: 400 });
-  await notifyPhones(env, { title: "Nova Agent: " + title, body: message, url: "/app/" });
-  return Response.json({ ok: true });
+  // How the phone should show it (anything missing or odd falls back to a plain Nova Agent alert)
+  const source = Object.hasOwn(ALERT_SOURCES, body.source) ? body.source : "agent";
+  const kind = typeof body.kind === "string" ? body.kind.replace(/[^a-z-]/g, "").slice(0, 20) : "";
+  const tag = typeof body.tag === "string" ? body.tag.replace(/[^\w-]/g, "").slice(0, 64) : "";
+  const ttl = Math.min(Math.max(Number(body.ttl) || 86400, 60), 86400);
+  const style = { source, kind, tag: tag ? `${source}-${tag}` : "", ttl, urgent: body.urgent === true };
+  const delivered = await notifyPhones(env, { title: `${ALERT_SOURCES[source]}: ${title}`, body: message, url: "/app/#nova", style });
+  return Response.json({ ok: true, phones: delivered });
 }
 
 // Compare two secrets without giving away how much matched
