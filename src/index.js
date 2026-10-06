@@ -11,6 +11,8 @@
 // The website sends the chat here. This asks Claude and sends the reply back.
 // It also tracks referrals for Acuity bookings (referrals.js, admin.js).
 
+import { handleMemoryApi, learnFromWebsiteChats, readForStaff, readForWebsite } from "./memory/routes.js";
+import { memoryPrompt } from "./memory/store.js";
 import { handleAcuityWebhook, handleReferral } from "./referrals.js";
 import { handleClubBusy } from "./club-calendar.js";
 import { handleBookedPixel } from "./booking-details.js";
@@ -688,6 +690,8 @@ export default {
         expireHolds(env, at).catch((err) => console.log("Nova hold check failed:", err)),
         sendReminders(env, at).catch((err) => console.log("Nova reminders failed:", err)),
         dailyHealthCheck(env, new Date(at)).catch((err) => console.log("Nova health check failed:", err)),
+        // Read quiet website chats for facts worth remembering (they wait for approval in Nova Index)
+        learnFromWebsiteChats(env).catch((err) => console.log("Memory from website chats failed:", err)),
       ])
     );
   },
@@ -715,6 +719,8 @@ export default {
     }
     // Nova Agent (the browser helper) collecting jobs and sending alerts, with its own key
     if (pathname === "/hub/notify" || pathname.startsWith("/hub/agent/")) return handleAgentNova(request, env, pathname);
+    // Nova Index's memory engine, for Nova Agent (src/memory/)
+    if (pathname.startsWith("/memory/")) return handleMemoryApi(request, env, ctx, pathname);
     // Nova Club (the members' app): when the studio is booked, straight from
     // Acuity (or the studio's Google Calendar, with the switch on Nova)
     if (pathname === "/club/busy") return (await usesNova(env)) ? handleNovaClubBusy(request, env) : handleClubBusy(request, env);
@@ -888,6 +894,17 @@ async function answer(messages, env, visitor, waitUntil, { staff = false } = {})
   if (canManage) sessions += "\n\n" + kit.manage.rules;
   // In Nova Hub, NovaBot is talking to the studio team, never to a customer
   if (staff) sessions = STAFF_VOICE + "\n\n" + sessions;
+  // What the Nova suite remembers that matters for this turn (Nova Index): on the
+  // website, only this customer's own facts and the public studio facts
+  try {
+    const lastAsk = [...messages].reverse().find((m) => m.role === "user");
+    const q = lastAsk && typeof lastAsk.content === "string" ? lastAsk.content : "";
+    const mem = staff ? await readForStaff(env, q) : await readForWebsite(env, visitor && visitor.chatId, q);
+    const block = memoryPrompt(mem, staff ? "the people the team talks about" : "this customer");
+    if (block) sessions += "\n\n" + block;
+  } catch (err) {
+    console.log("Memory read failed:", err.message);
+  }
 
   // Fix any link Claude made up, and make sure every booking_link link reaches
   // the visitor, even if Claude forgot it
@@ -1214,6 +1231,7 @@ function privacyPage() {
 <h1>Nova Hub – Privacy Policy</h1>
 <p>Nova Hub is a staff-only tool for Novacane Studios. It displays customer enquiries and chat conversations submitted through the novacane.co.uk chatbot, and lets staff chat with the Novabot assistant.</p>
 <p>Data handled: names, contact details and messages customers submit. This data is stored on Novacane Studios' Cloudflare backend and processed by an AI provider solely to run the chatbot and to answer staff questions in Nova Hub.</p>
+<p>Memory: to give better help over time, short notes may be kept from chats, such as a preferred session time or what a customer is working on. Notes about customers are only kept after a member of the Novacane team has approved each one. Card, bank and ID details are never kept. To see or delete any notes about you, contact Novacane Studios via novacane.co.uk.</p>
 <p>For bookings made through Acuity, the booking confirmation page sends the session, date, time, price and the customer's email to Novacane Studios' Cloudflare backend, and the booking's details (name, contact details, booking details and booking form answers) are read from Acuity's private calendar feed and Acuity's booking emails to the studio, so staff are notified of the booking. Staff notifications on registered staff phones are delivered through Apple's or Google's push service, encrypted so only the staff phone can read them. Booking details and notifications are kept for 90 days.</p>
 <p>Data is never sold, shared for advertising, or used for any other purpose. To request deletion, contact Novacane Studios via novacane.co.uk.</p>
 </body>

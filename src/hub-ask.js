@@ -12,6 +12,8 @@ import { listBookings } from "./booking-calendar.js";
 // With the switch on Nova Bot's own booking system, the diary is the studio's Google Calendar
 import { usesNova } from "./mode.js";
 import { listBookings as novaListBookings } from "./nova/booking-calendar.js";
+import { readForStaff } from "./memory/routes.js";
+import { memoryPrompt } from "./memory/store.js";
 
 // How many enquiries and alerts to include, and how much of each message
 const MAX_ENQUIRIES = 40;
@@ -50,6 +52,8 @@ export async function askHub(request, env) {
   if (!env.ANTHROPIC_API_KEY) return Response.json({ answer: `🧪 Sandbox: Nova isn't connected to an AI, so it can't answer "${question.slice(0, 120)}".` });
   // Everything Nova knows, as text
   const data = await snapshot(env);
+  // What the Nova suite remembers about the people and work this question is about (Nova Index)
+  const memory = memoryPrompt(await readForStaff(env, question).catch(() => null), "the people the team talks about");
   // Ask Claude
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     // Sending a question
@@ -60,7 +64,7 @@ export async function askHub(request, env) {
     body: JSON.stringify({
       model: "claude-haiku-4-5",
       max_tokens: 400,
-      system: [{ type: "text", text: INSTRUCTIONS }, { type: "text", text: data }],
+      system: [{ type: "text", text: INSTRUCTIONS }, { type: "text", text: data + (memory ? "\n\n" + memory : "") }],
       messages: [...history, { role: "user", content: question }],
     }),
   });

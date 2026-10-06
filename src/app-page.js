@@ -27,6 +27,7 @@
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { askHub } from "./hub-ask.js";
 import { questsForHub, queueQuestAction } from "./agent-nova.js";
+import { handleMemoryForStaff, learnFromStaffChat } from "./memory/routes.js";
 import { checkedLinks } from "./links.js";
 import { listBookings } from "./booking-calendar.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
@@ -74,6 +75,11 @@ export async function handleApp(request, env, ctx, answer) {
   if (route === "/voice" && request.method === "POST") return voice(request, env);
   if (route === "/calendar" && request.method === "GET") return calendar(env);
   if (route === "/quests" && request.method === "GET") return json(await questsForHub(env));
+  // Nova Index: the suite's memory (browse, edit, approve)
+  if (route.startsWith("/memory/")) {
+    if (request.method !== "GET" && request.headers.get("Origin") !== url.origin) return json({ error: "Forbidden" }, 403);
+    return handleMemoryForStaff(request, env, ctx, route.slice("/memory".length), request.headers.get("X-Nova-App") === "hub" ? "Nova Hub" : "Nova Index");
+  }
   if (route === "/links" && request.method === "GET") return json(await checkedLinks(env));
   if (route === "/quests/action" && request.method === "POST") return questAction(request, env);
   if (route === "/ask" && request.method === "POST") return (await allowed(env, request, "app-ask:")) ? askHub(request, env) : json({ error: "Too many questions. Wait a minute." }, 429);
@@ -232,7 +238,10 @@ async function staffChat(request, env, ctx, answer) {
   if (!list.length) return json({ error: "No message" }, 400);
   const visitor = { chatId: null, page: "Nova Hub (staff)", ip: request.headers.get("CF-Connecting-IP") || "staff" };
   // Staff can also find, cancel, reschedule and change bookings (manage-bookings.js)
-  return json({ reply: (await answer(list, env, visitor, (work) => ctx.waitUntil(work), { staff: true })).text });
+  const reply = (await answer(list, env, visitor, (work) => ctx.waitUntil(work), { staff: true })).text;
+  // What the team says about clients and the studio feeds Nova Index (in the background)
+  ctx.waitUntil(learnFromStaffChat(env, [...list, { role: "assistant", content: reply }]).catch((err) => console.log("Memory from Nova Hub failed:", err.message)));
+  return json({ reply });
 }
 
 // ===== NOTIFICATIONS =====

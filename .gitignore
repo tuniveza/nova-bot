@@ -186,3 +186,6 @@ tools/make-public.mjs
 screenshots/
 traces/
 *.har
+
+# Nova Index is copied in from ns/ni at build time (scripts/sync-index.mjs)
+public/app/memory/
