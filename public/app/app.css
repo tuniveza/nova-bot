@@ -900,3 +900,78 @@ select option:checked { background: var(--accent); color: var(--on-accent); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ===================== Header: brand in the middle ===================== */
+/* Voice and music on the left, the brand centred, notifications and Options on the right */
+.top { display: grid; grid-template-columns: 1fr auto 1fr; }
+.top-left { justify-self: start; }
+.top-actions { justify-self: end; }
+.brand { order: 0; margin: 0; justify-self: center; text-align: center; padding: 2px 8px; }
+.brand-text { align-items: center; }
+
+/* ===================== Options sheet ===================== */
+.options-card { display: grid; gap: 6px; }
+.option-group { display: grid; gap: 10px; padding: 14px 0; border-top: 1px solid var(--line); }
+.option-group:first-of-type { border-top: 0; }
+.option-group > .kicker { margin: 0; }
+.option-row { display: grid; gap: 8px; justify-items: center; }
+.option-row > span, .option-switch > span { font-size: 14.5px; color: var(--text); }
+.option-row input[type="range"] { width: min(320px, 100%); accent-color: var(--hi); }
+.option-switch { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--glass); cursor: pointer; text-align: left; }
+.option-switch input { width: 44px; height: 26px; flex: none; accent-color: var(--hi); cursor: pointer; }
+.chips.wrap { flex-wrap: wrap; justify-content: center; }
+.option-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.option-action { justify-content: center; width: 100%; }
+.option-action svg { width: 18px; height: 18px; }
+
+/* ===================== Text alignment: centred (the default) ===================== */
+html[data-align="center"] main,
+html[data-align="center"] .card,
+html[data-align="center"] .quest-meta,
+html[data-align="center"] .quest-day,
+html[data-align="center"] .hint,
+html[data-align="center"] .empty,
+html[data-align="center"] .verify,
+html[data-align="center"] .suite-app,
+html[data-align="center"] .suite-head,
+html[data-align="center"] .sheet-card { text-align: center; }
+html[data-align="center"] .card-top { align-items: center; }
+html[data-align="center"] .card.has-delete .card-top,
+html[data-align="center"] .card.has-delete > .alert-when { padding-left: 44px; }
+html[data-align="center"] .actions { justify-content: center; }
+html[data-align="center"] .verify-lines { justify-items: center; }
+html[data-align="center"] .verify { border-left-width: 1px; border-top-width: 3px; }
+html[data-align="center"] .mission-head { flex-direction: column; text-align: center; }
+html[data-align="center"] .quest-day { display: block; }
+html[data-align="center"] .quest-day::after { display: none; }
+html[data-align="center"] .suite-head { display: grid; justify-items: center; position: relative; }
+html[data-align="center"] .suite-head > .icon-btn { position: absolute; right: 0; top: 0; }
+/* Left: the classic layout */
+html[data-align="left"] .card, html[data-align="left"] .quest-meta { text-align: left; }
+
+/* ===================== Text size ===================== */
+html[data-size="small"] body { zoom: 0.92; }
+html[data-size="large"] body { zoom: 1.12; }
+
+/* ===================== Animations off, starfield off ===================== */
+html[data-motion="calm"] *, html[data-motion="calm"] *::before, html[data-motion="calm"] *::after { animation: none !important; transition: none !important; }
+html[data-stars="off"] body::before { display: none; }
+
+/* Options sheet polish: proper on/off switches, plain-text labels, tidy buttons, centred heading */
+.option-switch, .option-switch > span { font-family: var(--f-body); text-transform: none; letter-spacing: normal; }
+.option-switch > span { font-size: 14.5px; line-height: 1.35; }
+.option-switch input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; position: relative; width: 46px; height: 26px; margin: 0; border-radius: 999px;
+  background: rgba(var(--muted-rgb), 0.25); border: 1px solid var(--line-strong); transition: background 0.25s ease;
+}
+.option-switch input[type="checkbox"]::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--text); box-shadow: 0 2px 6px rgba(var(--shadow-rgb), 0.5); transition: transform 0.25s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.option-switch input[type="checkbox"]:checked { background: var(--grad); border-color: transparent; box-shadow: 0 0 14px -4px var(--glow-accent); }
+.option-switch input[type="checkbox"]:checked::after { transform: translateX(20px); background: #fff; }
+.option-switch input[type="checkbox"]:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; }
+.option-action { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.12em; white-space: nowrap; min-height: 44px; gap: 8px; }
+.option-action span { font-family: inherit; }
+html[data-align="center"] .suite-head > div { justify-self: center; text-align: center; padding: 0 48px; }
+html[data-align="center"] .option-switch { text-align: left; }

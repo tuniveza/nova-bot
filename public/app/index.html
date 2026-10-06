@@ -123,6 +123,10 @@
       <button id="voice" class="icon-btn" type="button" aria-label="Voice command" title="Voice command">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
       </button>
+      <!-- Ambient music: soft, slowly changing electronic ambient, made on the phone -->
+      <button id="music" class="icon-btn" type="button" aria-label="Ambient music" aria-pressed="false" title="Ambient music">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+      </button>
     </div>
     <!-- The brand: tap it to see the other Nova suite apps (suite.js) -->
     <button id="brand" class="brand" type="button" aria-haspopup="dialog" aria-controls="suite-sheet" title="Nova suite">
@@ -130,20 +134,17 @@
       <span class="brand-text"><span class="suite-kicker">Nova suite<span class="kicker-more"> · Novacane</span></span><span class="wordmark small">Nova Hub</span></span>
     </button>
     <div class="top-actions">
-      <!-- Ambient music: soft, slowly changing electronic ambient, made on the phone -->
-      <button id="music" class="icon-btn" type="button" aria-label="Ambient music" aria-pressed="false" title="Ambient music">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
-      </button>
+
       <!-- Notifications: opens the "turn on notifications" panel -->
       <button id="bell" class="icon-btn" type="button" aria-label="Notifications" title="Notifications">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
       </button>
-      <button id="refresh" class="icon-btn" type="button" aria-label="Refresh" title="Refresh">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+      <!-- Options: theme, text, motion, sounds, starting tab, refresh and sign out (options.js) -->
+      <button id="options-btn" class="icon-btn" type="button" aria-haspopup="dialog" aria-controls="options-sheet" aria-label="Options" title="Options">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
       </button>
-      <button id="logout" class="icon-btn" type="button" aria-label="Sign out" title="Sign out">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/></svg>
-      </button>
+
+
     </div>
   </header>
 
@@ -411,7 +412,62 @@
 
 <div id="toast" class="toast" role="status" hidden></div>
 
+<!-- Options: how Nova Hub looks and behaves on this device (options.js; saved on this device) -->
+<div id="options-sheet" class="sheet options-sheet" hidden>
+  <div class="sheet-card options-card" role="dialog" aria-modal="true" aria-labelledby="options-title">
+    <div class="suite-head">
+      <div>
+        <span class="kicker">Nova Hub</span>
+        <h3 id="options-title">Options</h3>
+      </div>
+      <button id="options-close" class="icon-btn" type="button" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+
+    <section class="option-group">
+      <p class="kicker">Theme</p>
+      <div class="theme-list" data-theme-list></div>
+    </section>
+
+    <section class="option-group">
+      <p class="kicker">Text</p>
+      <div class="option-row"><span>Alignment</span><div class="chips" data-option="align"><button class="chip" type="button" data-value="center">Centred</button><button class="chip" type="button" data-value="left">Left</button></div></div>
+      <div class="option-row"><span>Size</span><div class="chips" data-option="size"><button class="chip" type="button" data-value="small">Small</button><button class="chip" type="button" data-value="normal">Normal</button><button class="chip" type="button" data-value="large">Large</button></div></div>
+      <div class="option-row"><span>Times on alerts</span><div class="chips" data-option="times"><button class="chip" type="button" data-value="both">Exact + ago</button><button class="chip" type="button" data-value="ago">Just "ago"</button></div></div>
+    </section>
+
+    <section class="option-group">
+      <p class="kicker">Look and feel</p>
+      <label class="option-switch"><span>Animations</span><input type="checkbox" role="switch" data-option="motion"></label>
+      <label class="option-switch"><span>Drifting starfield</span><input type="checkbox" role="switch" data-option="stars"></label>
+    </section>
+
+    <section class="option-group">
+      <p class="kicker">Sound</p>
+      <label class="option-switch"><span>Ping and banner when an alert arrives (app open)</span><input type="checkbox" role="switch" data-option="pings"></label>
+      <div class="option-row"><span>Ambient music volume</span><input type="range" min="0" max="100" step="1" data-option="volume" aria-label="Ambient music volume"></div>
+    </section>
+
+    <section class="option-group">
+      <p class="kicker">Starting tab</p>
+      <div class="chips wrap" data-option="startTab"><button class="chip" type="button" data-value="enquiries">Enquiries</button><button class="chip" type="button" data-value="chats">Chats</button><button class="chip" type="button" data-value="calendar">Calendar</button><button class="chip" type="button" data-value="quests">Quests</button><button class="chip" type="button" data-value="alerts">Alerts</button><button class="chip" type="button" data-value="bot">NovaBot</button></div>
+    </section>
+
+    <section class="option-group option-actions">
+      <button id="refresh" class="btn ghost option-action" type="button" aria-label="Refresh" title="Refresh">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+      <span>Refresh everything</span></button>
+      <button id="logout" class="btn ghost option-action" type="button" aria-label="Sign out" title="Sign out">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h10"/></svg>
+      <span>Sign out</span></button>
+      <button id="options-reset" class="btn ghost option-action" type="button"><span>Reset options</span></button>
+    </section>
+  </div>
+</div>
+
 <script src="/app/ambient.js"></script>
+<script src="/app/options.js"></script>
 <script src="/app/suite.js"></script>
 <script src="/app/app.js"></script>
 </body>

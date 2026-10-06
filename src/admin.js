@@ -788,6 +788,17 @@ const ADMIN_STYLE = `
     .open-hub { margin-left: 0; }
     nav.tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
   }
+  /* Centred (the default, as in Nova Hub's Options; "left" brings back the classic layout) */
+  html[data-align="center"] header.top { justify-content: center; text-align: center; }
+  html[data-align="center"] .brand { flex-direction: column; gap: 6px; }
+  html[data-align="center"] .open-hub { margin-left: 0; }
+  html[data-align="center"] main, html[data-align="center"] .card, html[data-align="center"] th, html[data-align="center"] td { text-align: center; }
+  html[data-align="center"] .stats, html[data-align="center"] .email-status, html[data-align="center"] .booklink form, html[data-align="center"] .link-made { justify-content: center; }
+  html[data-align="center"] .enquiry header { flex-direction: column; align-items: center; }
+  html[data-align="center"] .theme-list { margin-left: auto; margin-right: auto; }
+  html[data-align="center"] nav.tabs { justify-content: center; }
+  html[data-size="small"] body { zoom: 0.92; }
+  html[data-size="large"] body { zoom: 1.12; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 `;
 

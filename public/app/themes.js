@@ -105,3 +105,55 @@
 
   window.NovaThemes = { list: list.map(({ id, name, preview }) => ({ id, name, preview })), current, set };
 })();
+
+// Nova Hub options: how the app looks and behaves on this device (chosen in the Options sheet,
+// options.js). Applied here too, before the page is drawn, so there's no jump when it opens.
+// window.NovaOptions = { get(), set(changes), reset(), defaults }
+(() => {
+  "use strict";
+  const KEY = "novahub-options";
+  const defaults = { align: "center", size: "normal", times: "both", motion: true, stars: true, pings: true, volume: 40, startTab: "enquiries" };
+  const root = document.documentElement;
+
+  // The saved options, with anything missing filled in
+  function get() {
+    try {
+      return { ...defaults, ...JSON.parse(localStorage.getItem(KEY) || "{}") };
+    } catch (err) {
+      return { ...defaults };
+    }
+  }
+
+  // Put them on the page (as attributes the styles look at)
+  function apply(o) {
+    root.setAttribute("data-align", o.align === "left" ? "left" : "center");
+    root.setAttribute("data-size", ["small", "large"].includes(o.size) ? o.size : "normal");
+    root.setAttribute("data-motion", o.motion === false ? "calm" : "full");
+    root.setAttribute("data-stars", o.stars === false ? "off" : "on");
+  }
+
+  // Change some, remember them, and tell anyone listening
+  function set(changes) {
+    const o = { ...get(), ...changes };
+    try {
+      localStorage.setItem(KEY, JSON.stringify(o));
+    } catch (err) {}
+    apply(o);
+    window.dispatchEvent(new CustomEvent("novaoptionschange", { detail: o }));
+    return o;
+  }
+
+  function reset() {
+    try {
+      localStorage.removeItem(KEY);
+    } catch (err) {}
+    apply(defaults);
+    window.dispatchEvent(new CustomEvent("novaoptionschange", { detail: { ...defaults } }));
+    return { ...defaults };
+  }
+
+  apply(get());
+  // Changed in another tab or window: follow it
+  window.addEventListener("storage", (e) => e.key === KEY && apply(get()));
+  window.NovaOptions = { get, set, reset, defaults: { ...defaults } };
+})();

@@ -6,7 +6,9 @@
 
   const $ = (id) => document.getElementById(id);
   let enquiryFilter = "all";
-  let currentView = "enquiries";
+  // The tab Nova Hub opens on (chosen in Options; Enquiries unless changed)
+  const VIEWS = ["enquiries", "chats", "calendar", "quests", "alerts", "bot"];
+  let currentView = window.NovaOptions && VIEWS.includes(window.NovaOptions.get().startTab) ? window.NovaOptions.get().startTab : "enquiries";
   let sessions = null; // session types for booking links
   let sheetEnquiry = null;
   const botHistory = [];
@@ -980,6 +982,9 @@
     return box;
   }
 
+  // Changing how times show (in Options) redraws the Alerts straight away
+  window.addEventListener("novaoptionschange", () => currentView === "alerts" && loadAlerts());
+
   // One alert, drawn as a card
   function alertCard(n) {
     // The card (with room for its delete button)
@@ -998,7 +1003,7 @@
     const top = el("div", "card-top");
     top.append(el("h3", "card-title", n.title));
     // When it was sent: the exact moment (to the second) and how long ago
-    const exact = el("p", "alert-when", exactTime(n.created_at) + " · " + ago(n.created_at));
+    const exact = el("p", "alert-when", window.NovaOptions && window.NovaOptions.get().times === "ago" ? ago(n.created_at) : exactTime(n.created_at) + " · " + ago(n.created_at));
     // Then every detail (coloured), and how many phones it reached
     card.append(remove, el("span", "alert-kind " + kind, KIND_LABELS[kind] || "Alert"), top, exact, richDetails(n.body), el("p", "card-foot", `Alert #${n.id} · delivered to ${n.phones} ${n.phones === 1 ? "phone" : "phones"}`));
     // A booking in Acuity: check it with Acuity itself, so a real booking can't be mistaken for a test or a fake
@@ -1362,8 +1367,11 @@
     navigator.serviceWorker.addEventListener("message", (event) => {
       // A notification just arrived: ping, show the banner and refresh the Alerts
       if (event.data?.type === "nova-push") {
-        ping(event.data.kind || event.data.source);
-        banner(event.data);
+        // Unless pings are switched off in Options
+        if (!window.NovaOptions || window.NovaOptions.get().pings !== false) {
+          ping(event.data.kind || event.data.source);
+          banner(event.data);
+        }
         loadAlerts();
         if (event.data.source === "quest" || event.data.source === "mission") loadQuests();
       }
