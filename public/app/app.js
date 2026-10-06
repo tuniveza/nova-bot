@@ -994,12 +994,11 @@
     // What it's about, as a coloured label ("Booking", "Nova Quest", "Test"...)
     const kind = n.kind || "other";
     card.classList.add("kind-" + kind);
-    // The top: title, then how long ago
+    // The top: the title
     const top = el("div", "card-top");
-    // Put the title and time in
-    top.append(el("h3", "card-title", n.title), el("span", "card-meta", ago(n.created_at)));
-    // The exact moment it was sent, to the second
-    const exact = el("p", "alert-when", exactTime(n.created_at));
+    top.append(el("h3", "card-title", n.title));
+    // When it was sent: the exact moment (to the second) and how long ago
+    const exact = el("p", "alert-when", exactTime(n.created_at) + " · " + ago(n.created_at));
     // Then every detail (coloured), and how many phones it reached
     card.append(remove, el("span", "alert-kind " + kind, KIND_LABELS[kind] || "Alert"), top, exact, richDetails(n.body), el("p", "card-foot", `Alert #${n.id} · delivered to ${n.phones} ${n.phones === 1 ? "phone" : "phones"}`));
     // A booking in Acuity: check it with Acuity itself, so a real booking can't be mistaken for a test or a fake

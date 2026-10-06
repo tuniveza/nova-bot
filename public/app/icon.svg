@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- The Nova Hub mark: a cosmic H, in the Nova suite family (same sky, stars, orbit, sparkle and planet as Nova Agent's A) -->
+  <defs>
+    <radialGradient id="sky" cx="50%" cy="15%" r="95%"><stop offset="0" stop-color="#B01D68"/><stop offset=".42" stop-color="#25194D"/><stop offset="1" stop-color="#06040D"/></radialGradient>
+    <radialGradient id="neb" cx="88%" cy="92%" r="55%"><stop offset="0" stop-color="#7A1F86" stop-opacity=".75"/><stop offset="1" stop-color="#7A1F86" stop-opacity="0"/></radialGradient>
+    <linearGradient id="letter" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD1EA"/><stop offset=".5" stop-color="#FF5FA8"/><stop offset="1" stop-color="#C7A4FF"/></linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="14"/></filter>
+    <filter id="twinkle" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="3"/></filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <rect width="512" height="512" fill="url(#neb)"/>
+  <!-- stars -->
+  <g fill="#fff"><circle cx="70" cy="90" r="2.6" opacity=".8"/><circle cx="440" cy="70" r="2" opacity=".6"/><circle cx="462" cy="330" r="2.4" opacity=".6"/><circle cx="80" cy="420" r="1.8" opacity=".55"/><circle cx="290" cy="470" r="1.6" opacity=".5"/><circle cx="150" cy="200" r="1.4" opacity=".45"/><circle cx="392" cy="150" r="1.6" opacity=".5"/><circle cx="44" cy="290" r="1.2" opacity=".5"/></g>
+  <!-- the back half of the orbit, faint, behind the letter -->
+  <ellipse cx="256" cy="262" rx="196" ry="50" fill="none" stroke="#FFD1EA" stroke-opacity=".35" stroke-width="3.5" stroke-dasharray="3 11" stroke-linecap="round" transform="rotate(-14 256 262)"/>
+  <!-- the H: a soft glow, then the letter -->
+  <path d="M146 380V132h60v96h100v-96h60v248h-60V284H206v96z" fill="#FF5FA8" opacity=".75" filter="url(#glow)"/>
+  <path d="M146 380V132h60v96h100v-96h60v248h-60V284H206v96z" fill="url(#letter)"/>
+  <path d="M146 380V132h60v96h100v-96h60v248h-60V284H206v96z" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="2"/>
+  <!-- the front half of the orbit, passing over the letter -->
+  <path d="M65.8 309.4A196 50-14 0 0 446.2 214.6" fill="none" stroke="#FFD1EA" stroke-opacity=".85" stroke-width="4" stroke-dasharray="3 11" stroke-linecap="round"/>
+  <!-- the sparkle, in the notch at the top of the H -->
+  <g transform="translate(256 168)"><circle r="14" fill="#FF5FA8" opacity=".85" filter="url(#twinkle)"/><path d="M0-24 4-4 24 0 4 4 0 24-4 4-24 0-4-4z" fill="#fff"/></g>
+  <!-- the planet riding the orbit -->
+  <circle cx="410" cy="257" r="9" fill="#fff" opacity=".95"/>
+</svg>

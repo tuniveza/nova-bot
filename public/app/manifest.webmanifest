@@ -1,16 +1,17 @@
 {
   "name": "Nova Hub",
   "short_name": "Nova Hub",
-  "description": "Staff hub for Novacane Studios: enquiries, chats and NovaBot.",
+  "description": "Staff hub for Novacane Studios (enquiries, chats, bookings, Nova Quests and alerts), part of the Nova suite.",
   "start_url": "/app/",
   "scope": "/app/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#140b1c",
-  "theme_color": "#140b1c",
+  "background_color": "#06040D",
+  "theme_color": "#06040D",
   "icons": [
+    { "src": "/app/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "/app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/app/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

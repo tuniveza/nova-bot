@@ -1,0 +1,221 @@
+/* Nova Hub themes: every colour the app uses, as custom properties.
+   :root is the default theme ("cosmic", the Nova suite's magenta and purple); each
+   :root[data-theme="..."] block below swaps the colours for another theme.
+   Only colours, gradients, glows and fonts live here (no layout), so other pages on the
+   same site (the /admin pages) can load this file and look the same.
+   Colours that are used see-through come twice: as a colour (--hi) and as plain
+   "r, g, b" numbers (--hi-rgb), for rgba(var(--hi-rgb), 0.4). */
+
+/* ===== Cosmic (default): the Nova suite ===== */
+:root {
+  color-scheme: dark;
+  /* Fonts */
+  --f-display: "Archivo", "Arial Black", sans-serif;
+  --f-body: "Saira", system-ui, sans-serif;
+  --f-mono: "Source Code Pro", ui-monospace, monospace;
+
+  /* Surfaces, darkest to lightest */
+  --void: #06040D; --void-rgb: 6, 4, 13;
+  --deep: #100816; --deep-rgb: 16, 8, 22;
+  --panel: #1C1129; --panel-rgb: 28, 17, 41;
+  --panel-2: #241640; --panel-2-rgb: 36, 22, 64;
+  /* Text */
+  --text: #EBD3E7; --text-rgb: 235, 211, 231;
+  --muted: #B997B5; --muted-rgb: 185, 151, 181;
+  --bright: #F6ECFF;
+  /* Accents: the button gradient runs accent, accent-mid, accent-2; accent-3 is the deep nebula colour */
+  --accent: #B01D68; --accent-rgb: 176, 29, 104;
+  --accent-mid: #951E77;
+  --accent-2: #7A1F86; --accent-2-rgb: 122, 31, 134;
+  --accent-3: #25194D; --accent-3-rgb: 37, 25, 77;
+  /* Highlights: the bright accent, its pale tint, a second hue, and gold for times */
+  --hi: #FF5FA8; --hi-rgb: 255, 95, 168;
+  --soft: #FFD1EA; --soft-rgb: 255, 209, 234;
+  --lilac: #C7A4FF; --lilac-rgb: 199, 164, 255;
+  --gold: #F2D9A0; --gold-rgb: 242, 217, 160;
+  --rose: #FF8CC6;
+  /* Text on top of the accent gradient, and on top of the bright highlight */
+  --on-accent: #FFFFFF;
+  --on-hi: #1C0A1E;
+  /* Status colours: good, careful, wrong */
+  --ok: #5CFFC0; --ok-rgb: 92, 255, 192;
+  --warn: #FFB86B; --warn-rgb: 255, 184, 107;
+  --bad: #FF6B81; --bad-rgb: 255, 107, 129;
+  /* Glows, stars and shadows */
+  --glow-rgb: 255, 95, 168;
+  --glow-accent: #B01D68;
+  --star-rgb: 255, 255, 255;
+  --shadow: #000; --shadow-rgb: 0, 0, 0;
+}
+
+/* ===== Ember: orange-red fire on charcoal-maroon ===== */
+:root[data-theme="ember"] {
+  --void: #0B0505; --void-rgb: 11, 5, 5;
+  --deep: #150908; --deep-rgb: 21, 9, 8;
+  --panel: #21100C; --panel-rgb: 33, 16, 12;
+  --panel-2: #2D150F; --panel-2-rgb: 45, 21, 15;
+  --text: #F5DFD4; --text-rgb: 245, 223, 212;
+  --muted: #C29F90; --muted-rgb: 194, 159, 144;
+  --bright: #FFF1E8;
+  --accent: #D9381A; --accent-rgb: 217, 56, 26;
+  --accent-mid: #B52A14;
+  --accent-2: #8A1C0E; --accent-2-rgb: 138, 28, 14;
+  --accent-3: #3B130B; --accent-3-rgb: 59, 19, 11;
+  --hi: #FF7A3D; --hi-rgb: 255, 122, 61;
+  --soft: #FFD8C2; --soft-rgb: 255, 216, 194;
+  --lilac: #FFC069; --lilac-rgb: 255, 192, 105;
+  --gold: #FFE1A0; --gold-rgb: 255, 225, 160;
+  --rose: #FFA27A;
+  --on-accent: #FFFFFF;
+  --on-hi: #2A0D05;
+  --warn: #FFD84D; --warn-rgb: 255, 216, 77;
+  --bad: #FF5C7A; --bad-rgb: 255, 92, 122;
+  --glow-rgb: 255, 90, 40;
+  --glow-accent: #FF4D1F;
+  --star-rgb: 255, 226, 200;
+}
+
+/* ===== Aurora: teal and green lights on deep navy ===== */
+:root[data-theme="aurora"] {
+  --void: #030A0C; --void-rgb: 3, 10, 12;
+  --deep: #061316; --deep-rgb: 6, 19, 22;
+  --panel: #0B1D21; --panel-rgb: 11, 29, 33;
+  --panel-2: #10282D; --panel-2-rgb: 16, 40, 45;
+  --text: #D6F0EA; --text-rgb: 214, 240, 234;
+  --muted: #8DB5AC; --muted-rgb: 141, 181, 172;
+  --bright: #EEFFFA;
+  --accent: #0B7A66; --accent-rgb: 11, 122, 102;
+  --accent-mid: #0F6B72;
+  --accent-2: #1A5C80; --accent-2-rgb: 26, 92, 128;
+  --accent-3: #0B2A3A; --accent-3-rgb: 11, 42, 58;
+  --hi: #3DF5B8; --hi-rgb: 61, 245, 184;
+  --soft: #C9FFEE; --soft-rgb: 201, 255, 238;
+  --lilac: #8FD0FF; --lilac-rgb: 143, 208, 255;
+  --gold: #E6F59A; --gold-rgb: 230, 245, 154;
+  --rose: #7FF0D0;
+  --on-accent: #FFFFFF;
+  --on-hi: #04211A;
+  --ok: #B6FF6B; --ok-rgb: 182, 255, 107;
+  --warn: #FFC56B; --warn-rgb: 255, 197, 107;
+  --glow-rgb: 61, 245, 184;
+  --glow-accent: #0FB38F;
+  --star-rgb: 220, 255, 245;
+}
+
+/* ===== Ocean: blues and cyan ===== */
+:root[data-theme="ocean"] {
+  --void: #030713; --void-rgb: 3, 7, 19;
+  --deep: #07101F; --deep-rgb: 7, 16, 31;
+  --panel: #0C1830; --panel-rgb: 12, 24, 48;
+  --panel-2: #11203D; --panel-2-rgb: 17, 32, 61;
+  --text: #D8E6F7; --text-rgb: 216, 230, 247;
+  --muted: #92A9C7; --muted-rgb: 146, 169, 199;
+  --bright: #EEF6FF;
+  --accent: #1B5FD9; --accent-rgb: 27, 95, 217;
+  --accent-mid: #1A4DB8;
+  --accent-2: #1E3A8A; --accent-2-rgb: 30, 58, 138;
+  --accent-3: #0D1B3D; --accent-3-rgb: 13, 27, 61;
+  --hi: #4CC9FF; --hi-rgb: 76, 201, 255;
+  --soft: #D2F0FF; --soft-rgb: 210, 240, 255;
+  --lilac: #A3AFFF; --lilac-rgb: 163, 175, 255;
+  --gold: #F2D9A0; --gold-rgb: 242, 217, 160;
+  --rose: #7FD8FF;
+  --on-accent: #FFFFFF;
+  --on-hi: #04162A;
+  --glow-rgb: 76, 201, 255;
+  --glow-accent: #1B6BFF;
+  --star-rgb: 220, 236, 255;
+}
+
+/* ===== Gold: black and champagne gold ===== */
+:root[data-theme="gold"] {
+  --void: #070605; --void-rgb: 7, 6, 5;
+  --deep: #0F0D0A; --deep-rgb: 15, 13, 10;
+  --panel: #1A1712; --panel-rgb: 26, 23, 18;
+  --panel-2: #24201A; --panel-2-rgb: 36, 32, 26;
+  --text: #EEE6D6; --text-rgb: 238, 230, 214;
+  --muted: #B5A88F; --muted-rgb: 181, 168, 143;
+  --bright: #FFF9EC;
+  --accent: #E2C27A; --accent-rgb: 226, 194, 122;
+  --accent-mid: #C9A24F;
+  --accent-2: #9C7A36; --accent-2-rgb: 156, 122, 54;
+  --accent-3: #2B2316; --accent-3-rgb: 43, 35, 22;
+  --hi: #F0D08A; --hi-rgb: 240, 208, 138;
+  --soft: #FFF3D6; --soft-rgb: 255, 243, 214;
+  --lilac: #D9D4CC; --lilac-rgb: 217, 212, 204;
+  --gold: #F5D98F; --gold-rgb: 245, 217, 143;
+  --rose: #E8C98A;
+  --on-accent: #1A1408;
+  --on-hi: #1A1408;
+  --ok: #8EE6B0; --ok-rgb: 142, 230, 176;
+  --bad: #FF7A7A; --bad-rgb: 255, 122, 122;
+  --glow-rgb: 240, 200, 120;
+  --glow-accent: #8A6A2A;
+  --star-rgb: 255, 240, 210;
+  /* Gold is bright: a gentler sky */
+  --nebula:
+    radial-gradient(60% 40% at 8% 0%, rgba(var(--accent-2-rgb), 0.26), transparent 70%),
+    radial-gradient(50% 45% at 100% 22%, rgba(var(--accent-rgb), 0.08), transparent 70%),
+    radial-gradient(80% 50% at 50% 108%, rgba(var(--accent-3-rgb), 0.9), transparent 70%);
+}
+
+/* ===== Mono: graphite and white, hardly any glow ===== */
+:root[data-theme="mono"] {
+  --void: #060607; --void-rgb: 6, 6, 7;
+  --deep: #0D0D10; --deep-rgb: 13, 13, 16;
+  --panel: #17171B; --panel-rgb: 23, 23, 27;
+  --panel-2: #202026; --panel-2-rgb: 32, 32, 38;
+  --text: #E9E9EE; --text-rgb: 233, 233, 238;
+  --muted: #A2A2AD; --muted-rgb: 162, 162, 173;
+  --bright: #FAFAFC;
+  --accent: #F2F2F5; --accent-rgb: 242, 242, 245;
+  --accent-mid: #DCDCE2;
+  --accent-2: #B9B9C2; --accent-2-rgb: 185, 185, 194;
+  --accent-3: #1A1A20; --accent-3-rgb: 26, 26, 32;
+  --hi: #FFFFFF; --hi-rgb: 255, 255, 255;
+  --soft: #F4F4F7; --soft-rgb: 244, 244, 247;
+  --lilac: #B4B9C8; --lilac-rgb: 180, 185, 200;
+  --gold: #DDD5C0; --gold-rgb: 221, 213, 192;
+  --rose: #D0D0D8;
+  --on-accent: #111114;
+  --on-hi: #111114;
+  --glow-rgb: 120, 120, 132;
+  --glow-accent: #000;
+  --star-rgb: 225, 225, 235;
+  --nebula:
+    radial-gradient(60% 40% at 8% 0%, rgba(255, 255, 255, 0.06), transparent 70%),
+    radial-gradient(80% 50% at 50% 108%, rgba(60, 60, 72, 0.45), transparent 70%);
+}
+
+/* ===== Built from the colours above (each theme gets its own automatically) ===== */
+:root {
+  /* The button fill */
+  --grad: linear-gradient(120deg, var(--accent) 0%, var(--accent-mid) 55%, var(--accent-2) 100%);
+  /* The shimmering title text (repeats end-to-start so it can flow forever) */
+  --title-grad: linear-gradient(100deg, var(--soft) 0%, var(--hi) 18%, var(--lilac) 36%, #fff 50%, var(--lilac) 64%, var(--hi) 82%, var(--soft) 100%);
+  /* The gradient hairline round glass panels */
+  --edge: linear-gradient(135deg, rgba(var(--accent-rgb), 0.6), rgba(var(--accent-2-rgb), 0.3) 50%, rgba(var(--hi-rgb), 0.35));
+  /* Hairlines: quiet, and lit */
+  --line: rgba(var(--text-rgb), 0.14);
+  --line-strong: rgba(var(--hi-rgb), 0.4);
+  /* See-through glass panels */
+  --glass: rgba(var(--panel-rgb), 0.72);
+  --glass-2: rgba(var(--panel-2-rgb), 0.6);
+  /* Glow colour for shadows */
+  --glow: rgba(var(--glow-rgb), 0.6);
+  /* The coloured clouds in the page background (put var(--void) after it) */
+  --nebula:
+    radial-gradient(60% 40% at 8% 0%, rgba(var(--accent-rgb), 0.32), transparent 70%),
+    radial-gradient(50% 45% at 100% 22%, rgba(var(--accent-2-rgb), 0.26), transparent 70%),
+    radial-gradient(80% 50% at 50% 108%, rgba(var(--accent-3-rgb), 0.9), transparent 70%);
+  /* Older names, kept so nothing that still uses them breaks */
+  --bg: var(--void);
+  --pink: var(--hi);
+}
+/* Mono's own versions of some of these (a theme block always wins over plain :root) */
+:root[data-theme="mono"] {
+  --edge: linear-gradient(135deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.18));
+  --title-grad: linear-gradient(100deg, #FFFFFF 0%, #C9C9D2 30%, #FFFFFF 50%, #C9C9D2 70%, #FFFFFF 100%);
+  --line-strong: rgba(255, 255, 255, 0.32);
+  --glow: rgba(255, 255, 255, 0.12);
+}

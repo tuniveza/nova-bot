@@ -19,7 +19,7 @@
 //
 // Protected by the ADMIN_PASSWORD secret (any username).
 
-import { checkAcuity, escapeHtml, isValidCodeFormat, normaliseCode, PAGE_STYLE } from "./referrals.js";
+import { checkAcuity, escapeHtml, isValidCodeFormat, normaliseCode } from "./referrals.js";
 import { checkedLinks, readLinks, saveLinks } from "./links.js";
 import { emailIsSetUp, emailRecipients, sendTestEmail } from "./enquiries.js";
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
@@ -669,18 +669,7 @@ ${groups.length ? sections : `<p class="card">The list is empty.</p>`}
 <p class="dim small">The list is kept in the database, not in the code (the code is public). Edit it here as JSON: groups, each with a title and items (name, url, kind: live, machine, testing, local or planned, and an optional note).</p>
 <form method="post" action="/admin/links"><textarea name="json" rows="18" style="width:100%;font-family:monospace;font-size:12px">${e(JSON.stringify(await readLinks(env), null, 2))}</textarea>
 <p><button class="btn" type="submit">Save the list</button></p></form></details>
-<style>
-  table.links td.url { word-break: break-all; font-size: 13px; }
-  table.links .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; white-space: nowrap; border: 1px solid rgba(229, 194, 224, 0.3); }
-  table.links .pill.live { background: rgba(92, 255, 192, 0.12); border-color: rgba(92, 255, 192, 0.45); color: #8dffd6; }
-  table.links .pill.testing { background: rgba(255, 184, 107, 0.12); border-color: rgba(255, 184, 107, 0.45); color: #ffc98f; }
-  table.links .pill.local { background: rgba(199, 164, 255, 0.12); border-color: rgba(199, 164, 255, 0.45); color: #d9c2ff; }
-  table.links .pill.planned { opacity: 0.7; }
-  table.links .state { white-space: nowrap; font-size: 13px; }
-  table.links .state.up { color: #8dffd6; }
-  table.links .state.down { color: #ff8a9a; }
-  table.links .state.unchecked { opacity: 0.65; }
-</style>`;
+`;
   return page(env, "Links", url, body);
 }
 
@@ -694,6 +683,113 @@ async function saveLinksForm(env, form) {
   const saved = await saveLinks(env, raw);
   return back(`Saved: ${saved.groups.reduce((n, g) => n + g.items.length, 0)} links in ${saved.groups.length} groups.`, "/admin/links");
 }
+
+// The admin pages' look: Nova Hub's (every colour comes from /app/themes.css)
+const ADMIN_STYLE = `
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; font-family: var(--f-body); color: var(--text);
+    background: var(--nebula), var(--void); background-attachment: fixed;
+    transition: background-color 0.4s ease, color 0.4s ease;
+  }
+  a { color: var(--hi); }
+  input, button, select, textarea { font: inherit; color: inherit; }
+  .kicker { display: block; font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); }
+  /* The header: brand, tabs, a way into Nova Hub */
+  header.top {
+    position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 12px max(16px, 3vw); background: rgba(var(--void-rgb), 0.72); backdrop-filter: blur(14px) saturate(1.4);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+  .brand img { width: 40px; height: 40px; border-radius: 11px; box-shadow: 0 0 22px rgba(var(--glow-rgb), 0.45); }
+  .wordmark { display: block; font-family: var(--f-display); font-stretch: 125%; font-weight: 900; text-transform: uppercase; font-size: 18px; line-height: 1.1;
+    background: var(--title-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .wordmark em { font-style: normal; opacity: 0.7; font-size: 0.7em; letter-spacing: 0.08em; }
+  nav.tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass); }
+  nav.tabs a { padding: 7px 14px; border-radius: 999px; text-decoration: none; color: var(--muted); font-family: var(--f-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
+  nav.tabs a:hover { color: var(--bright); }
+  nav.tabs a.current { background: var(--grad); color: var(--on-accent); box-shadow: 0 6px 18px -8px var(--glow-accent); }
+  .open-hub { margin-left: auto; font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; text-decoration: none; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--text); }
+  main { max-width: 1200px; margin: 0 auto; padding: 28px max(16px, 3vw) 60px; }
+  h1, h2 { font-family: var(--f-display); font-stretch: 125%; font-weight: 900; text-transform: uppercase; letter-spacing: 0.01em;
+    background: var(--title-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  h1 { font-size: 30px; margin: 0 0 16px; }
+  h2 { font-size: 20px; margin: 36px 0 12px; }
+  /* Glass cards with a gradient hairline */
+  .card, .stat {
+    border: 1px solid transparent; border-radius: 22px; padding: 16px; margin-bottom: 14px; overflow-x: auto;
+    background: linear-gradient(var(--glass), var(--glass)) padding-box, var(--edge) border-box;
+    box-shadow: 0 18px 50px -30px rgba(var(--shadow-rgb), 0.9);
+  }
+  .stats { display: flex; flex-wrap: wrap; gap: 12px; }
+  .stat { min-width: 150px; margin: 0; padding: 14px 20px; font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+  .stat b { display: block; font-family: var(--f-display); font-stretch: 112%; font-size: 28px; color: var(--bright); }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th { text-align: left; font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:hover td { background: rgba(var(--hi-rgb), 0.04); }
+  td.num { font-variant-numeric: tabular-nums; font-family: var(--f-mono); }
+  tr.canceled td { opacity: 0.5; }
+  .dim { color: var(--muted); }
+  .small { font-size: 13px; }
+  .warn { color: var(--warn); }
+  .notice { border-radius: 16px; padding: 12px 16px; color: var(--bright); background: rgba(var(--hi-rgb), 0.14); border: 1px solid rgba(var(--hi-rgb), 0.4); }
+  input[type=text], input:not([type]), select, textarea {
+    width: 100%; padding: 11px 14px; border-radius: 14px; border: 1px solid var(--line-strong); background: rgba(var(--void-rgb), 0.55); color: var(--bright);
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--hi); outline-offset: 1px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border: 0; border-radius: 999px; cursor: pointer; text-decoration: none;
+    background: var(--grad); color: var(--on-accent); font-family: var(--f-mono); font-weight: 600; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+    box-shadow: 0 8px 24px -10px var(--glow-accent); transition: filter 0.2s, transform 0.15s;
+  }
+  .btn:hover { filter: brightness(1.12); }
+  .btn:active { transform: scale(0.98); }
+  .btn.ghost { background: transparent; border: 1px solid var(--line-strong); color: var(--text); box-shadow: none; }
+  .btn.small { padding: 6px 12px; font-size: 11px; }
+  .btn:focus-visible { outline: 2px solid var(--hi); outline-offset: 3px; }
+  .add { display: grid; grid-template-columns: 1fr 1.5fr 2fr auto; gap: 10px; margin-top: 14px; }
+  .filters a { margin-right: 14px; font-family: var(--f-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .filters a.current { color: var(--bright); font-weight: 700; text-decoration: none; }
+  .booklink summary, details > summary { cursor: pointer; color: var(--bright); font-weight: 600; }
+  .booklink form, .link-made { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .booklink select { flex: 1; min-width: 220px; }
+  .link-made input { flex: 1; min-width: 260px; font-size: 13px; }
+  .email-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .enquiry header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+  .enquiry.done { opacity: 0.55; }
+  .details { white-space: pre-wrap; color: var(--bright); }
+  .transcript .line { margin: 0 0 14px; }
+  .transcript .line p { margin: 4px 0 0; white-space: pre-wrap; }
+  .transcript .visitor p { color: var(--bright); }
+  code { font-family: var(--f-mono); font-size: 0.92em; }
+  /* Theme picker at the bottom (drawn by /app/themes.js) */
+  .theme-bar { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .theme-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-top: 10px; max-width: 820px; }
+  .theme-swatch { display: grid; gap: 6px; padding: 6px; border-radius: 14px; border: 1px solid var(--line); background: var(--glass); cursor: pointer; text-align: left; color: var(--text); }
+  .theme-swatch[aria-checked="true"], .theme-swatch.active, .theme-swatch[aria-pressed="true"] { border-color: var(--hi); box-shadow: 0 0 0 1px var(--hi), 0 0 18px -6px var(--glow-accent); }
+  .theme-preview { display: block; height: 34px; border-radius: 9px; }
+  .theme-name { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
+  /* Links page */
+  table.links td.url { word-break: break-all; font-size: 13px; }
+  table.links .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.06em; white-space: nowrap; border: 1px solid var(--line-strong); color: var(--muted); }
+  table.links .pill.live { border-color: rgba(var(--ok-rgb, 92, 255, 192), 0.5); color: var(--ok); }
+  table.links .pill.testing { border-color: var(--warn); color: var(--warn); }
+  table.links .pill.local { border-color: var(--lilac); color: var(--lilac); }
+  table.links .pill.planned { opacity: 0.7; }
+  table.links .state { white-space: nowrap; font-family: var(--f-mono); font-size: 12px; }
+  table.links .state.up { color: var(--ok); }
+  table.links .state.down { color: var(--bad); }
+  table.links .state.unchecked { color: var(--muted); }
+  @media (max-width: 760px) {
+    .add { grid-template-columns: 1fr; }
+    .enquiry header { flex-direction: column; }
+    .open-hub { margin-left: 0; }
+    nav.tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+`;
 
 // The page around each admin section, with the tabs at the top
 async function page(env, title, url, body) {
@@ -711,58 +807,39 @@ async function page(env, title, url, body) {
     .map(([label, href]) => `<a href="${href}" class="${label.startsWith(title) ? "current" : ""}">${e(label)}</a>`)
     .join("");
 
+  // The page, in Nova Hub's look: the same theme colours (/app/themes.css) and theme picker
+  // (/app/themes.js) as the app, so a theme picked in either shows in both
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>${e(title)} | Novacane admin</title>
-<style>
-${PAGE_STYLE}
-  main { max-width: 1200px; margin: 0 auto; padding: 32px 20px 60px; }
-  h1 { font-size: 28px; margin: 0 0 16px; }
-  h2 { color: #fff; margin: 40px 0 12px; font-size: 20px; }
-  nav.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
-  nav.tabs a { padding: 8px 16px; border-radius: 14px; border: 1px solid rgba(229, 194, 224, 0.3); text-decoration: none; color: rgb(229, 194, 224); }
-  nav.tabs a.current { background: linear-gradient(120deg, #b01d68, #7a1f86); border-color: transparent; color: #fff; font-weight: 700; }
-  .stats { display: flex; flex-wrap: wrap; gap: 12px; }
-  .stat { background: #150d1f; border-radius: 20px; padding: 14px 20px; min-width: 150px; }
-  .stat b { display: block; font-size: 28px; color: #fff; }
-  .card { background: #150d1f; border-radius: 24px; padding: 16px; overflow-x: auto; margin-bottom: 14px; }
-  table { width: 100%; border-collapse: collapse; font-size: 15px; }
-  th { text-align: left; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; }
-  th, td { padding: 10px 12px; border-bottom: 1px solid rgba(229, 194, 224, 0.12); vertical-align: top; }
-  td.num { font-variant-numeric: tabular-nums; }
-  tr.canceled td { opacity: 0.5; }
-  .dim { opacity: 0.6; }
-  .small { font-size: 13px; }
-  .warn { color: #ffb86b; }
-  .notice { background: rgba(176, 29, 104, 0.3); border-radius: 14px; padding: 12px 16px; color: #fff; }
-  .add { display: grid; grid-template-columns: 1fr 1.5fr 2fr auto; gap: 10px; margin-top: 14px; }
-  .btn.small { padding: 6px 12px; font-size: 12px; }
-  .filters a { margin-right: 14px; }
-  .filters a.current { color: #fff; font-weight: 700; text-decoration: none; }
-  .booklink summary { cursor: pointer; color: #fff; font-weight: 600; }
-  .booklink form, .link-made { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
-  .booklink select { flex: 1; min-width: 220px; padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(229, 194, 224, 0.35); background: #1d1230; color: #fff; }
-  .link-made input { flex: 1; min-width: 260px; font-size: 13px; }
-  .email-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .enquiry header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
-  .enquiry.done { opacity: 0.55; }
-  .details { white-space: pre-wrap; color: #fff; }
-  .transcript .line { margin: 0 0 14px; }
-  .transcript .line p { margin: 4px 0 0; white-space: pre-wrap; }
-  .transcript .visitor p { color: #fff; }
-  @media (max-width: 700px) { .add { grid-template-columns: 1fr; } .enquiry header { flex-direction: column; } }
-</style>
+<meta name="theme-color" content="#06040D">
+<title>${e(title)} | Nova Hub admin</title>
+<link rel="icon" href="/app/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Saira:wght@300..700&family=Source+Code+Pro:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/app/themes.css">
+<script src="/app/themes.js"></script>
+<style>${ADMIN_STYLE}</style>
 </head>
 <body>
-<main>
-  <h1>Novacane admin</h1>
+<header class="top">
+  <a class="brand" href="/admin">
+    <img src="/app/icon.svg" alt="" width="40" height="40">
+    <span><span class="kicker">Nova suite · Novacane</span><span class="wordmark">Nova Hub <em>admin</em></span></span>
+  </a>
   <nav class="tabs">${tabs}</nav>
+  <a class="open-hub" href="/app/">Open Nova Hub ↗</a>
+</header>
+<main>
   ${message ? `<p class="notice" role="status">${e(message)}</p>` : ""}
 ${body}
+  <section class="theme-bar">
+    <p class="kicker">Theme</p>
+    <div class="theme-list" data-theme-list></div>
+  </section>
 </main>
 </body>
 </html>`;
