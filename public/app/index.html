@@ -183,6 +183,8 @@
       <div class="view-head">
         <h2>Calendar</h2>
       </div>
+      <!-- The smart part: this week at a glance (drawn by app.js) -->
+      <div id="cal-smart" class="cal-smart"></div>
       <div class="cal">
         <div class="cal-head">
           <button id="cal-prev" class="icon-btn" type="button" aria-label="Previous month">
@@ -200,6 +202,8 @@
         <div id="cal-grid" class="cal-grid" role="grid" aria-label="Bookings this month"></div>
       </div>
       <h3 id="cal-day-title" class="cal-day-title"></h3>
+      <!-- The picked day: how full it is, warnings, free slots, filters and Ask Nova -->
+      <div id="cal-day-smart" class="cal-day-smart"></div>
       <div id="cal-day-list" class="list"></div>
     </section>
 
@@ -242,7 +246,7 @@
         <h2>Ask NovaBot</h2>
         <div class="chips" role="tablist">
           <button class="chip active" data-mode="nova" type="button">Ask Nova</button>
-          <button class="chip" data-mode="customer" type="button">Customer NovaBot</button>
+          <button class="chip" data-mode="customer" type="button">NovaBot · bookings</button>
           <button id="bot-clear" class="chip" type="button">New chat</button>
         </div>
       </div>

@@ -252,6 +252,8 @@ describe("who gets these tools", () => {
 		expect(toolNames(claudeCalls[0])).not.toContain("cancel_booking");
 		expect(toolNames(claudeCalls[0])).not.toContain("find_bookings");
 		expect(toolNames(claudeCalls[0])).not.toContain("change_booking_extras");
+		// and the website's NovaBot talks to customers as normal
+		expect(claudeCalls[0].system.map((s) => s.text).join("\n")).not.toContain("YOU ARE TALKING TO STAFF");
 	});
 
 	it("offers them in Nova Hub's staff chat, and runs them", async () => {
@@ -268,6 +270,8 @@ describe("who gets these tools", () => {
 		expect(data.reply).toBe("Dana is in on Saturday 31 October at 17:00.");
 		expect(toolNames(claudeCalls[0])).toEqual(expect.arrayContaining(["find_bookings", "cancel_booking", "reschedule_booking", "update_booking", "change_booking_extras"]));
 		expect(claudeCalls[0].system[1].text).toContain("STAFF CHAT: MANAGING BOOKINGS");
+		// It's told it's talking to the studio team, never a customer
+		expect(claudeCalls[0].system[1].text).toContain("YOU ARE TALKING TO STAFF");
 		// The tool's answer went back to Claude
 		const toolResult = claudeCalls[1].messages.at(-1).content[0];
 		expect(toolResult.content).toContain("#1001");

@@ -664,6 +664,13 @@ approved.
 
 // ===== THE CODE (you shouldn't need to change this) =====
 
+// How NovaBot talks in Nova Hub: to a colleague on the Novacane team, not a customer
+const STAFF_VOICE = `YOU ARE TALKING TO STAFF. This chat is inside Nova Hub, the staff app: the person writing is a member of the Novacane Studios team, never a customer, whatever they ask.
+- Talk to them as a colleague: plain, direct and factual. No greetings or sign-offs for customers, no selling, no "we'd love to have you", no inviting them to book or visit.
+- Refer to customers in the third person ("they", "the client", or their name).
+- When they want a booking link, times or prices, give it as something to pass on: "Here's the link to send them: ...", "They can book Thursday at 2pm".
+- When you take an action (booking, moving, cancelling, changing), say exactly what you did, in one line.`;
+
 export default {
   // Every minute (see "triggers" in wrangler.jsonc): send booking notifications
   // that have waited long enough for Acuity's email
@@ -879,6 +886,8 @@ async function answer(messages, env, visitor, waitUntil, { staff = false } = {})
     `\nUse this list to work out dates like "next Friday" or "this weekend", and always say the exact date you mean (e.g. "Friday 9 October") so there's no mix-up.`;
   if (canBook && types.length) sessions += "\n\n" + (staff ? kit.rules.bookSession : kit.rules.form);
   if (canManage) sessions += "\n\n" + kit.manage.rules;
+  // In Nova Hub, NovaBot is talking to the studio team, never to a customer
+  if (staff) sessions = STAFF_VOICE + "\n\n" + sessions;
 
   // Fix any link Claude made up, and make sure every booking_link link reaches
   // the visitor, even if Claude forgot it

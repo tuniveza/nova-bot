@@ -468,6 +468,164 @@
     return card;
   }
 
+  // ===== The smart calendar =====
+  // Opening hours (NovaBot tells customers 10am to 11pm, 7 days a week)
+  const OPEN_FROM = 10;
+  const OPEN_TO = 23;
+  const OPEN_HOURS = OPEN_TO - OPEN_FROM;
+  // What the day list shows: everything, or just bookings, quests or calendar notes
+  let calFilter = "all";
+
+  // A price like "£80", "80.00" or "£1,200.50" as a number of pounds (0 if there isn't one)
+  function pounds(price) {
+    const m = String(price || "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
+    return m ? Number(m[1]) : 0;
+  }
+  // Minutes since midnight, UK time
+  const ukMinutes = (date) => {
+    const [h, m] = clock(date).split(":").map(Number);
+    return h * 60 + m;
+  };
+  // "14:00" from minutes
+  const hm = (mins) => String(Math.floor(mins / 60)).padStart(2, "0") + ":" + String(mins % 60).padStart(2, "0");
+
+  // Everything about one day's bookings: hours booked, how full, clashes, free slots
+  function dayFacts(key) {
+    const list = bookingsOn(key);
+    const spans = list.map((b) => ({ b, from: ukMinutes(b.from), to: b.to ? ukMinutes(b.to) || 24 * 60 : ukMinutes(b.from) + 60 })).sort((a, z) => a.from - z.from);
+    const booked = spans.reduce((n, s) => n + Math.max(0, Math.min(s.to, OPEN_TO * 60) - Math.max(s.from, OPEN_FROM * 60)), 0);
+    // Clashes (overlapping) and tight changeovers (under 15 minutes between sessions)
+    const clashes = [];
+    const tight = [];
+    for (let i = 1; i < spans.length; i++) {
+      const gap = spans[i].from - spans[i - 1].to;
+      if (gap < 0) clashes.push([spans[i - 1].b, spans[i].b]);
+      else if (gap < 15) tight.push([spans[i - 1].b, spans[i].b]);
+    }
+    // Free stretches of an hour or more within opening hours (and not already past, today)
+    const now = new Date();
+    let cursor = OPEN_FROM * 60;
+    if (key === dayKey(now)) cursor = Math.max(cursor, Math.ceil((ukMinutes(now) + 1) / 30) * 30);
+    const free = [];
+    for (const s of spans) {
+      if (s.from - cursor >= 60) free.push([cursor, s.from]);
+      cursor = Math.max(cursor, s.to);
+    }
+    if (OPEN_TO * 60 - cursor >= 60) free.push([cursor, OPEN_TO * 60]);
+    const takings = list.reduce((n, b) => n + pounds(b.price), 0);
+    return { list, booked, load: Math.min(1, booked / (OPEN_HOURS * 60)), clashes, tight, free, takings };
+  }
+
+  // The week (Monday to Sunday) around a day
+  function weekOf(key) {
+    const d = new Date(key + "T12:00:00Z");
+    const monday = new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 86400000);
+    return Array.from({ length: 7 }, (_, i) => new Date(monday.getTime() + i * 86400000).toISOString().slice(0, 10));
+  }
+
+  // Ask Nova (or NovaBot with the booking tools) something, ready to send
+  function askAbout(mode, text) {
+    show("bot");
+    const chip = document.querySelector(`[data-mode="${mode}"]`);
+    if (chip && !chip.classList.contains("active")) chip.click();
+    setTimeout(() => {
+      $("bot-input").value = text;
+      $("bot-input").dispatchEvent(new Event("input"));
+      $("bot-input").focus();
+    }, 80);
+  }
+
+  // This week at a glance, above the month
+  function drawSmartWeek() {
+    const box = $("cal-smart");
+    if (!box) return;
+    const days = weekOf(calPicked || dayKey(new Date()));
+    const facts = days.map((k) => ({ k, ...dayFacts(k) }));
+    const sessions = facts.reduce((n, f) => n + f.list.length, 0);
+    const hours = facts.reduce((n, f) => n + f.booked, 0) / 60;
+    const takings = facts.reduce((n, f) => n + f.takings, 0);
+    const busiest = facts.reduce((a, f) => (f.booked > a.booked ? f : a), facts[0]);
+    const clashes = facts.reduce((n, f) => n + f.clashes.length, 0);
+    // The next free hour from now (this week or the next 14 days)
+    let next = null;
+    const today = dayKey(new Date());
+    for (let i = 0; i < 14 && !next; i++) {
+      const k = new Date(Date.now() + i * 86400000).toLocaleDateString("en-CA", { timeZone: "Europe/London" });
+      const f = dayFacts(k);
+      if (f.free.length) next = { k, slot: f.free[0] };
+    }
+    const short = (k) => new Date(k + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+    const tile = (big, label, cls = "") => {
+      const t = el("div", "smart-tile " + cls);
+      t.append(el("b", "", big), el("span", "", label));
+      return t;
+    };
+    const head = el("p", "smart-kicker", "Week of " + short(days[0]) + (days.includes(today) ? " · this week" : ""));
+    const tiles = el("div", "smart-tiles");
+    tiles.append(
+      tile(String(sessions), sessions === 1 ? "session" : "sessions"),
+      tile(hours.toFixed(1).replace(/\.0$/, "") + "h", "booked · " + Math.round((hours / (OPEN_HOURS * 7)) * 100) + "% full"),
+      tile(takings ? "£" + Math.round(takings).toLocaleString("en-GB") : "–", "session value"),
+      tile(busiest && busiest.booked ? short(busiest.k).split(" ")[0] : "–", "busiest day"),
+      tile(next ? (next.k === today ? "Today" : short(next.k).split(" ").slice(0, 2).join(" ")) + " " + hm(next.slot[0]) : "None", "next free hour", "free")
+    );
+    if (clashes) tiles.append(tile(String(clashes), clashes === 1 ? "clash" : "clashes", "warn"));
+    const ask = el("button", "chip smart-ask", "✦ Ask Nova about this week");
+    ask.type = "button";
+    ask.addEventListener("click", () => askAbout("nova", `Give me a quick rundown of the week starting ${short(days[0])}: who's in, anything unpaid or clashing, and where we've got space.`));
+    box.replaceChildren(head, tiles, ask);
+  }
+
+  // The picked day: how full it is, warnings, free slots, filters, and Ask Nova
+  function drawSmartDay() {
+    const box = $("cal-day-smart");
+    if (!box || !calPicked) return;
+    const f = dayFacts(calPicked);
+    const name = new Date(calPicked + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+    const parts = [];
+    // How full it is
+    const meter = el("div", "load-meter");
+    const bar = el("i", "");
+    bar.style.width = Math.round(f.load * 100) + "%";
+    meter.appendChild(bar);
+    const pct = Math.round(f.load * 100);
+    parts.push(el("p", "smart-kicker", `${(f.booked / 60).toFixed(1).replace(/\.0$/, "")}h of ${OPEN_HOURS}h booked · ${pct}% full${f.takings ? " · £" + Math.round(f.takings).toLocaleString("en-GB") + " of sessions" : ""}`), meter);
+    // Warnings
+    for (const [a, b] of f.clashes) parts.push(el("p", "smart-warn", `⚠ Clash: ${a.name || a.session} and ${b.name || b.session} overlap at ${clock(b.from)}`));
+    for (const [a, b] of f.tight) parts.push(el("p", "smart-note", `⏱ Tight changeover: ${a.name || a.session} ends ${a.to ? clock(a.to) : ""}, ${b.name || b.session} starts ${clock(b.from)}`));
+    // Free slots, each one tap from a booking link
+    if (f.free.length) {
+      const row = el("div", "free-slots");
+      row.appendChild(el("span", "smart-label", "Free"));
+      for (const [from, to] of f.free) {
+        const slot = el("button", "chip free-slot", `${hm(from)}–${hm(to)}`);
+        slot.type = "button";
+        slot.title = "Get a booking link for this time";
+        slot.addEventListener("click", () => askAbout("customer", `Get me a booking link for ${name} at ${hm(from)} (free until ${hm(to)}) to send to a client. Which sessions fit?`));
+        row.appendChild(slot);
+      }
+      parts.push(row);
+    } else if (calPicked >= dayKey(new Date())) parts.push(el("p", "smart-note", "Fully booked within opening hours."));
+    // What to show, and Ask Nova
+    const tools = el("div", "smart-tools");
+    const filters = el("div", "chips");
+    for (const [id, label] of [["all", "All"], ["bookings", "Bookings"], ["quests", "Quests"], ["notes", "Notes"]]) {
+      const c = el("button", "chip" + (calFilter === id ? " active" : ""), label);
+      c.type = "button";
+      c.addEventListener("click", () => {
+        calFilter = id;
+        drawDay();
+      });
+      filters.appendChild(c);
+    }
+    const ask = el("button", "chip smart-ask", "✦ Ask Nova about this day");
+    ask.type = "button";
+    ask.addEventListener("click", () => askAbout("nova", `What's on ${name}? Anything I should know: who's in, what's paid, clashes, and free time.`));
+    tools.append(filters, ask);
+    parts.push(tools);
+    box.replaceChildren(...parts);
+  }
+
   function bookingsOn(key) {
     return calBookings.filter((b) => dayKey(b.from) === key).sort((a, b) => a.from - b.from);
   }
@@ -500,6 +658,13 @@
       if (key === today) cell.classList.add("today");
       if (key === calPicked) cell.classList.add("picked");
       if (list.length) cell.classList.add("busy");
+      // How full the day is, as a glow (and "full" when nearly all opening hours are booked)
+      if (list.length) {
+        const load = dayFacts(key).load;
+        cell.style.setProperty("--load", load.toFixed(2));
+        cell.classList.add("loaded");
+        if (load >= 0.85) cell.classList.add("full");
+      }
       if (key < today) cell.classList.add("past");
       // Read out properly by screen readers
       cell.setAttribute("aria-label", d + " " + $("cal-month").textContent + (list.length ? ", " + list.length + (list.length === 1 ? " booking" : " bookings") : ""));
@@ -554,8 +719,16 @@
     $("cal-day-title").textContent = name + (list.length ? " · " + list.length + (list.length === 1 ? " booking" : " bookings") : "");
     // The list
     const box = $("cal-day-list");
-    // Nova Calendar's cards and Nova Quests that day, after the bookings
-    const suite = suiteOn(calPicked);
+    // The smart parts: this week, and this day
+    drawSmartWeek();
+    drawSmartDay();
+    // Nova Calendar's cards and Nova Quests that day, after the bookings (as the filter says)
+    const suite = suiteOn(calPicked).filter((i) => calFilter === "all" || (calFilter === "quests" ? i.kind === "quest" : calFilter === "notes" ? i.kind !== "quest" : false));
+    if (calFilter !== "all" && calFilter !== "bookings") {
+      return box.replaceChildren(...(suite.length ? suite.map(suiteCard) : [el("p", "empty", calFilter === "quests" ? "No quests this day." : "No Nova Calendar cards this day.")]));
+    }
+    if (calFilter === "bookings" && !list.length) return box.replaceChildren(el("p", "empty", "No bookings this day."));
+    if (calFilter === "bookings") return box.replaceChildren(...list.map((b, i) => calCard(b, animate ? i : -1)));
     if (suite.length) return box.replaceChildren(...list.map((b, i) => calCard(b, animate ? i : -1)), ...suite.map(suiteCard));
     // None that day: say so, and offer the next booking
     if (!list.length) {
@@ -1205,7 +1378,7 @@
       $("bot-hint").textContent =
         botMode === "nova"
           ? 'Ask about your bookings, enquiries and alerts: "What time is Eric\'s session?", "Any new enquiries?". These chats aren\'t saved.'
-          : "The same NovaBot customers see on the website. Try a customer question, or ask for a booking link. These chats aren't saved.";
+          : 'NovaBot with the booking tools, talking to you as staff: "Get me a link for a 2-hour vocal session for Dana", "Move Eric\'s Thursday session to 3pm". These chats aren\'t saved.';
       // Start a fresh chat
       $("bot-clear").click();
     })
