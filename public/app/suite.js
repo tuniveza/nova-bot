@@ -117,6 +117,28 @@
     return box;
   }
 
+  // Everything the Nova suite can do: one section per app, after the links
+  function featureBlocks(features) {
+    if (!features.length) return [];
+    const head = make("p", "links-features-head", "✦ Everything the Nova suite can do");
+    return [head, ...features.map((f) => {
+      const box = make("details", "links-group features");
+      const summary = make("summary", "");
+      summary.append(make("span", "links-group-title", f.app), make("span", "links-count", (f.items || []).length));
+      box.appendChild(summary);
+      if (f.note) box.appendChild(make("p", "links-group-note", f.note));
+      const list = make("ul", "links-list feature-list");
+      for (const i of f.items || []) {
+        const li = make("li", "feature-item");
+        li.append(make("b", "", i.name));
+        if (i.detail) li.append(make("span", "feature-detail", i.detail));
+        list.appendChild(li);
+      }
+      box.appendChild(list);
+      return box;
+    })];
+  }
+
   // Show a message in place of the list
   function message(text) {
     groupsBox.replaceChildren(make("p", "links-message", text));
@@ -139,7 +161,8 @@
       const at = data.checkedAt ? new Date(data.checkedAt) : null;
       checked.textContent = at && !isNaN(at) ? "Checked " + at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "Not checked yet";
       if (!groups.length) return message("No links yet.");
-      groupsBox.replaceChildren(...groups.map(groupBlock));
+      // The links, then everything the Nova suite can do (app by app)
+      groupsBox.replaceChildren(...groups.map(groupBlock), ...featureBlocks(data.features || []));
     } catch (err) {
       checked.textContent = "";
       message(err.message || "Couldn't load the links.");

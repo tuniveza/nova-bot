@@ -7,7 +7,8 @@
 // time it's opened, every web address is checked, so you can see at a glance
 // what's up.
 //
-// Shape: { groups: [{ title, note?, items: [{ name, url, kind, note? }] }] }
+// Shape: { groups: [{ title, note?, items: [{ name, url, kind, note? }] }],
+//          features: [{ app, note?, items: [{ name, detail }] }] }   (everything the suite can do)
 // kind: "live" (in use), "machine" (used by apps, not people), "testing",
 //       "local" (only on the studio computer), "planned" (not set up yet)
 
@@ -34,7 +35,13 @@ export function cleanLinks(raw) {
       .map((i) => ({ name: text(i?.name, 120), url: text(i?.url, 600), kind: KINDS.includes(i?.kind) ? i.kind : "live", note: text(i?.note, 300) }))
       .filter((i) => i.name && /^(https?:\/\/|wrangler |npm |npx )/.test(i.url)),
   }));
-  return { groups };
+  // Everything the Nova suite can do, app by app
+  const features = (Array.isArray(raw?.features) ? raw.features : []).slice(0, 30).map((f) => ({
+    app: text(f?.app, 80) || "Nova suite",
+    note: text(f?.note, 300),
+    items: (Array.isArray(f?.items) ? f.items : []).slice(0, 80).map((i) => ({ name: text(i?.name, 120), detail: text(i?.detail, 600) })).filter((i) => i.name),
+  }));
+  return { groups, features };
 }
 
 export async function saveLinks(env, raw) {
@@ -68,5 +75,5 @@ async function check(url, kind) {
 export async function checkedLinks(env) {
   const list = await readLinks(env);
   const groups = await Promise.all(list.groups.map(async (g) => ({ ...g, items: await Promise.all(g.items.map(async (i) => ({ ...i, check: await check(i.url, i.kind) }))) })));
-  return { groups, checkedAt: new Date().toISOString() };
+  return { groups, features: list.features, checkedAt: new Date().toISOString() };
 }

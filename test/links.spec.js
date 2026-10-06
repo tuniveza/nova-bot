@@ -21,4 +21,10 @@ describe("the links list", () => {
 		expect(clean.groups[0].items.map((i) => i.name)).toEqual(["Nova Hub", "Sandbox", "Tests", "Odd kind"]);
 		expect(clean.groups[0].items.at(-1).kind).toBe("live");
 	});
+
+	it("keeps the features, app by app", () => {
+		const clean = cleanLinks({ groups: [], features: [{ app: "Nova Agent", items: [{ name: "Pulses", detail: "Every second" }, { detail: "no name" }] }, { items: [{ name: "x" }] }] });
+		expect(clean.features[0]).toEqual({ app: "Nova Agent", note: "", items: [{ name: "Pulses", detail: "Every second" }] });
+		expect(clean.features[1].app).toBe("Nova suite");
+	});
 });

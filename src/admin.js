@@ -642,7 +642,7 @@ const when = (iso) => escapeHtml(String(iso || "").slice(0, 16).replace("T", " "
 
 async function linksPage(env, url) {
   const e = escapeHtml;
-  const { groups, checkedAt } = await checkedLinks(env);
+  const { groups, features, checkedAt } = await checkedLinks(env);
   const KIND = { live: "Live", machine: "Used by the apps", testing: "Testing", local: "Studio computer", planned: "Not set up yet" };
   const sections = groups
     .map(
@@ -665,8 +665,16 @@ async function linksPage(env, url) {
   const down = groups.reduce((n, g) => n + g.items.filter((i) => i.check.state === "down").length, 0);
   const body = `<p class="dim">Every Nova suite address in one place: what's live, what the apps use behind the scenes, what's for testing, and what only works on the studio computer. Checked just now (${new Date(checkedAt).toLocaleString("en-GB", { timeZone: "Europe/London" })}): ${total} addresses, ${down ? `<span class="warn">${down} not answering</span>` : "all answering"}.</p>
 ${groups.length ? sections : `<p class="card">The list is empty.</p>`}
+${features.length ? `<h2 id="features">Everything the Nova suite can do</h2>
+<p class="dim">Every feature, app by app.</p>
+<div class="features">${features
+  .map(
+    (f) => `<details class="card feature-app" open><summary><b>${e(f.app)}</b> <span class="dim small">${f.items.length} features</span></summary>${f.note ? `<p class="dim small">${e(f.note)}</p>` : ""}
+<ul class="feature-list">${f.items.map((i) => `<li><b>${e(i.name)}</b>${i.detail ? `<span class="dim"> · ${e(i.detail)}</span>` : ""}</li>`).join("")}</ul></details>`
+  )
+  .join("")}</div>` : ""}
 <details class="card"><summary>Edit the list</summary>
-<p class="dim small">The list is kept in the database, not in the code (the code is public). Edit it here as JSON: groups, each with a title and items (name, url, kind: live, machine, testing, local or planned, and an optional note).</p>
+<p class="dim small">The list is kept in the database, not in the code (the code is public). Edit it here as JSON: groups, each with a title and items (name, url, kind: live, machine, testing, local or planned, and an optional note); and features, each with an app and items (name, detail).</p>
 <form method="post" action="/admin/links"><textarea name="json" rows="18" style="width:100%;font-family:monospace;font-size:12px">${e(JSON.stringify(await readLinks(env), null, 2))}</textarea>
 <p><button class="btn" type="submit">Save the list</button></p></form></details>
 `;
@@ -771,6 +779,11 @@ const ADMIN_STYLE = `
   .theme-swatch[aria-checked="true"], .theme-swatch.active, .theme-swatch[aria-pressed="true"] { border-color: var(--hi); box-shadow: 0 0 0 1px var(--hi), 0 0 18px -6px var(--glow-accent); }
   .theme-preview { display: block; height: 34px; border-radius: 9px; }
   .theme-name { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
+  /* Everything the suite can do */
+  .features { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; align-items: start; }
+  .feature-app summary { cursor: pointer; font-size: 17px; color: var(--bright); }
+  .feature-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; font-size: 14px; line-height: 1.45; }
+  .feature-list li { padding-top: 8px; border-top: 1px solid var(--line); }
   /* Links page */
   table.links td.url { word-break: break-all; font-size: 13px; }
   table.links .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.06em; white-space: nowrap; border: 1px solid var(--line-strong); color: var(--muted); }

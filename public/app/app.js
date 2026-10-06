@@ -735,12 +735,17 @@
   function questCard(q, missions, big) {
     const card = el("article", "card quest-card " + q.status + (q.atRisk ? " risk" : "") + (big ? " now" : ""));
     const mission = missions.find((m) => m.id === q.missionId);
-    if (big) card.appendChild(el("span", "nova-label quest", q.status === "doing" ? "In progress" : "Up next"));
+    // Every quest says so: "✦ Nova Quest" (with where it's at for the big one), and its mission
+    const tags = el("div", "q-tags");
+    tags.appendChild(el("span", "q-tag", (q.ongoing ? "∞ Nova Quest · repeat" : "✦ Nova Quest") + (big ? (q.status === "doing" ? " · in progress" : " · up next") : "")));
+    if (mission) tags.appendChild(el("span", "m-tag", "◆ " + mission.title));
+    if (q.atRisk && q.status !== "done") tags.appendChild(el("span", "risk-tag", "⚠ At risk"));
+    card.appendChild(tags);
+    card.style.setProperty("--i", questCard.count = (questCard.count || 0) + 1);
     const top = el("div", "card-top");
-    top.append(el("h3", "card-title", (q.atRisk ? "⚠ " : q.ongoing ? "∞ " : "") + q.title), el("span", "card-meta", q.start ? hhmm(q.start) + "–" + hhmm(q.end) : "not planned yet"));
+    top.append(el("h3", "card-title", q.title), el("span", "card-meta", q.start ? hhmm(q.start) + "–" + hhmm(q.end) : "not planned yet"));
     card.appendChild(top);
     const bits = [length(q), q.priority];
-    if (mission) bits.unshift(mission.title);
     if (q.location) bits.push("at " + q.location + (q.travelMinutes ? ` (leave ${hhmm(q.travelStart)})` : ""));
     if (q.deadline) bits.push("due " + q.deadline.replace("T", " "));
     card.appendChild(el("p", "quest-meta", bits.join(" · ")));
@@ -774,6 +779,7 @@
     }
     if (currentView !== "quests") return;
     const cards = [];
+    questCard.count = 0;
 
     if (questTab === "today") {
       const current = st.current || (st.next || [])[0];
@@ -810,7 +816,8 @@
         const words = el("div", "mission-words");
         words.append(el("h3", "card-title", m.title), el("p", "quest-meta", m.summary || ""));
         head.append(ring, words);
-        card.append(el("span", "nova-label mission", m.status === "done" ? "Mission complete" : m.status === "paused" ? "Paused" : "Nova Mission"), head);
+        card.append(el("span", "m-badge", "◆ Nova Mission" + (m.status === "done" ? " · complete" : m.status === "paused" ? " · paused" : "")), head);
+        if (p.atRisk) card.classList.add("risk");
         card.appendChild(el("p", "quest-meta", [m.deadline ? "Due " + m.deadline.replace("T", " ") : "", `${p.done}/${p.total} quests`, (p.minutesLeft / 60).toFixed(1) + " h left", p.atRisk ? `⚠ ${p.atRisk} at risk` : ""].filter(Boolean).join(" · ")));
         const row = el("div", "actions");
         if (m.status === "active") row.appendChild(questButton("Pause", () => questTap(m.id, "pause", "mission")));
