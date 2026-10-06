@@ -124,6 +124,8 @@
     // Opened from a Nova Agent, Nova Quest or Nova Mission notification: go straight to Alerts
     if (location.hash === "#nova") currentView = "alerts";
     show(currentView);
+    // The Quests badge (quests left today), whatever tab is open
+    loadQuests();
     // Light the bell up if this phone already gets notifications
     updateNotifyPanel();
     // Hands-free voice: the mic glows, and listening starts
@@ -157,7 +159,8 @@
   function show(view) {
     currentView = view;
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
-    ["enquiries", "chats", "calendar", "alerts", "bot"].forEach((v) => ($("view-" + v).hidden = v !== view));
+    ["enquiries", "chats", "calendar", "quests", "alerts", "bot"].forEach((v) => ($("view-" + v).hidden = v !== view));
+    if (view === "quests") loadQuests();
     if (view === "enquiries") loadEnquiries();
     if (view === "chats") loadChats();
     if (view === "calendar") loadCalendar();
@@ -614,6 +617,209 @@
     if (Math.abs(moved) > 50) changeMonth(moved < 0 ? 1 : -1);
   });
 
+  // ===== Nova Quests =====
+  // Nova Agent (on the studio computer) sends its plan here every time it
+  // changes. Taps (Done, Start, Not now...) go back to it, usually within a second.
+
+  // Which part is showing: today, missions, or every quest
+  let questTab = "today";
+  // The last plan we got (for redrawing without asking again)
+  let lastQuests = null;
+
+  // "14:30" from "2026-10-09T14:30" (with seconds if it has them)
+  const hhmm = (s) => (s ? s.slice(11, s.length > 16 ? 19 : 16) : "");
+  // "30 s", "45 min", "1 h 30 min", "3 days 4 h"; repeats: "∞ · 30 s every 2 min"
+  function length(q) {
+    const plain = (minutes) => {
+      const secs = Math.round(minutes * 60);
+      if (secs < 60) return secs + " s";
+      const m = Math.floor(secs / 60), s = secs % 60;
+      if (m < 60) return s ? `${m} min ${s} s` : `${m} min`;
+      const h = Math.floor(m / 60), mm = m % 60;
+      if (h < 48) return mm ? `${h} h ${mm} min` : `${h} h`;
+      return `${Math.floor(h / 24)} days ${h % 24 ? (h % 24) + " h" : ""}`.trim();
+    };
+    if (!q.ongoing) return plain(q.minutes);
+    const every = q.every === "interval" ? "every " + plain(q.everyMinutes) : q.every === "week" ? "a week" : q.every === "weekday" ? "each weekday" : "a day";
+    return `∞ · ${plain(q.minutes)} ${every}`;
+  }
+  // A day's name: "Wednesday 7 October"
+  const dayName = (ymd) => new Date(ymd + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+
+  // Get the plan and draw the open part
+  async function loadQuests() {
+    try {
+      const data = await api("quests");
+      lastQuests = data;
+      drawQuests();
+    } catch (err) {
+      if (err.message !== "signed out" && currentView === "quests") emptyState($("quests-body"), err.message);
+    }
+  }
+
+  // Send a tap to Nova Agent, then look again a moment later
+  async function questTap(id, action, kind = "quest", minutes) {
+    try {
+      await api("quests/action", { body: { id, action, kind, minutes } });
+      toast(lastQuests && lastQuests.online ? "Sent to Nova Agent" : "Sent: Nova Agent will do it when it's back online");
+      setTimeout(loadQuests, 1500);
+      setTimeout(loadQuests, 4000);
+    } catch (err) {
+      if (err.message !== "signed out") toast(err.message);
+    }
+  }
+
+  // A small button
+  function questButton(label, onClick, primary) {
+    const b = el("button", "btn small" + (primary ? "" : " ghost"), label);
+    b.type = "button";
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      b.disabled = true;
+      onClick();
+    });
+    return b;
+  }
+
+  // The buttons for one quest, depending on where it's at
+  function questButtons(q) {
+    const row = el("div", "actions");
+    if (q.status === "todo") row.appendChild(questButton("▶ Start", () => questTap(q.id, "start"), true));
+    if (q.status !== "done") row.appendChild(questButton(q.ongoing ? "✓ Session done" : "✓ Done", () => questTap(q.id, "done"), q.status === "doing"));
+    if (q.status === "doing") row.appendChild(questButton("+15 min", () => questTap(q.id, "snooze", "quest", 15)));
+    if (q.status === "todo" && !q.ongoing) row.appendChild(questButton("Not now", () => questTap(q.id, "snooze", "quest", 60)));
+    if (q.status === "todo" && !q.ongoing) row.appendChild(questButton("Skip", () => questTap(q.id, "skip")));
+    if (q.ongoing && q.status !== "done") row.appendChild(questButton("Stop", () => questTap(q.id, "finish")));
+    if (q.status === "done" || q.status === "skipped") row.appendChild(questButton("Undo", () => questTap(q.id, "reopen")));
+    return row;
+  }
+
+  // One quest as a card
+  function questCard(q, missions, big) {
+    const card = el("article", "card quest-card " + q.status + (q.atRisk ? " risk" : "") + (big ? " now" : ""));
+    const mission = missions.find((m) => m.id === q.missionId);
+    if (big) card.appendChild(el("span", "nova-label quest", q.status === "doing" ? "In progress" : "Up next"));
+    const top = el("div", "card-top");
+    top.append(el("h3", "card-title", (q.atRisk ? "⚠ " : q.ongoing ? "∞ " : "") + q.title), el("span", "card-meta", q.start ? hhmm(q.start) + "–" + hhmm(q.end) : "not planned yet"));
+    card.appendChild(top);
+    const bits = [length(q), q.priority];
+    if (mission) bits.unshift(mission.title);
+    if (q.location) bits.push("at " + q.location + (q.travelMinutes ? ` (leave ${hhmm(q.travelStart)})` : ""));
+    if (q.deadline) bits.push("due " + q.deadline.replace("T", " "));
+    card.appendChild(el("p", "quest-meta", bits.join(" · ")));
+    if (q.status !== "done") card.appendChild(questButtons(q));
+    return card;
+  }
+
+  // Draw the open part of the Quests tab
+  function drawQuests() {
+    const body = $("quests-body");
+    const data = lastQuests;
+    if (!data || !data.state) {
+      $("quests-sync").textContent = "Nothing from Nova Agent yet. It sends its plan here once it's running the latest version.";
+      return body.replaceChildren();
+    }
+    const st = data.state;
+    const ago = data.at ? Math.round((Date.now() - Date.parse(data.at)) / 60000) : null;
+    $("quests-sync").textContent = (data.online ? "● Nova Agent is online" : "○ Nova Agent is offline") + (ago !== null ? ` · updated ${ago < 1 ? "just now" : ago + " min ago"}` : "");
+    const missions = st.missions || [];
+    const quests = st.quests || [];
+    const today = (st.now || "").slice(0, 10);
+    const open = quests.filter((q) => q.status === "todo" || q.status === "doing");
+    // The badge: quests left today
+    const left = open.filter((q) => q.start && q.start.startsWith(today)).length;
+    $("quest-badge").hidden = !left;
+    $("quest-badge").textContent = left;
+    if (currentView !== "quests") return;
+    const cards = [];
+
+    if (questTab === "today") {
+      const current = st.current || (st.next || [])[0];
+      if (current) cards.push(questCard(current, missions, true));
+      for (const q of st.pulses || []) {
+        const card = el("article", "card quest-card pulse");
+        card.append(el("span", "nova-label quest", "Pulse"), el("h3", "card-title", "∞ " + q.title), el("p", "quest-meta", length(q) + (q.deadline ? " · until " + hhmm(q.deadline) : "")));
+        card.appendChild(questButtons(q));
+        cards.push(card);
+      }
+      const todays = quests.filter((q) => q.start && q.start.startsWith(today) && q.status !== "skipped" && (!current || q.id !== current.id)).sort((a, b) => a.start.localeCompare(b.start));
+      if (todays.length) cards.push(el("h3", "quest-day", "Today · " + dayName(today)), ...todays.map((q) => questCard(q, missions)));
+      const later = open.filter((q) => q.start && q.start.slice(0, 10) > today).sort((a, b) => a.start.localeCompare(b.start)).slice(0, 12);
+      let day = "";
+      for (const q of later) {
+        if (q.start.slice(0, 10) !== day) {
+          day = q.start.slice(0, 10);
+          cards.push(el("h3", "quest-day", dayName(day)));
+        }
+        cards.push(questCard(q, missions));
+      }
+      if (!cards.length) return emptyState(body, "Nothing planned. Ask Nova Agent for a mission, or add a quest.");
+    }
+
+    if (questTab === "missions") {
+      if (!missions.length) return emptyState(body, "No missions yet. Ask Nova Agent: \"Plan a mission: finish the EP by 1 December\".");
+      for (const m of missions) {
+        const p = m.progress || { done: 0, total: 0, atRisk: 0, minutesLeft: 0 };
+        const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+        const card = el("article", "card mission-card " + m.status);
+        const ring = el("div", "ring", pct + "%");
+        ring.style.setProperty("--p", pct);
+        const head = el("div", "mission-head");
+        const words = el("div", "mission-words");
+        words.append(el("h3", "card-title", m.title), el("p", "quest-meta", m.summary || ""));
+        head.append(ring, words);
+        card.append(el("span", "nova-label mission", m.status === "done" ? "Mission complete" : m.status === "paused" ? "Paused" : "Nova Mission"), head);
+        card.appendChild(el("p", "quest-meta", [m.deadline ? "Due " + m.deadline.replace("T", " ") : "", `${p.done}/${p.total} quests`, (p.minutesLeft / 60).toFixed(1) + " h left", p.atRisk ? `⚠ ${p.atRisk} at risk` : ""].filter(Boolean).join(" · ")));
+        const row = el("div", "actions");
+        if (m.status === "active") row.appendChild(questButton("Pause", () => questTap(m.id, "pause", "mission")));
+        if (m.status === "paused") row.appendChild(questButton("Resume", () => questTap(m.id, "resume", "mission"), true));
+        card.appendChild(row);
+        cards.push(card);
+      }
+    }
+
+    if (questTab === "all") {
+      const sorted = [...quests].sort((a, b) => (a.start || "z").localeCompare(b.start || "z"));
+      if (!sorted.length) return emptyState(body, "No quests yet.");
+      cards.push(...sorted.map((q) => questCard(q, missions)));
+    }
+    body.replaceChildren(...cards);
+  }
+
+  document.querySelectorAll("[data-quests]").forEach((chip) =>
+    chip.addEventListener("click", () => {
+      questTab = chip.dataset.quests;
+      document.querySelectorAll("[data-quests]").forEach((c) => c.classList.toggle("active", c === chip));
+      drawQuests();
+    })
+  );
+  // While the Quests tab is open, keep it fresh
+  setInterval(() => !document.hidden && currentView === "quests" && loadQuests(), 15000);
+
+  // ===== Ambient music =====
+  // Soft electronic ambient, made live on the phone (ambient.js). Remembered on this phone.
+  const music = $("music");
+  function musicState(on) {
+    music.setAttribute("aria-pressed", on ? "true" : "false");
+    music.classList.toggle("on", on);
+    try { localStorage.setItem("novahub-music", on ? "1" : "0"); } catch (err) {}
+  }
+  if (window.NovaAmbient) {
+    window.NovaAmbient.onchange = musicState;
+    music.addEventListener("click", async () => {
+      const on = await window.NovaAmbient.toggle();
+      toast(on ? "Ambient music on ✦" : "Ambient music off");
+    });
+    // It was on last time: start again on the first tap (phones only allow sound after a tap)
+    let wanted = false;
+    try { wanted = localStorage.getItem("novahub-music") === "1"; } catch (err) {}
+    if (wanted) document.addEventListener("pointerdown", function again(e) {
+      if (e.target.closest("#music")) return;
+      document.removeEventListener("pointerdown", again);
+      window.NovaAmbient.start().catch(() => {});
+    });
+  } else music.hidden = true;
+
   // ===== Alerts =====
   // A copy of every notification that went through to a phone, newest first.
   // Like the pile of letters on the doormat: the badge counts the unopened ones.
@@ -1053,6 +1259,7 @@
         ping(event.data.kind || event.data.source);
         banner(event.data);
         loadAlerts();
+        if (event.data.source === "quest" || event.data.source === "mission") loadQuests();
       }
       // A notification was tapped: show the Alerts tab
       if (event.data?.type === "nova-open") show(String(event.data.url).includes("#nova") ? "alerts" : currentView);

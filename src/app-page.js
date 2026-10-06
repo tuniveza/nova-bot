@@ -26,6 +26,7 @@
 
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { askHub } from "./hub-ask.js";
+import { questsForHub, queueQuestAction } from "./agent-nova.js";
 import { listBookings } from "./booking-calendar.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
 import { usesNova } from "./mode.js";
@@ -70,8 +71,25 @@ export async function handleApp(request, env, ctx, answer) {
   if (route === "/notifications/settings" && request.method === "POST") return alertSettings(request, env);
   if (route === "/voice" && request.method === "POST") return voice(request, env);
   if (route === "/calendar" && request.method === "GET") return calendar(env);
+  if (route === "/quests" && request.method === "GET") return json(await questsForHub(env));
+  if (route === "/quests/action" && request.method === "POST") return questAction(request, env);
   if (route === "/ask" && request.method === "POST") return (await allowed(env, request, "app-ask:")) ? askHub(request, env) : json({ error: "Too many questions. Wait a minute." }, 429);
   return json({ error: "Not found" }, 404);
+}
+
+// ===== NOVA QUESTS =====
+
+// A tap on a quest or mission in Nova Hub, passed on to Nova Agent
+const QUEST_ACTIONS = ["done", "start", "skip", "reopen", "snooze", "finish", "pause", "resume"];
+async function questAction(request, env) {
+  const body = await readJson(request);
+  const id = String(body.id || "").replace(/[^\w-]/g, "").slice(0, 64);
+  const action = String(body.action || "");
+  const kind = body.kind === "mission" ? "mission" : "quest";
+  if (!id || !QUEST_ACTIONS.includes(action)) return json({ error: "That isn't something Nova Agent can do" }, 400);
+  const minutes = Math.min(Math.max(Number(body.minutes) || 15, 1), 1440);
+  await queueQuestAction(env, { kind, id, action, minutes });
+  return json({ ok: true });
 }
 
 // ===== SIGNING IN =====

@@ -15,6 +15,8 @@
 //
 //   POST /hub/agent/next     { dryRun, bookingsPerVisitor, wait } -> { job } the oldest waiting job, or { job: null }
 //   POST /hub/agent/result   { id, ok, message }   -> staff phones get the result
+//   POST /hub/agent/quests   { state }             -> Nova Hub shows Nova Agent's missions and quests;
+//                            replies with { actions } tapped in Nova Hub since (also handed over with /next)
 //   POST /hub/notify         { title, message, source?, kind?, tag?, ttl?, urgent?, keep? }
 //                            -> staff phones get Nova Agent's, Nova Quest's and Nova Mission's alerts
 //
@@ -81,7 +83,11 @@ export async function handleAgentNova(request, env, pathname) {
     // An empty body is fine
   }
 
-  if (pathname === "/hub/agent/next") return Response.json({ job: await nextJob(env, body) });
+  if (pathname === "/hub/agent/next") {
+    const job = await nextJob(env, body);
+    return Response.json({ job, questActions: await takeQuestActions(env) });
+  }
+  if (pathname === "/hub/agent/quests") return saveQuests(env, body);
   if (pathname === "/hub/agent/result") return reportResult(env, body);
   if (pathname === "/hub/notify") return sendAlert(env, body);
   return Response.json({ error: "Not found" }, { status: 404 });
@@ -111,7 +117,8 @@ async function nextJob(env, body) {
   const waitSeconds = Math.min(Math.max(Number(body?.wait) || 0, 0), MAX_WAIT_SECONDS);
   const giveUpAt = Date.now() + waitSeconds * 1000;
   let job = await takeJob(env);
-  while (!job && Date.now() < giveUpAt) {
+  // Stop waiting early for a job, or for a tap in Nova Hub's Quests tab
+  while (!job && !(await hasQuestActions(env)) && Date.now() < giveUpAt) {
     await new Promise((resolve) => setTimeout(resolve, WAIT_CHECK_MS));
     job = await takeJob(env);
   }
@@ -190,6 +197,61 @@ async function sendAlert(env, body) {
   // `keep: false` (quick repeats): ring the phone but leave it out of the Alerts list
   const delivered = await notifyPhones(env, { title: `${ALERT_SOURCES[source]}: ${title}`, body: message, url: "/app/#nova", style, save: body.keep !== false });
   return Response.json({ ok: true, phones: delivered });
+}
+
+// ===== NOVA QUESTS IN NOVA HUB =====
+// Nova Agent keeps its plan (missions, quests, pulses) here, so Nova Hub can
+// show it; taps in Nova Hub (Done, Start, Not now...) wait here until Nova
+// Agent next checks in, usually within a second.
+
+const QUESTS_KEY = "nova_quests";
+const ACTIONS_KEY = "nova_quest_actions";
+const MAX_STATE_BYTES = 800_000;
+
+async function setSetting(env, key, value) {
+  await env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(key, value).run();
+}
+
+async function saveQuests(env, body) {
+  const state = JSON.stringify(body?.state ?? null);
+  if (state.length > MAX_STATE_BYTES) return Response.json({ error: "Too big" }, { status: 413 });
+  await setSetting(env, QUESTS_KEY, JSON.stringify({ at: new Date().toISOString(), state: body?.state ?? null }));
+  return Response.json({ ok: true, actions: await takeQuestActions(env) });
+}
+
+// What Nova Hub shows: the latest plan, when it came, and whether Nova Agent is online
+export async function questsForHub(env) {
+  const { results } = await env.DB.prepare("SELECT key, value FROM settings WHERE key IN (?, 'agent_nova_seen')").bind(QUESTS_KEY).all();
+  const setting = Object.fromEntries(results.map((row) => [row.key, row.value]));
+  let saved = { at: null, state: null };
+  try {
+    saved = JSON.parse(setting[QUESTS_KEY] || "null") || saved;
+  } catch {}
+  const seen = setting.agent_nova_seen ? Date.parse(setting.agent_nova_seen) : 0;
+  return { ...saved, online: Date.now() - seen < ONLINE_MINUTES * 60000 };
+}
+
+// A tap in Nova Hub, for Nova Agent to carry out
+export async function queueQuestAction(env, action) {
+  const list = await readActions(env);
+  list.push({ ...action, at: new Date().toISOString() });
+  await setSetting(env, ACTIONS_KEY, JSON.stringify(list.slice(-50)));
+}
+
+async function readActions(env) {
+  try {
+    return JSON.parse((await env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(ACTIONS_KEY).first("value")) || "[]");
+  } catch {
+    return [];
+  }
+}
+async function hasQuestActions(env) {
+  return (await readActions(env)).length > 0;
+}
+async function takeQuestActions(env) {
+  const list = await readActions(env);
+  if (list.length) await setSetting(env, ACTIONS_KEY, "[]");
+  return list;
 }
 
 // Compare two secrets without giving away how much matched
