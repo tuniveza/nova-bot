@@ -1,4 +1,4 @@
-// Crew's API: signing in once for every Nova Agent panel, staff records,
+// Portal's API: signing in once for every Nova Agent panel, staff records,
 // profiles and planets.
 //
 //   POST /auth/login            { email, password, client? }  → session cookie (or an app token with client: "app")
@@ -14,9 +14,9 @@
 //   GET  /staff/:id             a profile (name, role, planet; email for admins and yourself)
 //   PATCH /staff/:id            admin: role, status, name, planet; yourself: name, planet
 //   GET  /staff/:id/planet.svg  the planet badge (?size=, ?animate=1)
-//   GET  /staff/:id/index       that person's Nova Index view (yourself or an admin)
+//   GET  /staff/:id/index       that person's Index view (yourself or an admin)
 //   POST /auth/connect          { return_to } → a read-only profile token for another suite site
-//                               (Nova Notes, Nova Calendar...), so its Portal badge can show you
+//                               (Notes, Calendar...), so its Portal badge can show you
 // /auth/me and /auth/logout also answer those sites (CORS), with a profile token.
 // Changes from a browser must come from this site (the Origin header); apps
 // using a token are exempt (a token can't be sent by another website).
@@ -91,7 +91,7 @@ async function inviteFor(env, id, origin) {
   const token = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const expires = new Date(Date.now() + INVITE_DAYS * 864e5).toISOString();
   await env.DB.prepare("UPDATE staff SET invite_hash = ?, invite_expires = ? WHERE id = ?").bind(await sha256(token), expires, id).run();
-  return { invite_url: `${origin}/crew/?invite=${encodeURIComponent(token)}`, invite_expires: expires };
+  return { invite_url: `${origin}/portal/?invite=${encodeURIComponent(token)}`, invite_expires: expires };
 }
 
 async function staffByInvite(env, token) {
@@ -185,7 +185,7 @@ export async function handlePortal(request, env, ctx, pathname) {
 
   // The very first account: an admin, proven with the studio's current (shared) password
   if (pathname === "/auth/setup" && method === "POST") {
-    if ((await count()) > 0) return json({ error: "Crew is already set up. Sign in instead." }, 409);
+    if ((await count()) > 0) return json({ error: "Portal is already set up. Sign in instead." }, 409);
     if (await tooMany(env, request, "setup")) return json({ error: "Too many tries. Wait a minute and try again." }, 429);
     if (!env.ADMIN_PASSWORD || !(await sameText(String(body.studio_password || ""), env.ADMIN_PASSWORD))) return json({ error: "That isn't the studio's current password." }, 401);
     const email = text(body.email, 200).toLowerCase();
@@ -337,7 +337,7 @@ export async function handlePortal(request, env, ctx, pathname) {
     return json({ ok: true, staff: profile(await env.DB.prepare("SELECT * FROM staff WHERE id = ?").bind(row.id).first(), { full: true }) });
   }
 
-  // Their Nova Index: their own staff partition, plus the studio's shared facts
+  // Their Index: their own staff partition, plus the studio's shared facts
   if (sub === "index" && method === "GET") {
     if (!isAdmin && !self) return json({ error: "Not allowed" }, 403);
     const files = [...(await listFiles(env, { scopes: ["staff"], owner_id: row.id })), ...(await listFiles(env, { scopes: ["studio"] }))];

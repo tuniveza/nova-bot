@@ -52,7 +52,7 @@ export const CANCEL_NOTICE_HOURS = 48;
 // hours before it starts; after that they contact the studio
 export const CUSTOMER_MOVE_HOURS = 48;
 // When a customer cancels with enough notice, their deposit is refunded:
-//   "staff" - staff phones are told to refund it (in Studio: "refund booking 12")
+//   "staff" - staff phones are told to refund it (in Hub: "refund booking 12")
 //   "auto"  - Stripe refunds it straight away
 export const CUSTOMER_CANCEL_REFUNDS = "staff";
 

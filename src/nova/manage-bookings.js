@@ -1,6 +1,6 @@
-// Staff managing bookings from Studio's chat
+// Staff managing bookings from Hub's chat
 //
-// In Studio, staff can ask NovaBot to find, cancel, move or change a booking
+// In Hub, staff can ask NovaBot to find, cancel, move or change a booking
 // ("cancel Dana's session on Saturday", "move Kai to 4pm", "send Ola the
 // balance link", "refund booking 12"). These tools are only given to NovaBot in
 // the staff chat, never on the website.
@@ -165,7 +165,7 @@ export const MANAGE_BOOKING_TOOLS = [FIND_BOOKINGS_TOOL, CANCEL_BOOKING_TOOL, RE
 
 // The extra instructions NovaBot gets in the staff chat
 export const MANAGE_BOOKINGS_RULES = `STAFF CHAT: MANAGING BOOKINGS
-You're talking to Novacane staff in Studio, not a customer. Besides everything
+You're talking to Novacane staff in Hub, not a customer. Besides everything
 above, you can look up and change bookings. Everything happens straight away in the
 studio's Google Calendar, the client's emails (Gmail) and payments (Stripe):
 - find_bookings lists bookings with their numbers (#12). Use it to answer questions

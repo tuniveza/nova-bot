@@ -1,4 +1,4 @@
-// Nova Index's memory store: small files of one-line facts, one file per
+// Index's memory store: small files of one-line facts, one file per
 // subject, kept in D1 (never in git: it holds clients' details).
 //
 //   memory_files    the facts: scope + owner + path → description (the index) + body
@@ -22,13 +22,13 @@ export const CONTEXT_CHARS = 3200;
 
 // What each kind of caller may read and write
 //   agent    Nova Agent (its key): the studio's facts and staff memory
-//   staff    Studio and Nova Index (signed in): everything
+//   staff    Hub and Index (signed in): everything
 //   website  NovaBot on the website: that customer's own file and the public studio file only
 export const ROLES = {
   agent: { read: ["studio", "staff"], write: ["studio", "staff"] },
   staff: { read: ["studio", "staff", "customer"], write: ["studio", "staff", "customer"] },
   website: { read: ["customer"], write: [] },
-  // A staff member signed in with Crew (not an admin): the studio's facts, and their own partition
+  // A staff member signed in with Portal (not an admin): the studio's facts, and their own partition
   member: { read: ["studio", "staff"], write: ["staff"] },
 };
 
@@ -145,9 +145,9 @@ const bump = () => {
 
 // ---- Reading ----
 
-// The listing for Nova Index (no bodies, so it's quick to send)
+// The listing for Index (no bodies, so it's quick to send)
 // q: only files whose name, description, aliases, owner, path or facts mention it
-// since: only files changed after this moment (ms), for Nova Index's live feed
+// since: only files changed after this moment (ms), for Index's live feed
 export async function listFiles(env, { scopes, owner_id, q, since } = {}) {
   const want = (scopes && scopes.length ? scopes : SCOPES).filter((s) => SCOPES.includes(s));
   let where = `scope IN (${want.map(() => "?").join(",")})`;

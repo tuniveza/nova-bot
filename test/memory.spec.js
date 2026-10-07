@@ -1,4 +1,4 @@
-// Nova Index: the suite's shared memory (src/memory/)
+// Index: the suite's shared memory (src/memory/)
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
@@ -156,7 +156,7 @@ describe("the engine's doors", () => {
 		expect(res.status).toBe(202);
 	});
 
-	it("lets signed-in staff approve and reject in Nova Index", async () => {
+	it("lets signed-in staff approve and reject in Index", async () => {
 		const login = await worker.fetch(new Request(BASE + "/app/api/login", { method: "POST", headers: { Origin: BASE, "Content-Type": "application/json" }, body: JSON.stringify({ password: "test-admin-password" }) }), e, createExecutionContext());
 		const cookie = login.headers.get("Set-Cookie").split(";")[0];
 		answers = [{ facts: [{ path: "profile", tag: "stated", fact: "likes the Booth" }, { path: "profile", tag: "observed", fact: "books on Sundays" }] }];

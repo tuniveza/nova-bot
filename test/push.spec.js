@@ -19,7 +19,7 @@ async function vapidKeys() {
 	return { VAPID_PUBLIC_KEY: b64url(raw), VAPID_PRIVATE_KEY: jwk.d };
 }
 
-// A phone's notification address, like the one an iPhone gives Studio
+// A phone's notification address, like the one an iPhone gives Hub
 async function phone(endpoint) {
 	const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
 	return { endpoint, keys: { p256dh: b64url(await crypto.subtle.exportKey("raw", pair.publicKey)), auth: b64url(crypto.getRandomValues(new Uint8Array(16))) } };
@@ -114,7 +114,7 @@ describe("sending notifications", () => {
 	});
 });
 
-describe("Studio: turning notifications on", () => {
+describe("Hub: turning notifications on", () => {
 	it("only lets signed-in staff add a phone", async () => {
 		const address = await phone("https://web.push.apple.com/phone-1");
 		expect((await call("/app/api/push/subscribe", { body: { subscription: address } })).status).toBe(401);
@@ -182,7 +182,7 @@ describe("what triggers a notification", () => {
 	});
 });
 
-describe("Studio: the Alerts tab", () => {
+describe("Hub: the Alerts tab", () => {
 	const alerts = async (cookie) => (await (await call("/app/api/notifications", { cookie })).json()).notifications;
 
 	it("lists only notifications that went through to a phone, newest first", async () => {
@@ -562,7 +562,7 @@ describe("booking details from Acuity's calendar feed", () => {
 	});
 });
 
-describe("Studio: deleting alerts, auto-delete and voice", () => {
+describe("Hub: deleting alerts, auto-delete and voice", () => {
 	const list = async (cookie) => (await (await call("/app/api/notifications", { cookie })).json());
 	const addAlerts = async () => {
 		await savePhone(env, await phone("https://web.push.apple.com/phone-1"));
@@ -618,7 +618,7 @@ describe("Studio: deleting alerts, auto-delete and voice", () => {
 	});
 });
 
-describe("Studio: calendar and questions", () => {
+describe("Hub: calendar and questions", () => {
 	const feedEnv = { ACUITY_CALENDAR_URL: "https://calendar.test/feed", ANTHROPIC_API_KEY: "test-key" };
 
 	it("the calendar lists every booking in Acuity's diary, for staff only", async () => {

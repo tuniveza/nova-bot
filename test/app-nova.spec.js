@@ -150,7 +150,7 @@ describe("staff app data", () => {
 		const { status, data } = await app("chat", { cookie, body: { messages: [{ role: "user", content: "Where are you?" }] } });
 		expect(status).toBe(200);
 		expect(data.reply).toBe("We're in Forest Hill.");
-		// One call for the reply; anything else is Nova Index learning in the background
+		// One call for the reply; anything else is Index learning in the background
 		const replies = claudeCalls.filter((c) => !(c.tool_choice && c.tool_choice.type === "tool"));
 		expect(replies).toHaveLength(1);
 		const { count } = await env.DB.prepare("SELECT COUNT(*) AS count FROM chat_messages").first();

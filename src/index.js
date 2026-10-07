@@ -667,8 +667,8 @@ approved.
 
 // ===== THE CODE (you shouldn't need to change this) =====
 
-// How NovaBot talks in Studio: to a colleague on the Novacane team, not a customer
-const STAFF_VOICE = `YOU ARE TALKING TO STAFF. This chat is inside Studio, the staff app: the person writing is a member of the Novacane Studios team, never a customer, whatever they ask.
+// How NovaBot talks in Hub: to a colleague on the Novacane team, not a customer
+const STAFF_VOICE = `YOU ARE TALKING TO STAFF. This chat is inside Hub, the staff app: the person writing is a member of the Novacane Studios team, never a customer, whatever they ask.
 - Talk to them as a colleague: plain, direct and factual. No greetings or sign-offs for customers, no selling, no "we'd love to have you", no inviting them to book or visit.
 - Refer to customers in the third person ("they", "the client", or their name).
 - When they want a booking link, times or prices, give it as something to pass on: "Here's the link to send them: ...", "They can book Thursday at 2pm".
@@ -691,7 +691,7 @@ export default {
         expireHolds(env, at).catch((err) => console.log("Nova hold check failed:", err)),
         sendReminders(env, at).catch((err) => console.log("Nova reminders failed:", err)),
         dailyHealthCheck(env, new Date(at)).catch((err) => console.log("Nova health check failed:", err)),
-        // Read quiet website chats for facts worth remembering (they wait for approval in Nova Index)
+        // Read quiet website chats for facts worth remembering (they wait for approval in Index)
         learnFromWebsiteChats(env).catch((err) => console.log("Memory from website chats failed:", err)),
       ])
     );
@@ -700,11 +700,10 @@ export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
 
-    // Nova Agent's Studio and Crew panels online (their pages are copied into public/ from
+    // Nova Agent's Hub and Portal panels online (their pages are copied into public/ from
     // Nova Agent's repo; their data is here). The staff API keeps its address.
     if (pathname.startsWith("/app/api/")) return handleApp(request, env, ctx, answer);
-    // Where Studio, Crew and Nova Index used to be: phones installed from /app/ keep
-    // working (their push helper is Studio's), and old links and bookmarks land in the right panel
+    // Addresses the panels had for a day go back to their own
     const moved = movedPage(request, env, pathname);
     if (moved) return moved;
 
@@ -728,9 +727,9 @@ export default {
     if (pathname === "/nova-agent/notify") return handleAgentNova(request, env, "/hub/notify");
     if (pathname.startsWith("/nova-agent/")) return handleAgentNova(request, env, "/hub/agent/" + pathname.slice("/nova-agent/".length));
     if (pathname === "/hub/notify" || pathname.startsWith("/hub/agent/")) return handleAgentNova(request, env, pathname);
-    // Nova Index's memory engine, for Nova Agent (src/memory/)
+    // Index's memory engine, for Nova Agent (src/memory/)
     if (pathname.startsWith("/memory/")) return handleMemoryApi(request, env, ctx, pathname);
-    // Crew: one sign-in for the suite, staff and their planets (src/portal/)
+    // Portal: one sign-in for the suite, staff and their planets (src/portal/)
     if (pathname.startsWith("/auth/") || pathname === "/staff" || pathname.startsWith("/staff/")) return handlePortal(request, env, ctx, pathname);
     // Nova Club (the members' app): when the studio is booked, straight from
     // Acuity (or the studio's Google Calendar, with the switch on Nova)
@@ -809,7 +808,7 @@ export default {
 
     // Keep the last 40 messages (enough for a whole booking, so NovaBot doesn't
     // forget the session or the customer's details halfway through), and cut
-    // very long ones. Studio's staff chat (app-page.js) and the widget
+    // very long ones. Hub's staff chat (app-page.js) and the widget
     // (public/novabot.js) keep the same 40.
     let messages = Array.isArray(body.messages) ? body.messages.slice(-40) : [];
     messages = messages
@@ -857,7 +856,7 @@ async function tooMany(limiter, ip) {
 // Returns { text, choice, form }: `choice` ({ link }) asks the website to show the
 // "Book it for me / I'll book it myself" buttons under the reply, and `form`
 // opens the booking card (booking-form.js) with what NovaBot filled in.
-// `staff: true` (Studio's staff chat only) also lets NovaBot find, cancel,
+// `staff: true` (Hub's staff chat only) also lets NovaBot find, cancel,
 // reschedule and change existing bookings.
 async function answer(messages, env, visitor, waitUntil, { staff = false } = {}) {
   // Sandbox without an AI key: a clearly labelled stand-in reply, so the
@@ -885,7 +884,7 @@ async function answer(messages, env, visitor, waitUntil, { staff = false } = {})
   // book for people, the session list, and its tools
   const kit = await bookingKit(env, staff);
   const { canBook, types: typesFound, canManage } = kit;
-  // On the website, the booking card does the booking; Studio's staff chat books in the chat
+  // On the website, the booking card does the booking; Hub's staff chat books in the chat
   const bookTool = staff ? kit.tools.bookSession : kit.tools.form;
   const tools = canBook ? [ENQUIRY_TOOL, kit.tools.booking, kit.tools.availability, bookTool] : [ENQUIRY_TOOL, kit.tools.booking, kit.tools.availability];
   if (canManage) tools.push(...kit.manage.tools);
@@ -903,9 +902,9 @@ async function answer(messages, env, visitor, waitUntil, { staff = false } = {})
     `\nUse this list to work out dates like "next Friday" or "this weekend", and always say the exact date you mean (e.g. "Friday 9 October") so there's no mix-up.`;
   if (canBook && types.length) sessions += "\n\n" + (staff ? kit.rules.bookSession : kit.rules.form);
   if (canManage) sessions += "\n\n" + kit.manage.rules;
-  // In Studio, NovaBot is talking to the studio team, never to a customer
+  // In Hub, NovaBot is talking to the studio team, never to a customer
   if (staff) sessions = STAFF_VOICE + "\n\n" + sessions;
-  // What Nova Agent remembers that matters for this turn (Nova Index): on the
+  // What Nova Agent remembers that matters for this turn (Index): on the
   // website, only this customer's own facts and the public studio facts
   try {
     const lastAsk = [...messages].reverse().find((m) => m.role === "user");
@@ -1065,7 +1064,7 @@ async function bookingKit(env, staff) {
   }
   // Nova Agent online and live? And the live session list. Both at once, to save time.
   // (Nothing is booked until the deposit's paid: the booking card, and book_session
-  // in Studio's staff chat, only check the time and give Acuity's booking page.)
+  // in Hub's staff chat, only check the time and give Acuity's booking page.)
   const [canBook, types] = await Promise.all([
     canBookSessions(env),
     getSessionTypes(ACUITY_OWNER).catch((err) => {
@@ -1228,7 +1227,7 @@ function sandboxPage() {
   );
 }
 
-// The privacy policy for Studio, the staff app
+// The privacy policy for Hub, the staff app
 function privacyPage() {
   return new Response(
     `<!DOCTYPE html>
@@ -1236,12 +1235,12 @@ function privacyPage() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Studio – Privacy Policy</title>
+<title>Hub – Privacy Policy</title>
 </head>
 <body>
-<h1>Studio – Privacy Policy</h1>
-<p>Studio is a staff-only tool for Novacane Studios. It displays customer enquiries and chat conversations submitted through the novacane.co.uk chatbot, and lets staff chat with the Novabot assistant.</p>
-<p>Data handled: names, contact details and messages customers submit. This data is stored on Novacane Studios' Cloudflare backend and processed by an AI provider solely to run the chatbot and to answer staff questions in Studio.</p>
+<h1>Hub – Privacy Policy</h1>
+<p>Hub is a staff-only tool for Novacane Studios. It displays customer enquiries and chat conversations submitted through the novacane.co.uk chatbot, and lets staff chat with the Novabot assistant.</p>
+<p>Data handled: names, contact details and messages customers submit. This data is stored on Novacane Studios' Cloudflare backend and processed by an AI provider solely to run the chatbot and to answer staff questions in Hub.</p>
 <p>Memory: to give better help over time, short notes may be kept from chats, such as a preferred session time or what a customer is working on. Notes about customers are only kept after a member of the Novacane team has approved each one. Card, bank and ID details are never kept. To see or delete any notes about you, contact Novacane Studios via novacane.co.uk.</p>
 <p>For bookings made through Acuity, the booking confirmation page sends the session, date, time, price and the customer's email to Novacane Studios' Cloudflare backend, and the booking's details (name, contact details, booking details and booking form answers) are read from Acuity's private calendar feed and Acuity's booking emails to the studio, so staff are notified of the booking. Staff notifications on registered staff phones are delivered through Apple's or Google's push service, encrypted so only the staff phone can read them. Booking details and notifications are kept for 90 days.</p>
 <p>Data is never sold, shared for advertising, or used for any other purpose. To request deletion, contact Novacane Studios via novacane.co.uk.</p>
@@ -1349,21 +1348,14 @@ function fallback(bookingPage = BOOKING_LINK) {
   return "NovaBot's having a moment and can't answer right now. You can book directly here: " + bookingPage;
 }
 
-// Old addresses of Nova Agent's panels (GET only; the API isn't moved)
-//   /app/sw.js       Studio's push helper, so phones that installed from /app/ keep getting pings
-//   /app/memory/...  → /index/...      (Nova Index)
-//   /app/...         → /studio/...     (Studio, now Studio)
-//   /portal/...      → /crew/...       (Crew, now Crew)
+// Addresses the panels had for a day (GET only): back to their own
+//   /studio/... → /app/...   /crew/... → /portal/...   /index/... → /app/memory/...
 function movedPage(request, env, pathname) {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
   const url = new URL(request.url);
   const to = (path) => Response.redirect(new URL(path + url.search + url.hash, url).toString(), 302);
-  if (pathname === "/app/sw.js") {
-    return env.ASSETS.fetch(new Request(new URL("/studio/sw.js", url))).then((res) => new Response(res.body, { status: res.status, headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache", "Service-Worker-Allowed": "/app/" } }));
-  }
-  if (pathname === "/app" || pathname === "/app/memory") return to(pathname === "/app" ? "/studio/" : "/index/");
-  if (pathname.startsWith("/app/memory/")) return to("/index/" + pathname.slice("/app/memory/".length));
-  if (pathname.startsWith("/app/")) return to("/studio/" + pathname.slice("/app/".length));
-  if (pathname === "/portal" || pathname.startsWith("/portal/")) return to("/crew/" + pathname.slice("/portal/".length));
+  if (pathname === "/studio" || pathname.startsWith("/studio/")) return to("/app/" + pathname.slice("/studio/".length));
+  if (pathname === "/crew" || pathname.startsWith("/crew/")) return to("/portal/" + pathname.slice("/crew/".length));
+  if (pathname === "/index" || pathname.startsWith("/index/")) return to("/app/memory/" + pathname.slice("/index/".length));
   return null;
 }

@@ -1,4 +1,4 @@
-// NovaBot booking for people: book_session (Studio's staff chat) and the
+// NovaBot booking for people: book_session (Hub's staff chat) and the
 // booking card on the website. Both go straight into Google Calendar and email
 // a confirmation with a link to pay the deposit.
 
@@ -77,7 +77,7 @@ describe("book_session", () => {
     expect((await bookSession(env, { session_type_id: VOICE_1H, date: ukDay(14), time: "11:00", ...person }, { ip, staff: true })).ok).toBe(true);
   });
 
-  it("works from Studio's staff chat", async () => {
+  it("works from Hub's staff chat", async () => {
     const login = await worker.fetch(new Request(`${BASE}/app/api/login`, { method: "POST", headers: { Origin: BASE, "Content-Type": "application/json" }, body: JSON.stringify({ password: "test-admin-password" }) }), env, createExecutionContext());
     const cookie = login.headers.get("Set-Cookie").split(";")[0];
     fakes.claude.replies.push(toolUse("book_session", { session_type_id: RAP_2, date: ukDay(10), time: "14:00", ...person }), says("Booked! Ola's confirmation is on its way."));

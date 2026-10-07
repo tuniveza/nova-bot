@@ -1,5 +1,6 @@
-// Nova Hub, Nova Portal and Nova Index moved into Nova Agent's panels (Studio, Crew, Index).
-// Old links, bookmarks and installed phones keep working.  Run: npm test
+// Nova Agent's panels online keep their own addresses: Hub at /app/, Portal at
+// /portal/, Index at /app/memory/. The addresses they had for a day go back there.
+// Run: npm test
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import worker from "../src";
@@ -12,31 +13,20 @@ async function get(path, init = {}) {
   return res;
 }
 
-describe("old addresses", () => {
+describe("addresses the panels had for a day", () => {
   it.each([
-    ["/app/", "/studio/"],
-    ["/app", "/studio/"],
-    ["/app/#nova", "/studio/#nova"],
-    ["/app/memory/", "/index/"],
-    ["/app/memory/?scope=studio", "/index/?scope=studio"],
-    ["/portal/", "/crew/"],
-    ["/portal/?invite=abc", "/crew/?invite=abc"],
-  ])("%s goes to %s", async (from, to) => {
+    ["/studio/", "/app/"],
+    ["/studio/#nova", "/app/#nova"],
+    ["/crew/?invite=abc", "/portal/?invite=abc"],
+    ["/index/?scope=studio", "/app/memory/?scope=studio"],
+  ])("%s goes back to %s", async (from, to) => {
     const res = await get(from);
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(BASE + to);
   });
 
-  it("phones installed from /app/ keep their push helper (now Studio's)", async () => {
-    const res = await get("/app/sw.js");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toMatch(/javascript/);
-    expect(await res.text()).toMatch(/addEventListener\("push"/);
-  });
-
-  it("the staff API keeps its address", async () => {
-    const res = await get("/app/api/me");
-    expect(res.status).not.toBe(302);
+  it("the staff API isn't moved", async () => {
+    expect((await get("/app/api/me")).status).not.toBe(302);
   });
 });
 

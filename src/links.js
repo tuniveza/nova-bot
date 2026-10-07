@@ -3,7 +3,7 @@
 //
 // The list itself is kept in the database (settings: "url_directory"), never
 // in this code, because the code is public on GitHub. It's shown only behind
-// the admin password: on the admin page (/admin/links) and in Studio. Each
+// the admin password: on the admin page (/admin/links) and in Hub. Each
 // time it's opened, every web address is checked, so you can see at a glance
 // what's up.
 //
@@ -72,7 +72,7 @@ async function check(url, kind) {
   if (kind === "planned") return { state: "unchecked", label: "Not set up yet" };
   if (!/^https:\/\//.test(url)) return { state: "unchecked", label: /localhost|127\.0\.0\.1/.test(url) ? "Studio computer only" : "Not a web address" };
   try {
-    const res = await fetch(url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(6000), headers: { "User-Agent": "Studio link check" } });
+    const res = await fetch(url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(6000), headers: { "User-Agent": "Hub link check" } });
     const s = res.status;
     if (s >= 200 && s < 300) return { state: "up", label: `Up · ${s}` };
     if (s >= 300 && s < 400) return { state: "up", label: `Up · redirects (${s})` };

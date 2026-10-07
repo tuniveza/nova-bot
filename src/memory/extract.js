@@ -8,7 +8,7 @@
 //   2. Merge, don't pile up: each file is rewritten with the new facts folded in (a line
 //      on the same subject is replaced, not joined by a contradicting one), written with
 //      its version token, and retried once if someone else wrote first.
-//   3. Customers: facts about clients wait in the approval queue (Nova Index / Studio)
+//   3. Customers: facts about clients wait in the approval queue (Index / Hub)
 //      instead of being saved straight away.
 // Files that grow past MAX_FILE_BYTES are condensed in the same pass.
 
@@ -160,7 +160,7 @@ export async function learn(env, { transcript, scope, owner_id, mode, source_app
 export async function approve(env, row, editedFact) {
   const fact = String(editedFact || row.fact);
   if (isForbidden(fact)) return { error: "That can't be kept in memory" };
-  return mergeInto(env, { scope: row.scope, owner_id: row.owner_id, path: row.target, facts: [{ tag: row.tag, fact }], source_app: "Nova Index" });
+  return mergeInto(env, { scope: row.scope, owner_id: row.owner_id, path: row.target, facts: [{ tag: row.tag, fact }], source_app: "Index" });
 }
 
 // Where facts may go, by source (shown to the model)

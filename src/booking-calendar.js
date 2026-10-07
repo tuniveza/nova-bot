@@ -51,7 +51,7 @@ export async function readCalendar(env, id, action) {
   return false;
 }
 
-// Every booking in the feed, soonest first (for Studio's calendar and questions), or null if the feed isn't set up
+// Every booking in the feed, soonest first (for Hub's calendar and questions), or null if the feed isn't set up
 export async function listBookings(env) {
   // No feed link: nothing to list
   if (!env.ACUITY_CALENDAR_URL) return null;

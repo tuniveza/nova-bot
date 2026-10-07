@@ -1,4 +1,4 @@
-// Crew: one sign-in for the whole Nova Agent.
+// Portal: one sign-in for the whole Nova Agent.
 //
 // Passwords: PBKDF2-SHA256, 100,000 rounds (the most Cloudflare Workers allow),
 // with a random 16-byte salt per person; stored as "pbkdf2$100000$<salt>$<hash>".
@@ -7,7 +7,7 @@
 // SHA-256 is stored, so the sessions table can't be used to sign in, and signing
 // out deletes the row, so it stops working everywhere at once.
 // A third kind, "profile" ("Bearer nprof_..."), is read-only: it lets a suite app
-// on another site (Nova Notes, Nova Calendar) show who you are, and nothing else.
+// on another site (Notes, Calendar) show who you are, and nothing else.
 
 export const COOKIE = "nova_session";
 export const SESSION_DAYS = 30;

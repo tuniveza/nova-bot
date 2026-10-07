@@ -1,4 +1,4 @@
-// Crew: one sign-in for Nova Agent (src/portal/)
+// Portal: one sign-in for Nova Agent (src/portal/)
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import worker from "../src";
@@ -124,18 +124,18 @@ describe("staff and invites", () => {
 });
 
 describe("one sign-in for the suite", () => {
-	it("opens Studio, the admin pages and each person's Nova Index partition", async () => {
+	it("opens Hub, the admin pages and each person's Index partition", async () => {
 		const admin = await setup();
-		// Studio
+		// Hub
 		expect((await call("/app/api/me", { cookie: admin })).status).toBe(200);
 		// The admin pages (no separate password)
 		expect((await call("/admin/links", { cookie: admin })).status).toBe(200);
-		// A staff member who isn't an admin: Studio yes, admin pages no
+		// A staff member who isn't an admin: Hub yes, admin pages no
 		const made = await call("/staff", { method: "POST", cookie: admin, body: { email: "kai@novacane.co.uk", display_name: "Kai" } });
 		const kai = (await call("/auth/invite/accept", { method: "POST", body: { token: new URL(made.data.invite_url).searchParams.get("invite"), password: PASS } })).cookie;
 		expect((await call("/app/api/me", { cookie: kai })).status).toBe(200);
 		expect((await call("/admin", { cookie: kai })).status).toBe(401);
-		// Nova Index: Kai sees the studio's facts and their own partition, never someone else's or customers'
+		// Index: Kai sees the studio's facts and their own partition, never someone else's or customers'
 		await putFile(env, { scope: "studio", path: "studio", body: "- [stated] open late", if_version: "new" });
 		await putFile(env, { scope: "staff", owner_id: "kai", path: "profile", body: "- [stated] mixes in the mornings", if_version: "new" });
 		await putFile(env, { scope: "staff", owner_id: "dominic-hughes", path: "profile", body: "- [stated] runs the studio", if_version: "new" });
@@ -189,7 +189,7 @@ describe("the Nova Agent badge on every app", () => {
 		expect(made.status).toBe(200);
 		const token = /#nova_portal=(nprof_[\w-]+)$/.exec(made.data.redirect)[1];
 		expect(made.data.redirect.startsWith(NOTES + "/?x=1#")).toBe(true);
-		// The badge on Nova Notes: who you are, without the email, with CORS for that site only
+		// The badge on Notes: who you are, without the email, with CORS for that site only
 		const me = await call("/auth/me", { token, headers: { Origin: NOTES } });
 		expect(me.status).toBe(200);
 		expect(me.data.via).toBe("connect");
