@@ -1,4 +1,5 @@
 import { env } from "cloudflare:test";
+import { STAFF_AUTH, STAFF_COOKIE } from "./sign-in.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { clearTables, connectGoogle, installFakes, ukDay } from "./fakes.js";
@@ -52,7 +53,7 @@ async function addCode(code, referrer, active = 1) {
 		.run();
 }
 
-const auth = (password = "test-admin-password") => ({ Authorization: "Basic " + btoa("studio:" + password) });
+const auth = () => STAFF_AUTH;
 
 function admin(path, init = {}) {
 	return worker.fetch(new Request(BASE + path, { ...init, headers: { ...auth(), ...(init.headers || {}) } }), env);
@@ -135,13 +136,11 @@ describe("Referral page", () => {
 });
 
 describe("Admin page", () => {
-	it("needs the password", async () => {
-		let res = await worker.fetch(new Request(`${BASE}/admin`), env);
-		expect(res.status).toBe(401);
-		expect(res.headers.get("WWW-Authenticate")).toMatch(/Basic/);
-
-		res = await admin("/admin", { headers: auth("wrong") });
-		expect(res.status).toBe(401);
+	it("needs a Portal admin: signed out, it's off to Portal to sign in", async () => {
+		let res = await worker.fetch(new Request(`${BASE}/admin`, { redirect: "manual" }), env);
+		expect(res.status).toBe(302);
+		expect(res.headers.get("Location")).toBe(`${BASE}/portal/?next=%2Fadmin`);
+		expect(res.headers.get("WWW-Authenticate")).toBeNull();
 
 		res = await admin("/admin");
 		expect(res.status).toBe(200);
@@ -274,7 +273,7 @@ describe("admin: connections", () => {
 			throw new Error("Unexpected fetch " + url);
 		});
 		const state = "0f8fad5b-d9cb-469f-a165-70867728950e";
-		const res = await admin(`/admin/google/callback?code=abc&state=${state}`, { headers: { Cookie: `nv_gstate=${state}` } });
+		const res = await admin(`/admin/google/callback?code=abc&state=${state}`, { headers: { Cookie: `${STAFF_COOKIE}; nv_gstate=${state}` } });
 		expect(decodeURIComponent(res.headers.get("Location"))).toContain("Connected as studio@novacane.co.uk");
 		expect(await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_refresh_token'").first("value")).toBe("rt-new");
 	});

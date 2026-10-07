@@ -1,4 +1,5 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
+import { STAFF_AUTH, STAFF_COOKIE } from "./sign-in.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { forgetSessionTypes } from "../src/booking.js";
@@ -46,10 +47,9 @@ async function app(path, { body, cookie, origin = BASE, extraEnv = {} } = {}) {
 	return { status: res.status, data: await res.json(), headers: res.headers };
 }
 
+// Signed in with Portal (test/sign-in.js)
 async function signIn() {
-	const res = await app("login", { body: { password: "test-admin-password" } });
-	expect(res.status).toBe(200);
-	return res.headers.get("Set-Cookie").split(";")[0];
+	return STAFF_COOKIE;
 }
 
 async function addEnquiry(extra = {}) {
@@ -62,42 +62,35 @@ async function addEnquiry(extra = {}) {
 }
 
 describe("signing in to the staff app", () => {
-	it("needs the right password, and sets a secure cookie for 30 days", async () => {
-		expect((await app("login", { body: { password: "wrong" } })).status).toBe(401);
+	it("is Portal's job: there's no password here", async () => {
 		const res = await app("login", { body: { password: "test-admin-password" } });
-		const cookie = res.headers.get("Set-Cookie");
-		expect(cookie).toMatch(/^nvadmin=\d+\.[\w-]+; Path=\/app; Max-Age=2592000; HttpOnly; Secure; SameSite=Strict$/);
+		expect(res.status).toBe(410);
+		expect(res.data.signIn).toBe("/portal/");
 	});
 
-	it("keeps everything else behind the login", async () => {
+	it("keeps everything behind a Portal sign-in", async () => {
 		for (const path of ["me", "enquiries", "sessions", "conversations"]) expect((await app(path)).status).toBe(401);
 		expect((await app("chat", { body: { messages: [{ role: "user", content: "hi" }] } })).status).toBe(401);
-		const cookie = await signIn();
-		expect((await app("me", { cookie })).data).toEqual({ ok: true });
+		expect((await app("me", { cookie: STAFF_COOKIE })).data).toEqual({ ok: true });
 	});
 
-	it("refuses forged, expired or old-password cookies", async () => {
-		const cookie = await signIn();
-		const [, value] = cookie.split("=");
-		const [expires, sig] = value.split(".");
-		expect((await app("me", { cookie: `nvadmin=${Number(expires) + 1}.${sig}` })).status).toBe(401); // longer expiry, same signature
-		expect((await app("me", { cookie: `nvadmin=1000.${sig}` })).status).toBe(401); // expired
-		expect((await app("me", { cookie, extraEnv: { ADMIN_PASSWORD: "a-new-password" } })).status).toBe(401); // password changed
+	it("doesn't take the old shared-password cookie", async () => {
+		expect((await app("me", { cookie: "nvadmin=9999999999999.forged" })).status).toBe(401);
 	});
 
 	it("only accepts changes sent from the app itself", async () => {
-		expect((await app("login", { body: { password: "test-admin-password" }, origin: "https://evil.example" })).status).toBe(403);
+		expect((await app("logout", { body: {}, origin: "https://evil.example" })).status).toBe(403);
 	});
 
-	it("signs out", async () => {
-		const res = await app("logout", { body: {} });
-		expect(res.headers.get("Set-Cookie")).toMatch(/^nvadmin=; Path=\/app; Max-Age=0/);
-	});
-
-	it("says when the admin password isn't set up", async () => {
-		expect((await app("me", { extraEnv: { ADMIN_PASSWORD: "" } })).status).toBe(503);
+	it("signs out of Portal (everything), clearing any old cookie too", async () => {
+		const res = await app("logout", { body: {}, cookie: STAFF_COOKIE });
+		const cookies = res.headers.get("Set-Cookie");
+		expect(cookies).toMatch(/nvadmin=; Path=\/app; Max-Age=0/);
+		expect(cookies).toMatch(/nova_session=;/);
+		expect((await app("me", { cookie: STAFF_COOKIE })).status).toBe(401);
 	});
 });
+
 
 describe("staff app data", () => {
 	it("lists enquiries and marks them done", async () => {

@@ -1,4 +1,5 @@
 import { env } from "cloudflare:test";
+import { STAFF_AUTH, STAFF_COOKIE } from "./sign-in.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import worker from "../src";
 
@@ -23,7 +24,7 @@ async function send(body, origin = "https://novacane.co.uk") {
 }
 
 const admin = (path) =>
-	worker.fetch(new Request(BASE + path, { headers: { Authorization: "Basic " + btoa("studio:test-admin-password") } }), env, {}).then((r) => r.text());
+	worker.fetch(new Request(BASE + path, { headers: STAFF_AUTH }), env, {}).then((r) => r.text());
 
 describe("Feedback about NovaBot", () => {
 	it("saves typed or spoken feedback with the recent chat", async () => {

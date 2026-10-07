@@ -3,6 +3,7 @@
 // a confirmation with a link to pay the deposit.
 
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
+import { STAFF_AUTH, STAFF_COOKIE } from "./sign-in.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { bookSession, canBookSessions } from "../src/nova/book-session.js";
@@ -78,8 +79,7 @@ describe("book_session", () => {
   });
 
   it("works from Hub's staff chat", async () => {
-    const login = await worker.fetch(new Request(`${BASE}/app/api/login`, { method: "POST", headers: { Origin: BASE, "Content-Type": "application/json" }, body: JSON.stringify({ password: "test-admin-password" }) }), env, createExecutionContext());
-    const cookie = login.headers.get("Set-Cookie").split(";")[0];
+    const cookie = STAFF_COOKIE; // signed in with Portal (test/sign-in.js)
     fakes.claude.replies.push(toolUse("book_session", { session_type_id: RAP_2, date: ukDay(10), time: "14:00", ...person }), says("Booked! Ola's confirmation is on its way."));
     const ctx = createExecutionContext();
     const res = await worker.fetch(

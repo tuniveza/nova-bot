@@ -2,6 +2,7 @@
 // booking system (mode.js). Acuity stays in charge unless the switch is flipped.
 
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
+import { STAFF_AUTH, STAFF_COOKIE } from "./sign-in.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { bookingSystem, setBookingSystem } from "../src/mode.js";
@@ -50,7 +51,7 @@ async function call(path, { method = "GET", body, headers = {}, extraEnv = {} } 
 }
 
 const admin = (path, init = {}) =>
-  worker.fetch(new Request(BASE + path, { ...init, headers: { Authorization: "Basic " + btoa("studio:test-admin-password"), ...(init.headers || {}) } }), env);
+  worker.fetch(new Request(BASE + path, { ...init, headers: { ...STAFF_AUTH, ...(init.headers || {}) } }), env);
 const flip = (system) =>
   admin("/admin/booking-system", { method: "POST", headers: { Origin: BASE, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ system }) });
 

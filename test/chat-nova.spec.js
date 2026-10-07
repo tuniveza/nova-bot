@@ -1,4 +1,5 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
+import { STAFF_AUTH, STAFF_COOKIE } from "./sign-in.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { forgetSessionTypes } from "../src/nova/booking.js";
@@ -80,7 +81,7 @@ async function chat(messages, { origin = SITE, ip, chatId = "chat-test-0001", pa
 const ask = (words) => [{ role: "user", content: words }];
 const enquiries = async () => (await env.DB.prepare("SELECT * FROM enquiries ORDER BY id").all()).results;
 
-const auth = { Authorization: "Basic " + btoa("studio:test-admin-password") };
+const auth = STAFF_AUTH;
 const admin = (path, init = {}) => worker.fetch(new Request(BASE + path, { ...init, headers: { ...auth, ...(init.headers || {}) } }), env);
 
 // ----- Tests -----
@@ -224,9 +225,12 @@ describe("enquiries", () => {
 });
 
 describe("admin: enquiries and conversations", () => {
-	it("needs the password", async () => {
-		expect((await worker.fetch(new Request(BASE + "/admin/enquiries"), env)).status).toBe(401);
-		expect((await worker.fetch(new Request(BASE + "/admin/conversations"), env)).status).toBe(401);
+	it("needs a Portal admin: signed out, it's off to Portal to sign in", async () => {
+		for (const path of ["/admin/enquiries", "/admin/conversations"]) {
+			const res = await worker.fetch(new Request(BASE + path, { redirect: "manual" }), env);
+			expect(res.status).toBe(302);
+			expect(res.headers.get("Location")).toBe(`${BASE}/portal/?next=${encodeURIComponent(path)}`);
+		}
 	});
 
 	it("lists enquiries safely and marks them done", async () => {

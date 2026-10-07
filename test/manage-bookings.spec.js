@@ -1,4 +1,5 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
+import { STAFF_AUTH, STAFF_COOKIE } from "./sign-in.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { forgetSessionTypes } from "../src/booking.js";
@@ -257,8 +258,7 @@ describe("who gets these tools", () => {
 	});
 
 	it("offers them in Hub's staff chat, and runs them", async () => {
-		const login = await post("/app/api/login", { password: "test-admin-password" }, { Origin: BASE });
-		const cookie = login.headers.get("Set-Cookie").split(";")[0];
+		const cookie = STAFF_COOKIE; // signed in with Portal (test/sign-in.js)
 
 		claudeReplies = [
 			{ stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "find_bookings", input: { name: "dana" } }] },

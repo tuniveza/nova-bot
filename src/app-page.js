@@ -1,11 +1,10 @@
 // Hub: the staff app at /app
 //
 // The app itself (public/app/) is plain files with no customer data in them.
-// Everything it shows comes from these /app/api/ requests, which need a staff
-// login (the ADMIN_PASSWORD secret):
+// Everything it shows comes from these /app/api/ requests, which need a Portal
+// sign-in (the one sign-in: /auth/login; there's no password here):
 //
-//   POST /app/api/login                 { password } -> signs in (cookie, 30 days)
-//   POST /app/api/logout
+//   POST /app/api/logout                signs out of Portal (everything)
 //   GET  /app/api/me                    is this browser signed in?
 //   GET  /app/api/enquiries?show=all    enquiries (new ones only, unless show=all)
 //   POST /app/api/enquiries/status      { id, status: "new" | "done" }
@@ -37,26 +36,23 @@ import { bookingLink as novaBookingLink, getSessionTypes as novaSessionTypes } f
 import { listBookings as novaListBookings } from "./nova/booking-calendar.js";
 import { AUTO_DELETE_CHOICES, autoDeleteDays, deleteAlerts, forgetPhone, listAlerts, notifyPhones, savePhone, setAutoDelete, verifyBooking } from "./push.js";
 
-const COOKIE = "nvadmin";
-const SIGNED_IN_DAYS = 30;
+// The old shared-password cookie: only ever cleared now (Portal is the one sign-in)
+const OLD_COOKIE = "nvadmin";
 
 export async function handleApp(request, env, ctx, answer) {
   const url = new URL(request.url);
   const route = url.pathname.replace(/^\/app\/api/, "");
-
-  if (!env.ADMIN_PASSWORD) {
-    return json({ error: "The app isn't set up yet. Run: npx wrangler secret put ADMIN_PASSWORD" }, 503);
-  }
 
   // Changes only from the app itself (stops other websites acting for a signed-in phone)
   if (request.method === "POST" && request.headers.get("Origin") !== url.origin) {
     return json({ error: "Forbidden" }, 403);
   }
 
-  if (route === "/login" && request.method === "POST") return login(request, env);
+  // Portal is the one sign-in: there's no password here any more
+  if (route === "/login" && request.method === "POST") return json({ error: "Sign in with Portal", signIn: "/portal/" }, 410);
   if (route === "/logout" && request.method === "POST") return logout(request, env);
 
-  if (!(await signedIn(request, env))) return json({ error: "Please sign in" }, 401);
+  if (!(await requireStaff(request, env))) return json({ error: "Please sign in", signIn: "/portal/" }, 401);
 
   if (route === "/me") return json({ ok: true });
   if (route === "/enquiries" && request.method === "GET") return listEnquiries(env, url);
@@ -108,66 +104,16 @@ async function questAction(request, env) {
   return json({ ok: true });
 }
 
-// ===== SIGNING IN =====
+// ===== SIGNING OUT =====
+// Signing in is Portal's job (/auth/login). Signing out here signs out of Portal, so of
+// everything, and clears the old shared-password cookie if a phone still has one.
 
-async function login(request, env) {
-  // A few tries a minute at most, so the password can't be guessed by brute force
-  const ip = request.headers.get("CF-Connecting-IP") || "";
-  if (env.CHAT_LIMIT && ip) {
-    try {
-      if (!(await env.CHAT_LIMIT.limit({ key: "app-login:" + ip })).success) {
-        return json({ error: "Too many tries. Wait a minute and try again." }, 429);
-      }
-    } catch {}
-  }
-  let password = "";
-  try {
-    password = String((await request.json()).password || "");
-  } catch {}
-  if (!(await sameText(password, env.ADMIN_PASSWORD))) return json({ error: "That password isn't right." }, 401);
-
-  const expires = Date.now() + SIGNED_IN_DAYS * 24 * 60 * 60 * 1000;
-  const token = `${expires}.${await signature(env, expires)}`;
-  return json({ ok: true }, 200, {
-    "Set-Cookie": `${COOKIE}=${token}; Path=/app; Max-Age=${SIGNED_IN_DAYS * 24 * 60 * 60}; HttpOnly; Secure; SameSite=Strict`,
-  });
-}
-
-// Signing out of Hub signs out of Portal too (the whole suite)
 async function logout(request, env) {
   await endSession(env, request).catch(() => {});
   const headers = new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" });
-  headers.append("Set-Cookie", `${COOKIE}=; Path=/app; Max-Age=0; HttpOnly; Secure; SameSite=Strict`);
+  headers.append("Set-Cookie", `${OLD_COOKIE}=; Path=/app; Max-Age=0; HttpOnly; Secure; SameSite=Strict`);
   headers.append("Set-Cookie", clearCookie());
   return new Response(JSON.stringify({ ok: true }), { headers });
-}
-
-async function signedIn(request, env) {
-  // Signed in with Portal (any active staff member)
-  if (await requireStaff(request, env)) return true;
-  // Or with the studio's shared password (until everyone has a Portal account)
-  return legacySignedIn(request, env);
-}
-
-async function legacySignedIn(request, env) {
-  const cookie = (request.headers.get("Cookie") || "").split(/;\s*/).find((c) => c.startsWith(COOKIE + "="));
-  if (!cookie) return false;
-  const [expires, sig] = cookie.slice(COOKIE.length + 1).split(".");
-  if (!/^\d+$/.test(expires || "") || Number(expires) < Date.now()) return false;
-  return sameText(sig || "", await signature(env, expires));
-}
-
-// The cookie is signed with the admin password, so changing it signs everyone out
-async function signature(env, expires) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.ADMIN_PASSWORD), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode("novabot-admin:" + expires)));
-  return btoa(String.fromCharCode(...mac)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-// Compare without giving away how much matched (same time whatever was typed)
-async function sameText(a, b) {
-  const hash = async (s) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(s))));
-  return crypto.subtle.timingSafeEqual(await hash(a), await hash(b));
 }
 
 // ===== ENQUIRIES =====

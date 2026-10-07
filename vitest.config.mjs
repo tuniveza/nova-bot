@@ -27,6 +27,6 @@ export default defineConfig({
 		})),
 	],
 	test: {
-		setupFiles: ["./test/apply-migrations.js"],
+		setupFiles: ["./test/apply-migrations.js", "./test/sign-in.js"],
 	},
 });

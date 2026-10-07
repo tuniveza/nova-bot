@@ -1,4 +1,5 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
+import { STAFF_AUTH, STAFF_COOKIE } from "./sign-in.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { bookingLink, forgetSessionTypes, readSessionTypes } from "../src/booking.js";
@@ -180,7 +181,7 @@ describe("NovaBot booking links", () => {
 });
 
 describe("admin: booking link for an enquiry", () => {
-	const auth = { Authorization: "Basic " + btoa("studio:test-admin-password") };
+	const auth = STAFF_AUTH;
 
 	it("makes a link with the client's details and an email to send it", async () => {
 		const { meta } = await env.DB.prepare(

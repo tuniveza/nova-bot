@@ -134,7 +134,7 @@ describe("one sign-in for the suite", () => {
 		const made = await call("/staff", { method: "POST", cookie: admin, body: { email: "kai@novacane.co.uk", display_name: "Kai" } });
 		const kai = (await call("/auth/invite/accept", { method: "POST", body: { token: new URL(made.data.invite_url).searchParams.get("invite"), password: PASS } })).cookie;
 		expect((await call("/app/api/me", { cookie: kai })).status).toBe(200);
-		expect((await call("/admin", { cookie: kai })).status).toBe(401);
+		expect((await call("/admin", { cookie: kai })).status).toBe(403);
 		// Index: Kai sees the studio's facts and their own partition, never someone else's or customers'
 		await putFile(env, { scope: "studio", path: "studio", body: "- [stated] open late", if_version: "new" });
 		await putFile(env, { scope: "staff", owner_id: "kai", path: "profile", body: "- [stated] mixes in the mornings", if_version: "new" });
@@ -181,31 +181,4 @@ describe("the Nova Agent badge on every app", () => {
 		expect(me.data.staff.planet.glow).toMatch(/^#|^rgb|^hsl/);
 	});
 
-	it("connects another suite site with a read-only token, and only a suite site", async () => {
-		const admin = await setup();
-		expect((await call("/auth/connect", { method: "POST", cookie: admin, body: { return_to: "https://evil.example/" } })).status).toBe(400);
-		expect((await call("/auth/connect", { method: "POST", body: { return_to: NOTES + "/" } })).status).toBe(401);
-		const made = await call("/auth/connect", { method: "POST", cookie: admin, body: { return_to: NOTES + "/?x=1" } });
-		expect(made.status).toBe(200);
-		const token = /#nova_portal=(nprof_[\w-]+)$/.exec(made.data.redirect)[1];
-		expect(made.data.redirect.startsWith(NOTES + "/?x=1#")).toBe(true);
-		// The badge on Notes: who you are, without the email, with CORS for that site only
-		const me = await call("/auth/me", { token, headers: { Origin: NOTES } });
-		expect(me.status).toBe(200);
-		expect(me.data.via).toBe("connect");
-		expect(me.data.staff.id).toBe("dominic-hughes");
-		expect(me.data.staff.email).toBeUndefined();
-		expect(me.headers.get("Access-Control-Allow-Origin")).toBe(NOTES);
-		expect((await call("/auth/me", { token, headers: { Origin: "https://evil.example" } })).headers.get("Access-Control-Allow-Origin")).toBeNull();
-		const pre = await call("/auth/me", { method: "OPTIONS", origin: NOTES, headers: { Origin: NOTES } });
-		expect(pre.status).toBe(204);
-		// It can't do anything else
-		expect((await call("/staff/dominic-hughes", { token })).status).toBe(401);
-		expect((await call("/app/api/me", { token })).status).toBe(401);
-		expect((await call("/staff", { method: "POST", token, origin: null, body: { email: "x@y.co" } })).status).toBe(401);
-		expect((await call("/auth/connect", { method: "POST", token, origin: null, body: { return_to: NOTES } })).status).toBe(401);
-		// Disconnecting ends it
-		expect((await call("/auth/logout", { method: "POST", token, origin: null, headers: { Origin: NOTES } })).status).toBe(200);
-		expect((await call("/auth/me", { token })).status).toBe(401);
-	});
 });

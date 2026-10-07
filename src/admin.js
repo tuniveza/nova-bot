@@ -17,7 +17,7 @@
 //   POST /admin/google/disconnect  forget the Google connection
 //   POST /admin/connections/test-email  send a test email from the connected Gmail
 //
-// Protected by the ADMIN_PASSWORD secret (any username).
+// For Portal admins: anyone else is sent to Portal to sign in (the one sign-in).
 
 import { checkAcuity, escapeHtml, isValidCodeFormat, normaliseCode } from "./referrals.js";
 import { checkedLinks, readLinks, saveLinks } from "./links.js";
@@ -32,15 +32,14 @@ import { calendarId, connectedAccount, consentUrl, disconnect, finishConnecting,
 import { stripeOffline, stripeProblem, stripeReady } from "./nova/stripe.js";
 
 export async function handleAdmin(request, env) {
-  if (!env.ADMIN_PASSWORD) {
-    return text("The admin page isn't set up yet. Run: npx wrangler secret put ADMIN_PASSWORD", 503);
-  }
-  // Signed in to Portal as an admin, or the studio's shared password (Basic sign-in)
-  if (!(await requireStaff(request, env, { admin: true })) && !(await passwordMatches(request, env.ADMIN_PASSWORD))) {
-    return new Response("Password required", {
-      status: 401,
-      headers: { "WWW-Authenticate": 'Basic realm="Novacane admin", charset="UTF-8"' },
-    });
+  // Portal is the one sign-in: admins only; signed out, go and sign in, then come back
+  if (!(await requireStaff(request, env, { admin: true }))) {
+    const signedIn = await requireStaff(request, env);
+    const here = new URL(request.url);
+    if (!signedIn && request.method === "GET") {
+      return Response.redirect(new URL(`/portal/?next=${encodeURIComponent(here.pathname + here.search)}`, here).toString(), 302);
+    }
+    return text(signedIn ? "The admin pages are for Portal admins." : "Sign in with Portal first.", signedIn ? 403 : 401);
   }
 
   const url = new URL(request.url);
@@ -77,23 +76,6 @@ export async function handleAdmin(request, env) {
   if (url.pathname === "/admin/google/callback") return googleCallback(request, env, url);
   if (url.pathname === "/admin" || url.pathname === "/admin/") return adminPage(env, url);
   return text("Not found", 404);
-}
-
-// ===== ACCESS =====
-
-async function passwordMatches(request, password) {
-  const header = request.headers.get("Authorization") || "";
-  if (!header.startsWith("Basic ")) return false;
-  let given = "";
-  try {
-    const decoded = atob(header.slice(6));
-    given = decoded.slice(decoded.indexOf(":") + 1);
-  } catch {
-    return false;
-  }
-  // Compare hashes so the check takes the same time whatever was typed
-  const hash = async (s) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
-  return crypto.subtle.timingSafeEqual(await hash(given), await hash(password));
 }
 
 // ===== CODES =====

@@ -1,4 +1,5 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
+import { STAFF_AUTH, STAFF_COOKIE } from "./sign-in.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { forgetSessionTypes } from "../src/booking.js";
@@ -79,9 +80,9 @@ async function call(path, { body, cookie, extraEnv = {}, method } = {}) {
 	return res;
 }
 
+// Signed in with Portal (test/sign-in.js)
 async function signIn() {
-	const res = await call("/app/api/login", { body: { password: "test-admin-password" } });
-	return res.headers.get("Set-Cookie").split(";")[0];
+	return STAFF_COOKIE;
 }
 
 // ----- Tests -----
