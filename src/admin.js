@@ -21,6 +21,7 @@
 
 import { checkAcuity, escapeHtml, isValidCodeFormat, normaliseCode } from "./referrals.js";
 import { checkedLinks, readLinks, saveLinks } from "./links.js";
+import { requireStaff } from "./portal/auth.js";
 import { emailIsSetUp, emailRecipients, sendTestEmail } from "./enquiries.js";
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { feedbackCounts, recentFeedback } from "./feedback.js";
@@ -34,7 +35,8 @@ export async function handleAdmin(request, env) {
   if (!env.ADMIN_PASSWORD) {
     return text("The admin page isn't set up yet. Run: npx wrangler secret put ADMIN_PASSWORD", 503);
   }
-  if (!(await passwordMatches(request, env.ADMIN_PASSWORD))) {
+  // Signed in to Nova Portal as an admin, or the studio's shared password (Basic sign-in)
+  if (!(await requireStaff(request, env, { admin: true })) && !(await passwordMatches(request, env.ADMIN_PASSWORD))) {
     return new Response("Password required", {
       status: 401,
       headers: { "WWW-Authenticate": 'Basic realm="Novacane admin", charset="UTF-8"' },

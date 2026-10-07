@@ -108,7 +108,10 @@
   <h1 class="wordmark">Nova Hub</h1>
   <p class="login-sub">Staff hub for Novacane Studios</p>
   <form id="login-form" class="login-form">
-    <label for="password">Admin password</label>
+    <!-- One sign-in for the whole suite (Nova Portal); the shared password still works for now -->
+    <a class="btn portal-btn" href="/portal/?next=/app/">✦ Sign in with Nova Portal</a>
+    <p class="login-or">or, for now, the studio's shared password:</p>
+    <label for="password">Studio password</label>
     <input id="password" type="password" autocomplete="current-password" required>
     <button class="btn" type="submit">Sign in</button>
     <p id="login-error" class="error" role="alert"></p>

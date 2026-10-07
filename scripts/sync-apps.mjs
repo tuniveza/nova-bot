@@ -1,16 +1,26 @@
-// Nova Index lives in its own folder (ns/ni, the nova-index repo). It's served
-// from here at /app/memory/ so it can use Nova Hub's sign-in, so before every
-// deploy or local run (wrangler's build step) its app is copied in. The copy is
-// never saved in this repo (.gitignore), so ns/ni stays the only real one.
+// Nova Index (ns/ni) and Nova Portal (ns/np) live in their own folders and repos.
+// They're served from here (so they share Nova Hub's sign-in), so before every
+// deploy or local run (wrangler's build step) they're copied in:
+//   ns/ni/app      → public/app/memory/     (Nova Index)
+//   ns/np/app      → public/portal/         (Nova Portal's pages)
+//   ns/np/planet   → src/portal/planet/     (the planet generator, also used to draw planet.svg)
+// The page copies are never saved in this repo (.gitignore); the planet generator
+// copy is, so this project still builds and tests on its own.
 import { cpSync, existsSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const from = fileURLToPath(new URL("../../../ni/app/", import.meta.url));
-const to = fileURLToPath(new URL("../public/app/memory/", import.meta.url));
-if (existsSync(from)) {
-  rmSync(to, { recursive: true, force: true });
-  cpSync(from, to, { recursive: true });
-  console.log("Nova Index: copied ns/ni/app into public/app/memory/");
-} else if (!existsSync(to)) {
-  console.log("Nova Index: ns/ni isn't next to this project, so /app/memory/ won't be served");
+const here = (p) => fileURLToPath(new URL(p, import.meta.url));
+const copies = [
+  ["../../../ni/app/", "../public/app/memory/", "Nova Index"],
+  ["../../../np/app/", "../public/portal/", "Nova Portal"],
+  ["../../../np/planet/", "../src/portal/planet/", "the planet generator"],
+];
+for (const [from, to, name] of copies) {
+  if (!existsSync(here(from))) {
+    if (!existsSync(here(to))) console.log(`${name}: its folder isn't next to this project, so it won't be included`);
+    continue;
+  }
+  rmSync(here(to), { recursive: true, force: true });
+  cpSync(here(from), here(to), { recursive: true, filter: (src) => !/(test\.mjs|gallery\.html|README\.md)$/.test(src) });
+  console.log(`${name}: copied in`);
 }

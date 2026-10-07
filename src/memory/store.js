@@ -28,6 +28,8 @@ export const ROLES = {
   agent: { read: ["studio", "staff"], write: ["studio", "staff"] },
   staff: { read: ["studio", "staff", "customer"], write: ["studio", "staff", "customer"] },
   website: { read: ["customer"], write: [] },
+  // A staff member signed in with Nova Portal (not an admin): the studio's facts, and their own partition
+  member: { read: ["studio", "staff"], write: ["staff"] },
 };
 
 export function allowed(role, action, scope) {

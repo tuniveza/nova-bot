@@ -10,8 +10,8 @@
 	// Fetches go out over the public internet, so the Links page can check the
 	// other Nova apps on this account (workers.dev) as anyone else would see them
 	"compatibility_flags": ["global_fetch_strictly_public"],
-	// Nova Index (ns/ni) is copied into public/app/memory/ before every deploy and local run
-	"build": { "command": "node scripts/sync-index.mjs" },
+	// Nova Index (ns/ni) and Nova Portal (ns/np) are copied in before every deploy and local run
+	"build": { "command": "node scripts/sync-apps.mjs" },
 	"observability": {
 			"logs": {
 		"enabled": true,

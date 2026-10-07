@@ -28,6 +28,7 @@ import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { askHub } from "./hub-ask.js";
 import { questsForHub, queueQuestAction } from "./agent-nova.js";
 import { handleMemoryForStaff, learnFromStaffChat } from "./memory/routes.js";
+import { clearCookie, endSession, requireStaff } from "./portal/auth.js";
 import { checkedLinks } from "./links.js";
 import { listBookings } from "./booking-calendar.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
@@ -53,7 +54,7 @@ export async function handleApp(request, env, ctx, answer) {
   }
 
   if (route === "/login" && request.method === "POST") return login(request, env);
-  if (route === "/logout" && request.method === "POST") return logout();
+  if (route === "/logout" && request.method === "POST") return logout(request, env);
 
   if (!(await signedIn(request, env))) return json({ error: "Please sign in" }, 401);
 
@@ -78,7 +79,11 @@ export async function handleApp(request, env, ctx, answer) {
   // Nova Index: the suite's memory (browse, edit, approve)
   if (route.startsWith("/memory/")) {
     if (request.method !== "GET" && request.headers.get("Origin") !== url.origin) return json({ error: "Forbidden" }, 403);
-    return handleMemoryForStaff(request, env, ctx, route.slice("/memory".length), request.headers.get("X-Nova-App") === "hub" ? "Nova Hub" : "Nova Index");
+    // An admin (or the shared studio password) sees everything; other staff see the studio's
+    // memory and their own partition (Nova Portal decides who's who)
+    const who = await requireStaff(request, env);
+    const member = who && who.role !== "admin" ? who.id : null;
+    return handleMemoryForStaff(request, env, ctx, route.slice("/memory".length), request.headers.get("X-Nova-App") === "hub" ? "Nova Hub" : "Nova Index", member);
   }
   if (route === "/links" && request.method === "GET") return json(await checkedLinks(env));
   if (route === "/quests/action" && request.method === "POST") return questAction(request, env);
@@ -126,11 +131,23 @@ async function login(request, env) {
   });
 }
 
-function logout() {
-  return json({ ok: true }, 200, { "Set-Cookie": `${COOKIE}=; Path=/app; Max-Age=0; HttpOnly; Secure; SameSite=Strict` });
+// Signing out of Nova Hub signs out of Nova Portal too (the whole suite)
+async function logout(request, env) {
+  await endSession(env, request).catch(() => {});
+  const headers = new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" });
+  headers.append("Set-Cookie", `${COOKIE}=; Path=/app; Max-Age=0; HttpOnly; Secure; SameSite=Strict`);
+  headers.append("Set-Cookie", clearCookie());
+  return new Response(JSON.stringify({ ok: true }), { headers });
 }
 
 async function signedIn(request, env) {
+  // Signed in with Nova Portal (any active staff member)
+  if (await requireStaff(request, env)) return true;
+  // Or with the studio's shared password (until everyone has a Portal account)
+  return legacySignedIn(request, env);
+}
+
+async function legacySignedIn(request, env) {
   const cookie = (request.headers.get("Cookie") || "").split(/;\s*/).find((c) => c.startsWith(COOKIE + "="));
   if (!cookie) return false;
   const [expires, sig] = cookie.slice(COOKIE.length + 1).split(".");

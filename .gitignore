@@ -187,5 +187,6 @@ screenshots/
 traces/
 *.har
 
-# Nova Index is copied in from ns/ni at build time (scripts/sync-index.mjs)
+# Nova Index (ns/ni) and Nova Portal (ns/np) are copied in at build time (scripts/sync-apps.mjs)
 public/app/memory/
+public/portal/

@@ -13,6 +13,7 @@
 
 import { handleMemoryApi, learnFromWebsiteChats, readForStaff, readForWebsite } from "./memory/routes.js";
 import { memoryPrompt } from "./memory/store.js";
+import { handlePortal } from "./portal/routes.js";
 import { handleAcuityWebhook, handleReferral } from "./referrals.js";
 import { handleClubBusy } from "./club-calendar.js";
 import { handleBookedPixel } from "./booking-details.js";
@@ -721,6 +722,8 @@ export default {
     if (pathname === "/hub/notify" || pathname.startsWith("/hub/agent/")) return handleAgentNova(request, env, pathname);
     // Nova Index's memory engine, for Nova Agent (src/memory/)
     if (pathname.startsWith("/memory/")) return handleMemoryApi(request, env, ctx, pathname);
+    // Nova Portal: one sign-in for the suite, staff and their planets (src/portal/)
+    if (pathname.startsWith("/auth/") || pathname === "/staff" || pathname.startsWith("/staff/")) return handlePortal(request, env, ctx, pathname);
     // Nova Club (the members' app): when the studio is booked, straight from
     // Acuity (or the studio's Google Calendar, with the switch on Nova)
     if (pathname === "/club/busy") return (await usesNova(env)) ? handleNovaClubBusy(request, env) : handleClubBusy(request, env);

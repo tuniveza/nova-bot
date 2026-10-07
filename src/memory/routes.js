@@ -16,10 +16,33 @@ import { allowed, cleanPath, context, deleteFile, getFile, listFiles, listPendin
 const json = (data, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
 
 // Shared by both doors: the role decides what's allowed
-async function serve(request, env, ctx, route, role, sourceApp) {
+async function serve(request, env, ctx, route, role, sourceApp, memberId = null) {
   const url = new URL(request.url);
   const q = (k) => url.searchParams.get(k);
   if (!env.DB) return json({ error: "No database" }, 503);
+  // A member only ever sees their own staff partition
+  if (role === "member") {
+    const owner = (request.method === "PUT" ? null : q("owner_id")) || null;
+    if (q("scope") === "staff" && owner && owner !== memberId) return json({ error: "Not allowed" }, 403);
+    if (route === "/index" && request.method === "GET") {
+      const scopes = q("scope") ? [q("scope")].filter((s) => allowed(role, "read", s)) : ["studio", "staff"];
+      const files = [];
+      for (const s of scopes) files.push(...(await listFiles(env, { scopes: [s], owner_id: s === "staff" ? memberId : undefined, q: q("q"), since: q("since") })));
+      return json({ files: files.sort((a, b) => b.updated_at - a.updated_at), at: Date.now(), member: memberId });
+    }
+    if (route === "/file" && request.method === "PUT") {
+      const peek = await request.clone().json().catch(() => ({}));
+      if (peek.scope === "staff" && String(peek.owner_id || "").toLowerCase() !== memberId) return json({ error: "Not allowed" }, 403);
+    }
+    if (route === "/pending" || route.startsWith("/pending/")) return route === "/pending" ? json({ pending: [], locked: true }) : json({ error: "Approvals are for admins" }, 403);
+    if (route === "/stats") {
+      const files = [...(await listFiles(env, { scopes: ["studio"] })), ...(await listFiles(env, { scopes: ["staff"], owner_id: memberId }))];
+      const by = {};
+      for (const f of files) (by[f.scope] ||= { scope: f.scope, files: 0, facts: 0 }), by[f.scope].files++, (by[f.scope].facts += f.facts);
+      return json({ scopes: Object.values(by), pending: 0, locked: true });
+    }
+    if (route === "/context") return json({ error: "Not allowed" }, 403);
+  }
 
   if (route === "/index" && request.method === "GET") {
     const scopes = (q("scope") ? [q("scope")] : SCOPES).filter((s) => allowed(role, "read", s));
@@ -113,8 +136,9 @@ export async function handleMemoryApi(request, env, ctx, pathname) {
 }
 
 // Nova Hub's and Nova Index's door (already signed in when this is called)
-export function handleMemoryForStaff(request, env, ctx, route, sourceApp = "Nova Index") {
-  return serve(request, env, ctx, route, "staff", sourceApp);
+// memberId: a signed-in staff member who isn't an admin (only their own partition and the studio's facts)
+export function handleMemoryForStaff(request, env, ctx, route, sourceApp = "Nova Index", memberId = null) {
+  return memberId ? serve(request, env, ctx, route, "member", sourceApp, memberId) : serve(request, env, ctx, route, "staff", sourceApp);
 }
 
 // ---- The website's NovaBot (in-process) ----
