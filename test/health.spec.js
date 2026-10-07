@@ -117,7 +117,7 @@ describe("alerts from Nova Agent", () => {
 		expect(await alerts()).toEqual([]);
 	});
 
-	it("keeps Nova Agent's plan for Nova Hub, and hands taps back to Nova Agent once", async () => {
+	it("keeps Nova Agent's plan for Studio, and hands taps back to Nova Agent once", async () => {
 		const call = async (path, body) => {
 			const ctx = createExecutionContext();
 			const res = await worker.fetch(

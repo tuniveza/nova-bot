@@ -1,16 +1,16 @@
 <div align="center">
 
-<img src="docs/media/banner.jpg" alt="Nova Hub on three phones: Nova Quests, the smart calendar with this week at a glance, and Alerts with a booking checked in Acuity" width="900">
+<img src="docs/media/banner.jpg" alt="Studio on three phones: Nova Quests, the smart calendar with this week at a glance, and Alerts with a booking checked in Acuity" width="900">
 
 # Nova Bot
 
-**The front desk that never closes: a website assistant, a staff app and the engines behind the Nova suite, for Novacane Studios.**
+**The front desk that never closes: a website assistant, a staff app and the engines behind Nova Agent, for Novacane Studios.**
 
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers/)
 [![Claude](https://img.shields.io/badge/AI-Claude-D97757?logo=anthropic&logoColor=white)](https://www.anthropic.com/claude)
 [![D1](https://img.shields.io/badge/database-D1%20(SQLite)-003B57?logo=sqlite&logoColor=white)](https://developers.cloudflare.com/d1/)
 [![Tests](https://img.shields.io/badge/tests-388%20passing-2EA44F?logo=vitest&logoColor=white)](#tests)
-[![Nova suite](https://img.shields.io/badge/part%20of-nova--suite-B026FF)](https://github.com/tuniveza/nova-suite)
+[![Nova Agent](https://img.shields.io/badge/works%20with-Nova%20Agent-B026FF)](https://github.com/tuniveza/nova-agent)
 [![Licence](https://img.shields.io/badge/licence-all%20rights%20reserved-555)](#licence)
 
 </div>
@@ -23,9 +23,9 @@ recording studio in London. One Worker does four jobs:
 | | What it is | Where |
 |---|---|---|
 | ✦ **NovaBot** | The chat assistant on the studio's website. Answers questions with Claude and gets bookings ready, always with the deposit first | `public/novabot.js`, `src/index.js` |
-| ✦ **Nova Hub** | The staff app: enquiries, chats, a smart calendar, quests, alerts and a staff chat with NovaBot | `public/app/`, `src/app-page.js` |
+| ✦ **Studio** | The staff app: enquiries, chats, a smart calendar, quests, alerts and a staff chat with NovaBot | Nova Agent's Studio panel (copied into `public/studio/`), `src/app-page.js` |
 | ✦ **Admin pages** | Password-protected pages for referrals, enquiries, conversations, feedback, the booking system and the master list of links | `src/admin.js` |
-| ✦ **Suite engines** | The memory behind **Nova Index** and the sign-in behind **Nova Portal**, shared by every Nova app | `src/memory/`, `src/portal/` |
+| ✦ **Suite engines** | The memory behind **Nova Index** and the sign-in behind **Crew**, shared by every Nova app | `src/memory/`, `src/portal/` |
 
 It comes with a **sandbox**, so you can run the whole thing on your own computer without
 any accounts.
@@ -37,10 +37,10 @@ any accounts.
 ## Contents
 
 - [NovaBot, on the website](#novabot-on-the-website)
-- [Nova Hub, the staff app](#nova-hub-the-staff-app)
+- [Studio, the staff app](#studio-the-staff-app)
 - [The admin pages](#the-admin-pages)
 - [Nova Index: the memory engine](#nova-index-the-memory-engine)
-- [Nova Portal: one sign-in for the suite](#nova-portal-one-sign-in-for-the-suite)
+- [Crew: one sign-in for the suite](#nova-portal-one-sign-in-for-the-suite)
 - [How it works](#how-it-works)
 - [Run it locally (sandbox)](#run-it-locally-sandbox)
 - [The build step](#the-build-step)
@@ -49,7 +49,7 @@ any accounts.
 - [Tests](#tests)
 - [Deploying your own copy](#deploying-your-own-copy)
 - [Project layout](#project-layout)
-- [Part of the Nova suite](#part-of-the-nova-suite)
+- [Works with Nova Agent](#works-with-nova-agent)
 
 ## NovaBot, on the website
 
@@ -78,128 +78,22 @@ any accounts.
   with the session, a strip of days, that day's free times and the visitor's details. The
   Worker checks the time again before anything happens.
 - **Enquiries** (`src/enquiries.js`): NovaBot can take an enquiry, show the visitor a
-  summary, and send it to the team once they confirm. It's saved for Nova Hub and the
+  summary, and send it to the team once they confirm. It's saved for Studio and the
   admin pages, and can be emailed (Resend).
 - **Safety**: per-visitor rate limits, only allowed websites can use the chat, spam
   limits on enquiries, and IP addresses stored only as a hash.
 
-## Nova Hub, the staff app
+## Studio, the staff app
 
-Nova Hub lives at `/app`. It's a phone-first web app that installs to the home screen,
-and turns into a side-rail layout on a desktop. Staff sign in with
-[Nova Portal](#nova-portal-one-sign-in-for-the-suite) (or, for now, the studio's shared
-password).
-
-<table>
-  <tr>
-    <td width="33%" valign="top"><img src="docs/media/hub-signin.jpg" alt="Nova Hub's sign-in screen, with a Sign in with Nova Portal button and the studio password" width="100%"><br><sub><b>Sign in</b> with Nova Portal, or the studio's shared password.</sub></td>
-    <td width="33%" valign="top"><img src="docs/media/hub-enquiries.jpg" alt="The Enquiries tab with two new enquiries and buttons to email, call, make a booking link, read the chat and mark done" width="100%"><br><sub><b>Enquiries</b>: email, call, send a booking link, read the chat, mark done.</sub></td>
-    <td width="33%" valign="top"><img src="docs/media/hub-calendar-week.jpg" alt="The smart calendar: this week's sessions, hours booked, session value, busiest day, next free hour and one clash, above a month of glowing days" width="100%"><br><sub><b>The smart calendar</b>: the week at a glance, and days that glow as they fill.</sub></td>
-  </tr>
-  <tr>
-    <td width="33%" valign="top"><img src="docs/media/hub-calendar-day.jpg" alt="Thursday picked: 56% full, a clash warning, a tight changeover warning, and two free slots" width="100%"><br><sub><b>A day</b>: how full it is, a clash, a tight changeover, and free slots.</sub></td>
-    <td width="33%" valign="top"><img src="docs/media/hub-quests.jpg" alt="Nova Quests: the quest in progress, a repeating pulse, and today's plan" width="100%"><br><sub><b>Nova Quests</b> from Nova Agent: what's on now and today's plan.</sub></td>
-    <td width="33%" valign="top"><img src="docs/media/hub-missions.jpg" alt="Nova Missions with progress rings, deadlines and an at-risk count" width="100%"><br><sub><b>Nova Missions</b>: progress, deadlines and anything at risk.</sub></td>
-  </tr>
-  <tr>
-    <td width="33%" valign="top"><img src="docs/media/hub-alerts.jpg" alt="A booking alert with a green panel: Real booking, confirmed in Acuity" width="100%"><br><sub><b>Alerts</b>: every booking is checked with Acuity itself.</sub></td>
-    <td width="33%" valign="top"><img src="docs/media/hub-suite.jpg" alt="The Nova suite sheet listing Nova Hub, Nova Index, Nova Notes and Nova Calendar" width="100%"><br><sub><b>The Nova suite sheet</b>: every app, one tap away.</sub></td>
-    <td width="33%" valign="top"><img src="docs/media/hub-links.jpg" alt="All links: live addresses with an up or down check for each" width="100%"><br><sub><b>🔒 All links</b>, each checked as you open it.</sub></td>
-  </tr>
-  <tr>
-    <td width="33%" valign="top"><img src="docs/media/hub-changelog.jpg" alt="What's changed, by day and app, with what, why and better because; then everything the suite can do" width="100%"><br><sub><b>What's changed</b> and <b>everything the suite can do</b>.</sub></td>
-    <td width="33%" valign="top"><img src="docs/media/hub-options.jpg" alt="Options: theme swatches, text alignment and size, how times show, animations and the starfield" width="100%"><br><sub><b>Options</b>: theme, text, motion, sound and the starting tab.</sub></td>
-    <td width="33%" valign="top"><img src="docs/media/hub-bot-staff.jpg" alt="NovaBot in bookings mode answering a staff member with a booking link and a reminder that the deposit books it" width="100%"><br><sub><b>Ask NovaBot</b> in staff mode: a booking link, deposit first.</sub></td>
-  </tr>
-</table>
-
-<p align="center">
-  <img src="docs/media/gif-free-slot.gif" alt="Animated: picking Thursday in the calendar, tapping the free 14:00 to 16:00 slot, and NovaBot bookings opening with the request filled in, then answering with a booking link" width="900"><br>
-  <sub>Tap a free slot, and NovaBot · bookings opens with the request already written.</sub>
-</p>
-
-### The tabs
-
-| Tab | What it does |
-|---|---|
-| **Enquiries** | Every enquiry NovaBot took. Email, call, make a booking link with the customer's details filled in, read the chat it came from, mark it done. |
-| **Chats** | What customers asked NovaBot on the website (kept for 90 days). |
-| **Calendar** | Every booking in Acuity's diary, as a month you can swipe, with Nova Calendar's cards and planned quests alongside. See [the smart calendar](#the-smart-calendar). |
-| **Quests** | Nova Agent's plan, synced from the studio computer: the quest on now, repeating pulses, today, Nova Missions with progress rings, and every quest. Taps (Start, Done, +15 min, Not now, Skip, Pause) go straight back to Nova Agent. |
-| **Alerts** | Every notification that reached a phone, newest first, with colour-coded labels, exact times, Call/Email buttons and an auto-delete switch. |
-| **NovaBot** | Two chats. **Ask Nova** answers questions about the studio's bookings, enquiries and alerts (`src/hub-ask.js`). **NovaBot · bookings** is NovaBot with the booking tools, talking to you as staff: get a link for a client, find, move, cancel or change a booking. Every change shows a summary and waits for a yes. |
-
-### The smart calendar
-
-- **The week at a glance**: sessions, hours booked and how full, session value, the
-  busiest day, the next free hour, and any clashes.
-- **Glowing days**: each day glows brighter as it fills; a nearly full day says FULL.
-- **A day in detail**: hours booked, a fill meter, ⚠ clashes, ⏱ tight changeovers (under
-  15 minutes), and free slots of an hour or more within opening hours.
-- **One tap from a booking link**: tapping a free slot opens NovaBot · bookings with the
-  request written for you. "✦ Ask Nova" buttons ask about the week or the day.
-
-### Features
-
-- **Real-booking checks.** A booking alert asks Acuity about that booking as it comes into
-  view: "✓ Real booking: confirmed in Acuity", with the deposit paid, or "Cancelled" or
-  "Not found". Tests are labelled as tests, so nothing fake can pass for a booking.
-- **Push notifications that work with the app closed** (`src/push.js`, `public/app/sw.js`).
-  New enquiries, bookings (with every detail from Acuity's private calendar feed), and
-  alerts from Nova Agent, Nova Quest and Nova Mission. Android gets rich notifications
-  with their own buzz; iPhones get the plain version, so nothing is ever lost.
-- **Pings.** With Nova Hub open, an alert rings out with a bright ping (a different one for
-  each kind) and drops a banner from the top.
-- **Staff voice.** Tap the mic and say what to do ("show alerts", "call Eric", "new
-  enquiries", "ask NovaBot what the prices are"); Whisper on Workers AI writes it down.
-  Hands-free mode listens while the app is open for anything that starts with "Nova".
-- **Quests from Nova Agent** (`src/agent-nova.js`): Nova Agent sends its plan here every
-  time it changes, and picks up taps within about a second.
-- **Ambient music** (`public/app/ambient.js`): a gentle, never-ending soundtrack made live
-  on the phone with the Web Audio API. No audio files.
-- **Sound effects** (`public/app/sfx.js`): soft bells and sparkles for taps, tabs,
-  switches, sends and deletes, all in one key, and a two-note chime when NovaBot answers.
-- **Six themes**: Cosmic, Ember, Aurora, Ocean, Gold and Mono, shared with the admin pages.
-- **Options** (`public/app/options.js`): theme, text alignment and size, how times show on
-  alerts, animations, the drifting starfield, sound effects, pings, music volume and the
-  starting tab. Saved on the device.
-- **The suite sheet** (`public/app/suite.js`): tap the Nova Hub brand to see every Nova app,
-  🔒 **All links** (every live and testing address, each checked on the spot), **What's
-  changed** (every change by day and app: what, why and what's better), **everything the
-  suite can do**, and the theme picker.
-
-<table>
-  <tr>
-    <td width="50%"><img src="docs/media/gif-themes.gif" alt="Animated: tapping through the six themes in Options" width="100%"><br><sub>Switching themes in Options.</sub></td>
-    <td width="50%"><img src="docs/media/gif-suite.gif" alt="Animated: opening the Nova suite sheet, scrolling the apps, opening All links, What's changed and the feature list" width="100%"><br><sub>Browsing the suite sheet.</sub></td>
-  </tr>
-</table>
-
-<p align="center">
-  <img src="docs/media/hub-themes.jpg" alt="The same calendar screen in the Cosmic, Ember, Aurora, Ocean, Gold and Mono themes" width="100%"><br>
-  <sub>One screen, six themes.</sub>
-</p>
-
-<p align="center">
-  <img src="docs/media/hub-desktop.jpg" alt="Nova Hub on a desktop: tabs in a side rail, and alerts in two columns, including a booking checked in Acuity and a Nova Quest alert" width="100%"><br>
-  <sub>On a desktop, the tabs become a side rail and lists go two-up.</sub>
-</p>
-
-<details>
-<summary><b>Ask Nova</b> (questions about the studio's own diary)</summary>
-<br>
-<p align="center"><img src="docs/media/hub-ask-nova.jpg" alt="Ask Nova giving a rundown of the week: sessions, hours, a clash, a tight changeover and free time" width="360"></p>
-</details>
-
-**Behind the scenes:** Acuity's API can't change a booking's session type, price or paid
-status, so those changes are queued for [Nova Agent](https://github.com/tuniveza/nova-agent),
-the browser helper on the studio computer, which does them in Acuity's admin pages and
-reports back (`src/agent-nova.js`). Every day at 06:00 UK time the Worker checks it can
-still reach Acuity's API and alerts staff phones if not (`src/health.js`).
+The staff app (enquiries, website chats, bookings, alerts, Ask NovaBot and push to the
+staff phones) is a panel of **Nova Agent**: its pages live in Nova Agent's repo
+(`web/studio`) and are copied in at build time (see [The build step](#the-build-step)).
+Online it's at `/studio/`; this Worker is its back end (`/app/api/*`, `src/app-page.js`).
+Its guide and pictures are in Nova Agent's `docs/apps/studio`.
 
 ## The admin pages
 
-`/admin`, in Nova Hub's look and themes. Sign in as a Nova Portal admin, or with the
+`/admin`, in Studio's look and themes. Sign in as a Crew admin, or with the
 studio's shared password (any username).
 
 | Page | What's there |
@@ -217,7 +111,7 @@ studio's shared password (any username).
 </p>
 
 The master list is kept in the database (`settings`), never in the code, because the code
-is public. Nova Hub's suite sheet reads the same list from `/app/api/links`
+is public. Studio's suite sheet reads the same list from `/app/api/links`
 (`src/links.js`).
 
 ## Nova Index: the memory engine
@@ -227,9 +121,8 @@ is public. Nova Hub's suite sheet reads the same list from `/app/api/links`
   <sub>Nova Index, browsing the suite's memory (sample data).</sub>
 </p>
 
-`src/memory/` is one shared memory for the Nova suite. [Nova Index](https://github.com/tuniveza/nova-index) (its own app, copied in
-at `/app/memory/`) is the window onto it; NovaBot, Nova Hub and Nova Agent read and add to
-it.
+`src/memory/` is one shared memory for Nova Agent. Nova Agent's Index panel (copied in at
+`/index/`) is the window onto it; NovaBot, Studio and Nova Agent read and add to it.
 
 **How it's kept.** Small files of one-line facts, one file per subject, in D1 (never in
 git). Each line is tagged: `[stated]` said directly, `[observed]` seen in bookings or
@@ -246,7 +139,7 @@ them), and at most about 800 tokens of memory go into any one prompt.
 
 **What it learns, and when.** Always in the background, never while someone waits:
 
-- **Nova Hub's staff chats**: facts are saved straight away (staff are trusted).
+- **Studio's staff chats**: facts are saved straight away (staff are trusted).
 - **Website chats**: the every-minute job reads a chat once it's been quiet for 10 minutes
   (or every 20 messages), two chats a run. Facts about clients go into an **approval
   queue** in Nova Index instead of being saved.
@@ -275,25 +168,24 @@ For Nova Agent (`Authorization: Bearer <AGENT_NOVA_KEY>`):
 | `POST /memory/extract` | Hand over a conversation chunk; learned in the background (202) |
 | `GET /memory/index?scope=` | The listing (no bodies) |
 
-For Nova Hub and Nova Index (signed in), under `/app/api/memory/`: `index`, `file`
+For Studio and Nova Index (signed in), under `/app/api/memory/`: `index`, `file`
 (GET/PUT/DELETE), `pending`, `pending/:id` (approve or reject, optionally with an edited
 fact), and `stats`.
 
 </details>
 
-## Nova Portal: one sign-in for the suite
+## Crew: one sign-in for the suite
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/media/portal-signin.jpg" alt="Nova Portal's sign-in page: email and password" width="100%"><br><sub>Sign in once for every Nova app.</sub></td>
+    <td width="50%"><img src="docs/media/portal-signin.jpg" alt="Crew's sign-in page: email and password" width="100%"><br><sub>Sign in once for every Nova app.</sub></td>
     <td width="50%"><img src="docs/media/portal-crew.jpg" alt="The crew page: each staff member with a planet badge, role and status" width="100%"><br><sub>The crew, each with their own planet (sample people).</sub></td>
   </tr>
 </table>
 
-`src/portal/` signs people in once for Nova Hub, Nova Index and the admin pages. The
-Portal's pages live in the **nova-portal** repo (`ns/np`) and are copied
-in at build time (see [the build step](#the-build-step)); this Worker serves them at
-`/portal/` and runs the API.
+`src/portal/` signs people in once for Studio, Nova Index and the admin pages. The
+pages are Nova Agent's Crew panel (`web/crew` in Nova Agent's repo), copied in at build time
+(see [the build step](#the-build-step)); this Worker serves them at `/crew/` and runs the API.
 
 - **Accounts.** Everyone has their own (`staff` table): a readable id like `dana`, an
   email, a display name, a role and a status (active, invited or switched off). The first
@@ -341,7 +233,7 @@ Changes from a browser must come from this site (the Origin header).
 ```mermaid
 flowchart LR
     V[Website visitor] -->|chat widget| W
-    S[Staff · Nova Hub /app<br/>Nova Index · Nova Portal] --> W
+    S[Staff · Studio /app<br/>Nova Index · Crew] --> W
     C[Nova Club app] -->|/club/busy| W
     subgraph W[Nova Bot · Cloudflare Worker]
       R[Routes · src/index.js] --> CL[Claude]
@@ -357,7 +249,7 @@ flowchart LR
     W -.->|behind the switch| G[Google Calendar · Gmail · Stripe]
 ```
 
-- **One Worker** serves the widget, the chat API, Nova Hub, Nova Index, Nova Portal, the
+- **One Worker** serves the widget, the chat API, Studio, Nova Index, Crew, the
   admin pages, webhooks and a once-a-minute cron (booking pings, and reading website chats
   for memory).
 - **D1** holds enquiries, chat logs (90 days), referral codes, notifications, settings,
@@ -388,11 +280,11 @@ Open <http://localhost:8787>: a pretend website with the chat widget on it.
 - **Everything stays on your computer.** The sandbox has its own local database and
   can't reach any live Nova Bot, database or calendar.
 - **Without an AI key**, NovaBot gives clearly labelled stand-in replies, so you can try
-  the widget, enquiries, Nova Hub and the admin pages for free.
+  the widget, enquiries, Studio and the admin pages for free.
 - **For real answers**, put your own Claude API key
   ([console.anthropic.com](https://console.anthropic.com)) in `.dev.vars` as
   `ANTHROPIC_API_KEY=...` and restart. That uses your own Anthropic account.
-- **Admin pages and Nova Hub**: <http://localhost:8787/admin> and
+- **Admin pages and Studio**: <http://localhost:8787/admin> and
   <http://localhost:8787/app>, any username, password `sandbox` (set in `.dev.vars`).
 - **The booking card** needs a booking system it can check times against. To try it
   offline, start the sandbox with Nova Bot's own system switched on:
@@ -405,20 +297,27 @@ Open <http://localhost:8787>: a pretend website with the chat widget on it.
 
 ## The build step
 
-Nova Index and Nova Portal have their own folders and repos (`ns/ni` and `ns/np`). They're
-served from here so they share Nova Hub's sign-in, so before every deploy or local run,
-wrangler's build step (`"build": { "command": "node scripts/sync-apps.mjs" }`) copies them
-in:
+Nova Agent's panels (Studio, Crew, Index, Calendar, Notes, and what they share) live in
+Nova Agent's repo (`na/web`). They're served from here online, so they share this
+Worker's sign-in, so before every deploy or local run, wrangler's build step
+(`"build": { "command": "node scripts/sync-apps.mjs" }`) copies them in:
 
-| From | To | What |
+| From (Nova Agent) | To | What |
 |---|---|---|
-| `ns/ni/app/` | `public/app/memory/` | Nova Index |
-| `ns/np/app/` | `public/portal/` | Nova Portal's pages |
-| `ns/np/planet/` | `src/portal/planet/` | The planet generator (also draws `planet.svg`) |
+| `web/studio/` | `public/studio/` | Studio (was Nova Hub) |
+| `web/crew/` | `public/crew/` | Crew (was Nova Portal) |
+| `web/index/` | `public/index/` | Nova Index |
+| `web/calendar/`, `web/notes/` | `public/calendar/`, `public/notes/` | Nova Calendar and Nova Notes (online, they save in the browser) |
+| `web/shared/` | `public/shared/` | Themes, sounds, the badge and the Nova Manual |
+| `web/crew/planet/` | `src/portal/planet/` | The planet generator (also draws `planet.svg`) |
 
-The page copies are never saved in this repo (`.gitignore`). The planet generator copy is,
-so the project still builds and tests on its own. If the folders aren't next to this
-project, the script says so and carries on.
+Nova Agent is expected at `../../na`; `NOVA_AGENT_DIR` points elsewhere. The page copies are
+never saved in this repo (`.gitignore`). The planet generator copy is, so the project
+still builds and tests on its own.
+
+**Old addresses** keep working: `/app/…` goes to `/studio/…`, `/app/memory/…` to `/index/…`
+and `/portal/…` to `/crew/…`, and `/app/sw.js` is still Studio's push helper, so phones
+that installed Nova Hub keep getting notifications until they add Nova Agent again.
 
 ## Configuration
 
@@ -428,12 +327,12 @@ Everything secret is a **Wrangler secret** (`npx wrangler secret put NAME`), or 
 | Name | Needed for |
 |---|---|
 | `ANTHROPIC_API_KEY` | Claude answers and memory (required live) |
-| `ADMIN_PASSWORD` | The studio's shared password (admin pages, Nova Hub, and setting up the first Portal admin) |
-| `ACUITY_USER_ID`, `ACUITY_API_KEY` | Referral tracking, real-booking checks and managing bookings from Nova Hub (Acuity's Powerhouse plan) |
+| `ADMIN_PASSWORD` | The studio's shared password (admin pages, Studio, and setting up the first Portal admin) |
+| `ACUITY_USER_ID`, `ACUITY_API_KEY` | Referral tracking, real-booking checks and managing bookings from Studio (Acuity's Powerhouse plan) |
 | `ACUITY_WEBHOOK_KEY` | Accepting Acuity's webhook (`/acuity/webhook?key=…`) |
 | `ACUITY_CALENDAR_URL` | Acuity's private calendar feed: booking details, the Calendar tab and Nova Club's busy times |
 | `ACUITY_EMAIL_KEY` | The Google Apps Script that forwards Acuity's emails (`tools/acuity-email-forwarder.gs`) |
-| `AGENT_NOVA_KEY` | Nova Agent's routes (`/hub/agent/*`, `/hub/notify`, `/memory/*`) |
+| `AGENT_NOVA_KEY` | Nova Agent's routes (`/nova-agent/*`, and the older `/hub/agent/*` and `/hub/notify`; `/memory/*`) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Phone notifications (Web Push) |
 | `RESEND_API_KEY`, `ENQUIRY_EMAIL_TO`, `ENQUIRY_EMAIL_FROM` | Emailing enquiries (optional) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Nova Bot's own booking system: Google Calendar and Gmail (optional) |
@@ -460,7 +359,7 @@ Paste this into Acuity → Integrations → Custom conversion tracking, under an
 there, replacing `YOUR-WORKER` with your Worker's address:
 
 ```html
-<!-- Nova Hub: sends this booking's details to the staff notification -->
+<!-- Studio: sends this booking's details to the staff notification -->
 <div id="nv-booked" hidden><i>%type%</i><i>%id%</i><i>%appointmentType%</i><i>%clientDate%</i><i>%clientTime%</i><i>%price%</i><i>%email%</i><i>%calendar%</i></div>
 <script>
 (function () {
@@ -489,7 +388,7 @@ booking system, switched **off** until you choose otherwise:
 - **Booking page** at `/book`, with the studio's **Google Calendar** as the diary,
   confirmation emails from the studio's **Gmail**, and deposits through **Stripe**.
 - **Customer pages**: each customer gets a page to pay, move or cancel.
-- **Staff tools** in Nova Hub: cancel, move, refund and send payment links.
+- **Staff tools** in Studio: cancel, move, refund and send payment links.
 
 **The switch** is on `/admin/connections`, under "Booking system". It's stored in the
 `settings` table as `booking_system` (`acuity` or `nova`), and falls back to the
@@ -533,7 +432,7 @@ npx vitest run      # once
 Google, Stripe and Resend (`test/fakes.js`). Every key in `vitest.config.mjs` is a
 test-only stand-in. The original Acuity tests run against the default; `test/*-nova.spec.js`
 run with the switch on Nova, and `test/switch.spec.js` tests the switch itself. The memory
-engine and Nova Portal have their own (`test/memory.spec.js`, `test/portal.spec.js`).
+engine and Crew have their own (`test/memory.spec.js`, `test/portal.spec.js`).
 
 ## Deploying your own copy
 
@@ -549,7 +448,7 @@ engine and Nova Portal have their own (`test/memory.spec.js`, `test/portal.spec.
      page's address)
    - `src/nova/studio.js` and `src/nova/booking.js` (`LIVE_URL`) for the Nova system
    - `public/novabot.js`: `LIVE_WORKER_URL`, `BOOKING_LINK`, `PRIVACY_LINK`
-5. Deploy with `npm run deploy` (the build step copies Nova Index and Nova Portal in), then
+5. Deploy with `npm run deploy` (the build step copies Nova Index and Crew in), then
    add the widget to your website (see [README-SQUARESPACE.md](README-SQUARESPACE.md)).
 6. Open `/portal/` to set up the first admin with the studio password, then invite the team.
 
@@ -557,21 +456,21 @@ engine and Nova Portal have their own (`test/memory.spec.js`, `test/portal.spec.
 
 ```
 public/novabot.js, novabot.css   the chat widget (served by the Worker)
-public/app/                      Nova Hub, the staff app (PWA + service worker)
+public/studio, crew, index, …    Nova Agent's panels, copied in at build time (not in this repo)
   app.js, app.css                  the tabs, the smart calendar, alerts, voice, pings
-  suite.js                         the Nova suite sheet, All links, What's changed
+  suite.js                         Nova Agent sheet, All links, What's changed
   options.js, themes.js/.css       Options and the six themes
   ambient.js, sfx.js               ambient music and sound effects
   sw.js                            notifications with the app closed
   memory/                          Nova Index (copied in at build time, not in git)
-public/portal/                   Nova Portal's pages (copied in at build time, not in git)
+public/portal/                   Crew's pages (copied in at build time, not in git)
 src/index.js                     the Worker: chat, voice, routes, NovaBot's instructions
-src/app-page.js                  Nova Hub's API (/app/api/*)
-src/hub-ask.js                   Ask Nova: questions about bookings, enquiries and alerts
+src/app-page.js                  Studio's API (/app/api/*)
+src/studio-ask.js                Ask Nova: questions about bookings, enquiries and alerts
 src/admin.js                     the admin pages
 src/links.js                     the master list: links, features, changelog
 src/memory/                      the memory engine (store, extract, routes)
-src/portal/                      Nova Portal: sign-in, sessions, staff, planets
+src/portal/                      Crew: sign-in, sessions, staff, planets
 src/booking.js                   session types, booking links, free times (public Acuity page)
 src/booking-form.js              the booking card's API
 src/book-session.js              booking checks (deposit first)
@@ -593,23 +492,18 @@ src/fonts/                       Saira, Geist Mono and Source Code Pro (SIL OFL)
 migrations/                      D1 tables
 test/                            Vitest tests and fakes
 tools/acuity-email-forwarder.gs  Google Apps Script that forwards Acuity's emails
-scripts/sync-apps.mjs            the build step: copies Nova Index and Nova Portal in
+scripts/sync-apps.mjs            the build step: copies Nova Index and Crew in
 scripts/sandbox-setup.mjs        sandbox setup
 docs/media/                      README images (all sample data)
 ```
 
-## Part of the Nova suite
+## Works with Nova Agent
 
 | Project | What it is |
 |---|---|
-| [nova-suite](https://github.com/tuniveza/nova-suite) | The Nova suite: an overview of every project |
-| **[nova-bot](https://github.com/tuniveza/nova-bot)** | This repo: NovaBot, Nova Hub, the admin pages, and the engines behind Nova Index and Nova Portal |
-| [nova-index](https://github.com/tuniveza/nova-index) | Nova Index: browse, fix and approve what the suite remembers |
-| [nova-agent](https://github.com/tuniveza/nova-agent) | Browser helper on the studio computer: Acuity jobs, Nova Missions and Nova Quests |
+| [nova-agent](https://github.com/tuniveza/nova-agent) | The studio's one app: chat, Missions and Quests, and every panel (Studio, Crew, Calendar, Notes, Index, Observatory, Lossless audio). On the studio PC, and online from here for phones |
+| **[nova-bot](https://github.com/tuniveza/nova-bot)** | This repo: NovaBot on the website, and the back end behind Nova Agent (sign-in, push, bookings, the memory engine, jobs) |
 | [nova-club](https://github.com/tuniveza/nova-club) | Members' Android app that shows the studio's busy times |
-| [nova-calendar](https://github.com/tuniveza/nova-calendar) | A cosmic calendar of note cards and day cards |
-| [nova-notes](https://github.com/tuniveza/nova-notes) | Notes and documents, with Google Docs export |
-| [nova-observatory](https://github.com/tuniveza/nova-observatory) | A dashboard of every project, with screenshots and video |
 
 ## Licence
 

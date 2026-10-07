@@ -1,4 +1,4 @@
-// The studio diary for Nova Hub's Calendar tab and staff questions (hub-ask.js):
+// The studio diary for Studio's Calendar tab and staff questions (studio-ask.js):
 // every booking from the bookings table, plus anything else in the studio's
 // Google Calendar (staff's own events, blocked-off time).
 

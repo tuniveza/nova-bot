@@ -1,6 +1,6 @@
-// Staff managing existing bookings from Nova Hub's chat
+// Staff managing existing bookings from Studio's chat
 //
-// In Nova Hub, staff can ask NovaBot to find, cancel, reschedule or change a
+// In Studio, staff can ask NovaBot to find, cancel, reschedule or change a
 // booking ("cancel Dana's session on Saturday", "move Kai to 4pm"). These
 // tools are only given to NovaBot in the staff chat, never on the website.
 //
@@ -124,7 +124,7 @@ export const MANAGE_BOOKING_TOOLS = [FIND_BOOKINGS_TOOL, CANCEL_BOOKING_TOOL, RE
 
 // The extra instructions NovaBot gets in the staff chat
 export const MANAGE_BOOKINGS_RULES = `STAFF CHAT: MANAGING BOOKINGS
-You're talking to Novacane staff in Nova Hub, not a customer. Besides everything
+You're talking to Novacane staff in Studio, not a customer. Besides everything
 above, you can look up and change existing bookings:
 - find_bookings lists bookings with their IDs. Use it to answer questions ("what's
   on Saturday?", "when is Kai in next?") and before any change.

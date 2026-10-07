@@ -1,4 +1,4 @@
-// Staff managing bookings from Nova Hub's chat: find, cancel (with refunds),
+// Staff managing bookings from Studio's chat: find, cancel (with refunds),
 // move, change details, change session/price/paid, payment links, refunds.
 
 import { env } from "cloudflare:test";

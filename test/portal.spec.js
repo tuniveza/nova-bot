@@ -1,4 +1,4 @@
-// Nova Portal: one sign-in for the Nova suite (src/portal/)
+// Crew: one sign-in for Nova Agent (src/portal/)
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import worker from "../src";
@@ -124,13 +124,13 @@ describe("staff and invites", () => {
 });
 
 describe("one sign-in for the suite", () => {
-	it("opens Nova Hub, the admin pages and each person's Nova Index partition", async () => {
+	it("opens Studio, the admin pages and each person's Nova Index partition", async () => {
 		const admin = await setup();
-		// Nova Hub
+		// Studio
 		expect((await call("/app/api/me", { cookie: admin })).status).toBe(200);
 		// The admin pages (no separate password)
 		expect((await call("/admin/links", { cookie: admin })).status).toBe(200);
-		// A staff member who isn't an admin: Nova Hub yes, admin pages no
+		// A staff member who isn't an admin: Studio yes, admin pages no
 		const made = await call("/staff", { method: "POST", cookie: admin, body: { email: "kai@novacane.co.uk", display_name: "Kai" } });
 		const kai = (await call("/auth/invite/accept", { method: "POST", body: { token: new URL(made.data.invite_url).searchParams.get("invite"), password: PASS } })).cookie;
 		expect((await call("/app/api/me", { cookie: kai })).status).toBe(200);
@@ -170,7 +170,7 @@ describe("planets", () => {
 	});
 });
 
-describe("the Nova Portal badge on every app", () => {
+describe("the Nova Agent badge on every app", () => {
 	const NOTES = "https://nova-notes.novacane-studio.workers.dev";
 
 	it("tells the badge who you are, with your planet's name and colour", async () => {

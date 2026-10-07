@@ -6,7 +6,7 @@
 //
 // Every chat message is also saved for 90 days (see /admin/conversations).
 
-// Sends Nova Hub notifications to staff phones
+// Sends Studio notifications to staff phones
 import { notifyPhones } from "./push.js";
 
 // How many enquiries one visitor can send in 24 hours (stops spam)
@@ -115,8 +115,8 @@ export async function sendEnquiry(env, input, { chatId, page, ip }, waitUntil) {
       title: "New enquiry: " + enquiry.name,
       // What it's about, how to reach them, then their message (leaving out anything missing)
       body: [enquiry.subject, enquiry.phone && "Phone: " + enquiry.phone, "Email: " + enquiry.email, enquiry.details].filter(Boolean).join("\n"),
-      // Tapping it opens Nova Hub
-      url: "/app/",
+      // Tapping it opens Studio
+      url: "/studio/",
       // Which enquiry it is, for the Alerts tab
       enquiryId: meta.last_row_id,
     })

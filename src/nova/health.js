@@ -31,7 +31,7 @@ export async function dailyHealthCheck(env, now = new Date()) {
   await notifyPhones(env, {
     title: "Bookings need attention",
     body: `${problems.join("\n")}\nUntil it's fixed, online booking, emails or payments may not work. Check /admin/connections.`,
-    url: "/app/",
+    url: "/studio/",
   });
 }
 

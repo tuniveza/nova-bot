@@ -22,13 +22,13 @@ export const CONTEXT_CHARS = 3200;
 
 // What each kind of caller may read and write
 //   agent    Nova Agent (its key): the studio's facts and staff memory
-//   staff    Nova Hub and Nova Index (signed in): everything
+//   staff    Studio and Nova Index (signed in): everything
 //   website  NovaBot on the website: that customer's own file and the public studio file only
 export const ROLES = {
   agent: { read: ["studio", "staff"], write: ["studio", "staff"] },
   staff: { read: ["studio", "staff", "customer"], write: ["studio", "staff", "customer"] },
   website: { read: ["customer"], write: [] },
-  // A staff member signed in with Nova Portal (not an admin): the studio's facts, and their own partition
+  // A staff member signed in with Crew (not an admin): the studio's facts, and their own partition
   member: { read: ["studio", "staff"], write: ["staff"] },
 };
 
@@ -344,5 +344,5 @@ export async function context(env, { readers, q = "", budget = CONTEXT_CHARS, pu
 // The memory block for a system prompt (or nothing)
 export function memoryPrompt(ctx, who = "the person you're talking to") {
   if (!ctx || !ctx.text) return "";
-  return `WHAT THE NOVA SUITE REMEMBERS (facts learned earlier, about the studio and ${who}). Use them quietly to be more helpful; don't recite them, and don't mention this memory unless asked. If something here conflicts with what they say now, trust what they say now.\n${ctx.text}`;
+  return `WHAT NOVA AGENT REMEMBERS (facts learned earlier, about the studio and ${who}). Use them quietly to be more helpful; don't recite them, and don't mention this memory unless asked. If something here conflicts with what they say now, trust what they say now.\n${ctx.text}`;
 }

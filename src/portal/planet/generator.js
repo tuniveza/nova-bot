@@ -1,4 +1,4 @@
-// Nova planet generator: draws a unique planet for each Nova suite member from
+// Nova planet generator: draws a unique planet for each Nova Agent member from
 // a seed (their id or handle). The planet is their identity badge.
 //
 // Pure and deterministic: the same seed and theme always give the same planet,

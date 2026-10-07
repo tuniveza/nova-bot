@@ -1,4 +1,4 @@
-// Nova Portal: one sign-in for the whole Nova suite.
+// Crew: one sign-in for the whole Nova Agent.
 //
 // Passwords: PBKDF2-SHA256, 100,000 rounds (the most Cloudflare Workers allow),
 // with a random 16-byte salt per person; stored as "pbkdf2$100000$<salt>$<hash>".

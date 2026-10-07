@@ -35,7 +35,7 @@ export async function handleAdmin(request, env) {
   if (!env.ADMIN_PASSWORD) {
     return text("The admin page isn't set up yet. Run: npx wrangler secret put ADMIN_PASSWORD", 503);
   }
-  // Signed in to Nova Portal as an admin, or the studio's shared password (Basic sign-in)
+  // Signed in to Crew as an admin, or the studio's shared password (Basic sign-in)
   if (!(await requireStaff(request, env, { admin: true })) && !(await passwordMatches(request, env.ADMIN_PASSWORD))) {
     return new Response("Password required", {
       status: 401,
@@ -640,7 +640,7 @@ async function switchBookingSystem(env, form) {
 const when = (iso) => escapeHtml(String(iso || "").slice(0, 16).replace("T", " "));
 
 // ===== LINKS =====
-// The master list of Nova suite links (see links.js), each one checked as the page opens
+// The master list of Nova Agent links (see links.js), each one checked as the page opens
 
 async function linksPage(env, url) {
   const e = escapeHtml;
@@ -665,10 +665,10 @@ async function linksPage(env, url) {
     .join("");
   const total = groups.reduce((n, g) => n + g.items.length, 0);
   const down = groups.reduce((n, g) => n + g.items.filter((i) => i.check.state === "down").length, 0);
-  const body = `<p class="dim">Every Nova suite address in one place: what's live, what the apps use behind the scenes, what's for testing, and what only works on the studio computer. Checked just now (${new Date(checkedAt).toLocaleString("en-GB", { timeZone: "Europe/London" })}): ${total} addresses, ${down ? `<span class="warn">${down} not answering</span>` : "all answering"}.</p>
+  const body = `<p class="dim">Every Nova Agent address in one place: what's live, what the apps use behind the scenes, what's for testing, and what only works on the studio computer. Checked just now (${new Date(checkedAt).toLocaleString("en-GB", { timeZone: "Europe/London" })}): ${total} addresses, ${down ? `<span class="warn">${down} not answering</span>` : "all answering"}.</p>
 ${groups.length ? sections : `<p class="card">The list is empty.</p>`}
 ${changelog.length ? changelogSection(changelog) : ""}
-${features.length ? `<h2 id="features">Everything the Nova suite can do</h2>
+${features.length ? `<h2 id="features">Everything Nova Agent can do</h2>
 <p class="dim">Every feature, app by app.</p>
 <div class="features">${features
   .map(
@@ -702,7 +702,7 @@ function changelogSection(changelog) {
   const counts = { major: 0, big: 0, small: 0 };
   for (const c of changelog) counts[c.size]++;
   return `<h2 id="changelog">What's changed</h2>
-<p class="dim">Every change to the Nova suite, newest first: what changed, why, and what's better. ${changelog.length} changes: ${counts.major} major, ${counts.big} big, ${counts.small} small.</p>
+<p class="dim">Every change to Nova Agent, newest first: what changed, why, and what's better. ${changelog.length} changes: ${counts.major} major, ${counts.big} big, ${counts.small} small.</p>
 <div class="changelog">${[...byDay.entries()]
     .map(
       ([d, list], i) => `<details class="card change-day"${i < 3 ? " open" : ""}><summary><b>${e(day(d))}</b> <span class="dim small">${list.length} change${list.length === 1 ? "" : "s"}</span></summary>
@@ -734,7 +734,7 @@ async function saveLinksForm(env, form) {
   return back(`Saved: ${saved.groups.reduce((n, g) => n + g.items.length, 0)} links in ${saved.groups.length} groups.`, "/admin/links");
 }
 
-// The admin pages' look: Nova Hub's (every colour comes from /app/themes.css)
+// The admin pages' look: Studio's (every colour comes from /app/themes.css)
 const ADMIN_STYLE = `
   * { box-sizing: border-box; }
   body {
@@ -745,7 +745,7 @@ const ADMIN_STYLE = `
   a { color: var(--hi); }
   input, button, select, textarea { font: inherit; color: inherit; }
   .kicker { display: block; font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); }
-  /* The header: brand, tabs, a way into Nova Hub */
+  /* The header: brand, tabs, a way into Studio */
   header.top {
     position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
     padding: 12px max(16px, 3vw); background: rgba(var(--void-rgb), 0.72); backdrop-filter: blur(14px) saturate(1.4);
@@ -862,7 +862,7 @@ const ADMIN_STYLE = `
     .open-hub { margin-left: 0; }
     nav.tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
   }
-  /* Centred (the default, as in Nova Hub's Options; "left" brings back the classic layout) */
+  /* Centred (the default, as in Studio's Options; "left" brings back the classic layout) */
   html[data-align="center"] header.top { justify-content: center; text-align: center; }
   html[data-align="center"] .brand { flex-direction: column; gap: 6px; }
   html[data-align="center"] .open-hub { margin-left: 0; }
@@ -892,7 +892,7 @@ async function page(env, title, url, body) {
     .map(([label, href]) => `<a href="${href}" class="${label.startsWith(title) ? "current" : ""}">${e(label)}</a>`)
     .join("");
 
-  // The page, in Nova Hub's look: the same theme colours (/app/themes.css) and theme picker
+  // The page, in Studio's look: the same theme colours (/app/themes.css) and theme picker
   // (/app/themes.js) as the app, so a theme picked in either shows in both
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -901,25 +901,25 @@ async function page(env, title, url, body) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#06040D">
-<title>${e(title)} | Nova Hub admin</title>
-<link rel="icon" href="/app/icon.svg" type="image/svg+xml">
+<title>${e(title)} | Studio admin</title>
+<link rel="icon" href="/studio/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Saira:wght@300..700&family=Source+Code+Pro:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="/app/themes.css">
-<script src="/app/themes.js"></script>
-<script src="/app/sfx.js" defer></script>
-<script src="/portal/badge.js" defer></script>
-<script src="/portal/manual.js" defer></script>
+<link rel="stylesheet" href="/shared/themes.css">
+<script src="/shared/themes.js"></script>
+<script src="/shared/sfx.js" defer></script>
+<script src="/shared/badge.js" defer></script>
+<script src="/shared/manual.js" defer></script>
 <style>${ADMIN_STYLE}</style>
 </head>
 <body>
 <header class="top">
   <a class="brand" href="/admin">
-    <img src="/app/icon.svg" alt="" width="40" height="40">
-    <span><span class="kicker">Nova suite · Novacane</span><span class="wordmark">Nova Hub <em>admin</em></span></span>
+    <img src="/studio/icon.svg" alt="" width="40" height="40">
+    <span><span class="kicker">Nova Agent · Novacane</span><span class="wordmark">Studio <em>admin</em></span></span>
   </a>
   <nav class="tabs">${tabs}</nav>
-  <a class="open-hub" href="/app/">Open Nova Hub ↗</a>
+  <a class="open-hub" href="/studio/">Open Studio ↗</a>
   <nova-manual compact></nova-manual>
   <nova-portal-badge></nova-portal-badge>
 </header>

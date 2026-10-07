@@ -130,7 +130,7 @@ describe("Nova Agent collecting jobs", () => {
 	});
 });
 
-describe("who Nova Agent works for (its Nova Portal badge)", () => {
+describe("who Nova Agent works for (its Nova Agent badge)", () => {
 	it("returns the Portal profile, or a stand-in before there is one", async () => {
 		await env.DB.prepare("DELETE FROM staff").run();
 		const before = (await agent("/hub/agent/me", { staff_id: "kai-m" })).data;
@@ -144,7 +144,7 @@ describe("who Nova Agent works for (its Nova Portal badge)", () => {
 
 	it("picks the studio's first admin by itself, and hands it what Nova Agent learned as \"owner\"", async () => {
 		await env.DB.batch(["DELETE FROM staff", "DELETE FROM memory_files"].map((q) => env.DB.prepare(q)));
-		// Nobody in Nova Portal yet: a stand-in
+		// Nobody in Crew yet: a stand-in
 		expect((await agent("/hub/agent/me", {})).data).toMatchObject({ linked: false, auto: true, staff: { id: "owner" } });
 		await env.DB.batch([
 			env.DB.prepare("INSERT INTO staff (id, email, display_name, role, status, created_at, planet_seed, index_partition) VALUES ('kai-m', 'kai@example.com', 'Kai Mensah', 'staff', 'active', '2026-09-01', 'kai-m', 'staff:kai-m')"),
@@ -161,7 +161,7 @@ describe("who Nova Agent works for (its Nova Portal badge)", () => {
 	});
 });
 
-describe("Nova Hub quest taps", () => {
+describe("Studio quest taps", () => {
 	const tap = (n, extra = {}) => queueQuestAction(env, { kind: "quest", id: `q${n}`, action: "done", minutes: 15, ...extra });
 
 	it("hands each tap over exactly once, even to two collectors at the same moment", async () => {

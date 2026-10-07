@@ -5,7 +5,7 @@
 //   - 'book':   book a session a customer asked NovaBot to book for them
 //               (book-session.js)
 //   - 'change': change a booking's session type, price or paid status, which
-//               staff asked for in Nova Hub (manage-bookings.js)
+//               staff asked for in Studio (manage-bookings.js)
 //
 // Rather than this Worker calling it (which would need it to be reachable
 // from the internet), Nova Agent checks in here and asks for work, like a
@@ -15,12 +15,12 @@
 //
 //   POST /hub/agent/next     { dryRun, bookingsPerVisitor, wait } -> { job } the oldest waiting job, or { job: null }
 //   POST /hub/agent/result   { id, ok, message }   -> staff phones get the result
-//   POST /hub/agent/quests   { state }             -> Nova Hub shows Nova Agent's missions and quests;
-//                            replies with { actions } tapped in Nova Hub since (also handed over with /next)
+//   POST /hub/agent/quests   { state }             -> Studio shows Nova Agent's missions and quests;
+//                            replies with { actions } tapped in Studio since (also handed over with /next)
 //   POST /hub/notify         { title, message, source?, kind?, tag?, ttl?, urgent?, keep? }
 //                            -> staff phones get Nova Agent's, Nova Quest's and Nova Mission's alerts
 //
-//   POST /hub/agent/me       { staff_id? }         -> who Nova Agent works for (its Nova Portal badge and memory);
+//   POST /hub/agent/me       { staff_id? }         -> who Nova Agent works for (its Nova Agent badge and memory);
 //                            without an id, the studio's first admin
 //
 // All of them need header Authorization: Bearer <AGENT_NOVA_KEY>.
@@ -122,7 +122,7 @@ async function nextJob(env, body) {
   const waitSeconds = Math.min(Math.max(Number(body?.wait) || 0, 0), MAX_WAIT_SECONDS);
   const giveUpAt = Date.now() + waitSeconds * 1000;
   let job = await takeJob(env);
-  // Stop waiting early for a job, or for a tap in Nova Hub's Quests tab
+  // Stop waiting early for a job, or for a tap in Studio's Quests tab
   while (!job && !(await hasQuestActions(env)) && Date.now() < giveUpAt) {
     await new Promise((resolve) => setTimeout(resolve, WAIT_CHECK_MS));
     job = await takeJob(env);
@@ -200,13 +200,13 @@ async function sendAlert(env, body) {
   const ttl = Math.min(Math.max(Number(body.ttl) || 86400, 60), 86400);
   const style = { source, kind, tag: tag ? `${source}-${tag}` : "", ttl, urgent: body.urgent === true };
   // `keep: false` (quick repeats): ring the phone but leave it out of the Alerts list
-  const delivered = await notifyPhones(env, { title: `${ALERT_SOURCES[source]}: ${title}`, body: message, url: "/app/#nova", style, save: body.keep !== false });
+  const delivered = await notifyPhones(env, { title: `${ALERT_SOURCES[source]}: ${title}`, body: message, url: "/studio/#nova", style, save: body.keep !== false });
   return Response.json({ ok: true, phones: delivered });
 }
 
-// ===== NOVA QUESTS IN NOVA HUB =====
-// Nova Agent keeps its plan (missions, quests, pulses) here, so Nova Hub can
-// show it; taps in Nova Hub (Done, Start, Not now...) wait here until Nova
+// ===== NOVA QUESTS IN STUDIO =====
+// Nova Agent keeps its plan (missions, quests, pulses) here, so Studio can
+// show it; taps in Studio (Done, Start, Not now...) wait here until Nova
 // Agent next checks in, usually within a second.
 
 const QUESTS_KEY = "nova_quests";
@@ -224,7 +224,7 @@ async function saveQuests(env, body) {
   return Response.json({ ok: true, actions: await takeQuestActions(env) });
 }
 
-// What Nova Hub shows: the latest plan, when it came, and whether Nova Agent is online
+// What Studio shows: the latest plan, when it came, and whether Nova Agent is online
 export async function questsForHub(env) {
   const { results } = await env.DB.prepare("SELECT key, value FROM settings WHERE key IN (?, 'agent_nova_seen')").bind(QUESTS_KEY).all();
   const setting = Object.fromEntries(results.map((row) => [row.key, row.value]));
@@ -236,7 +236,7 @@ export async function questsForHub(env) {
   return { ...saved, online: Date.now() - seen < ONLINE_MINUTES * 60000 };
 }
 
-// A tap in Nova Hub, for Nova Agent to carry out. Each gets an id (so Nova
+// A tap in Studio, for Nova Agent to carry out. Each gets an id (so Nova
 // Agent counts it once) and is added in one statement, so taps made at the
 // same moment are all kept.
 export async function queueQuestAction(env, action) {
@@ -277,10 +277,10 @@ async function sameText(a, b) {
   return crypto.subtle.timingSafeEqual(await hash(a), await hash(b));
 }
 
-// Who Nova Agent works for, for its Nova Portal badge and its Nova Index memory. With a
+// Who Nova Agent works for, for its Nova Agent badge and its Nova Index memory. With a
 // staff_id (someone who pressed "Connect as me", or NOVA_STAFF_ID), that person; without
 // one, the studio's first admin (the account set up with the studio password). Before
-// Nova Portal has anyone, a stand-in from the id.
+// Crew has anyone, a stand-in from the id.
 async function agentStaff(env, body) {
   const asked = String(body.staff_id || "").toLowerCase().slice(0, 64);
   let row = null;

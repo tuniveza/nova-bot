@@ -1,9 +1,9 @@
-// The master list of Nova suite links: every live address, every test and
+// The master list of Nova Agent links: every live address, every test and
 // development address, the code, and the accounts behind it all.
 //
 // The list itself is kept in the database (settings: "url_directory"), never
 // in this code, because the code is public on GitHub. It's shown only behind
-// the admin password: on the admin page (/admin/links) and in Nova Hub. Each
+// the admin password: on the admin page (/admin/links) and in Studio. Each
 // time it's opened, every web address is checked, so you can see at a glance
 // what's up.
 //
@@ -36,9 +36,9 @@ export function cleanLinks(raw) {
       .map((i) => ({ name: text(i?.name, 120), url: text(i?.url, 600), kind: KINDS.includes(i?.kind) ? i.kind : "live", note: text(i?.note, 300) }))
       .filter((i) => i.name && /^(https?:\/\/|wrangler |npm |npx )/.test(i.url)),
   }));
-  // Everything the Nova suite can do, app by app
+  // Everything Nova Agent can do, app by app
   const features = (Array.isArray(raw?.features) ? raw.features : []).slice(0, 30).map((f) => ({
-    app: text(f?.app, 80) || "Nova suite",
+    app: text(f?.app, 80) || "Nova Agent",
     note: text(f?.note, 300),
     items: (Array.isArray(f?.items) ? f.items : []).slice(0, 80).map((i) => ({ name: text(i?.name, 120), detail: text(i?.detail, 600) })).filter((i) => i.name),
   }));
@@ -48,7 +48,7 @@ export function cleanLinks(raw) {
     .slice(0, 1000)
     .map((c) => ({
       date: /^\d{4}-\d{2}-\d{2}$/.test(c?.date) ? c.date : "",
-      app: text(c?.app, 60) || "Nova suite",
+      app: text(c?.app, 60) || "Nova Agent",
       size: SIZES.includes(c?.size) ? c.size : "small",
       title: text(c?.title, 140),
       what: text(c?.what, 400),
@@ -72,7 +72,7 @@ async function check(url, kind) {
   if (kind === "planned") return { state: "unchecked", label: "Not set up yet" };
   if (!/^https:\/\//.test(url)) return { state: "unchecked", label: /localhost|127\.0\.0\.1/.test(url) ? "Studio computer only" : "Not a web address" };
   try {
-    const res = await fetch(url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(6000), headers: { "User-Agent": "Nova Hub link check" } });
+    const res = await fetch(url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(6000), headers: { "User-Agent": "Studio link check" } });
     const s = res.status;
     if (s >= 200 && s < 300) return { state: "up", label: `Up · ${s}` };
     if (s >= 300 && s < 400) return { state: "up", label: `Up · redirects (${s})` };

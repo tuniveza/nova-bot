@@ -10,7 +10,7 @@
 	// Fetches go out over the public internet, so the Links page can check the
 	// other Nova apps on this account (workers.dev) as anyone else would see them
 	"compatibility_flags": ["global_fetch_strictly_public"],
-	// Nova Index (ns/ni) and Nova Portal (ns/np) are copied in before every deploy and local run
+	// Nova Agent's panels (Studio, Crew, Index, Calendar, Notes) are copied in from its repo before every deploy and local run
 	"build": { "command": "node scripts/sync-apps.mjs" },
 	"observability": {
 			"logs": {
@@ -29,7 +29,7 @@
 	// Workers AI: NovaBot's voice (speech) and ears (Whisper)
 	"ai": { "binding": "AI" },
 	// The chat widget files (novabot.js, novabot.css) the website loads
-	"assets": { "directory": "./public" },
+	"assets": { "directory": "./public", "binding": "ASSETS" },
 	// Referral tracking: appointments and referral codes.
 	// Create it once with `npx wrangler d1 create novabot` and paste the
 	// database_id it prints here (see README-REFERRALS.md).

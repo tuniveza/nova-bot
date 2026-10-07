@@ -18,7 +18,7 @@ describe("what kind of alert it is", () => {
 		expect(alertKind(a({ title: "Nova Mission: Mission planned" }))).toBe("mission");
 		expect(alertKind(a({ title: "Nova Agent: Can't log in" }))).toBe("agent");
 		expect(alertKind(a({ title: "New enquiry: Mixing", enquiry_id: "e1" }))).toBe("enquiry");
-		expect(alertKind(a({ title: "Nova Mission: Test ✦ Nova Hub pings are live" }))).toBe("mission");
+		expect(alertKind(a({ title: "Nova Mission: Test ✦ Studio pings are live" }))).toBe("mission");
 		expect(alertKind(a({ title: "Test booking", appointment_id: 5 }))).toBe("test");
 	});
 });

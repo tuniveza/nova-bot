@@ -1,4 +1,4 @@
-// Nova Portal's API: signing in once for every Nova suite app, staff records,
+// Crew's API: signing in once for every Nova Agent panel, staff records,
 // profiles and planets.
 //
 //   POST /auth/login            { email, password, client? }  → session cookie (or an app token with client: "app")
@@ -91,7 +91,7 @@ async function inviteFor(env, id, origin) {
   const token = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const expires = new Date(Date.now() + INVITE_DAYS * 864e5).toISOString();
   await env.DB.prepare("UPDATE staff SET invite_hash = ?, invite_expires = ? WHERE id = ?").bind(await sha256(token), expires, id).run();
-  return { invite_url: `${origin}/portal/?invite=${encodeURIComponent(token)}`, invite_expires: expires };
+  return { invite_url: `${origin}/crew/?invite=${encodeURIComponent(token)}`, invite_expires: expires };
 }
 
 async function staffByInvite(env, token) {
@@ -176,7 +176,7 @@ export async function handlePortal(request, env, ctx, pathname) {
     } catch {
       return json({ error: "Unknown site" }, 400);
     }
-    if (!SUITE_ORIGINS.includes(to.origin)) return json({ error: "That isn't a Nova suite site." }, 400);
+    if (!SUITE_ORIGINS.includes(to.origin)) return json({ error: "That isn't a Nova Agent site." }, 400);
     const token = await createSession(env, me.id, { kind: "profile", userAgent: request.headers.get("User-Agent") || "" });
     await env.DB.prepare("UPDATE sessions SET expires_at = ? WHERE id = ?").bind(new Date(Date.now() + PROFILE_DAYS * 864e5).toISOString(), await sha256(token)).run();
     to.hash = `nova_portal=${token}`;
@@ -185,7 +185,7 @@ export async function handlePortal(request, env, ctx, pathname) {
 
   // The very first account: an admin, proven with the studio's current (shared) password
   if (pathname === "/auth/setup" && method === "POST") {
-    if ((await count()) > 0) return json({ error: "Nova Portal is already set up. Sign in instead." }, 409);
+    if ((await count()) > 0) return json({ error: "Crew is already set up. Sign in instead." }, 409);
     if (await tooMany(env, request, "setup")) return json({ error: "Too many tries. Wait a minute and try again." }, 429);
     if (!env.ADMIN_PASSWORD || !(await sameText(String(body.studio_password || ""), env.ADMIN_PASSWORD))) return json({ error: "That isn't the studio's current password." }, 401);
     const email = text(body.email, 200).toLowerCase();

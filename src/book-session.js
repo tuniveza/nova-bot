@@ -11,7 +11,7 @@
 // new-booking alerts follow. The time isn't held until they've paid.
 //
 //   readyToPay()   the website's booking card ("Book it for me", booking-form.js)
-//   bookSession()  the book_session tool, for Nova Hub's staff chat: the link to
+//   bookSession()  the book_session tool, for Studio's staff chat: the link to
 //                  send the customer, so they can pay and it's booked
 
 import { agentNovaProblem } from "./agent-nova.js";

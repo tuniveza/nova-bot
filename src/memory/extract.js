@@ -8,7 +8,7 @@
 //   2. Merge, don't pile up: each file is rewritten with the new facts folded in (a line
 //      on the same subject is replaced, not joined by a contradicting one), written with
 //      its version token, and retried once if someone else wrote first.
-//   3. Customers: facts about clients wait in the approval queue (Nova Index / Nova Hub)
+//   3. Customers: facts about clients wait in the approval queue (Nova Index / Studio)
 //      instead of being saved straight away.
 // Files that grow past MAX_FILE_BYTES are condensed in the same pass.
 
@@ -35,7 +35,7 @@ async function callTool(env, { system, prompt, tool }) {
   return call ? call.input : null;
 }
 
-const DISTIL_RULES = `You keep the Nova suite's memory for Novacane Studios (a recording studio in Forest Hill, London). From the conversation, pull out only DURABLE facts worth remembering.
+const DISTIL_RULES = `You keep Nova Agent's memory for Novacane Studios (a recording studio in Forest Hill, London). From the conversation, pull out only DURABLE facts worth remembering.
 
 The test for every fact: "Would this still be true and useful in three months?" If not, leave it out.
 - One short clause per fact, phrased to outlast specifics ("prefers evening sessions", not "booked Tuesday 7pm").

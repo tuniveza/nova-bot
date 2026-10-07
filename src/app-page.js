@@ -1,4 +1,4 @@
-// Nova Hub: the staff app at /app
+// Studio: the staff app at /app
 //
 // The app itself (public/app/) is plain files with no customer data in them.
 // Everything it shows comes from these /app/api/ requests, which need a staff
@@ -25,7 +25,7 @@
 //   POST /app/api/ask                   { question, history } -> { answer } (questions about bookings, enquiries, alerts)
 
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
-import { askHub } from "./hub-ask.js";
+import { askHub } from "./studio-ask.js";
 import { questsForHub, queueQuestAction } from "./agent-nova.js";
 import { handleMemoryForStaff, learnFromStaffChat } from "./memory/routes.js";
 import { clearCookie, endSession, requireStaff } from "./portal/auth.js";
@@ -80,10 +80,10 @@ export async function handleApp(request, env, ctx, answer) {
   if (route.startsWith("/memory/")) {
     if (request.method !== "GET" && request.headers.get("Origin") !== url.origin) return json({ error: "Forbidden" }, 403);
     // An admin (or the shared studio password) sees everything; other staff see the studio's
-    // memory and their own partition (Nova Portal decides who's who)
+    // memory and their own partition (Crew decides who's who)
     const who = await requireStaff(request, env);
     const member = who && who.role !== "admin" ? who.id : null;
-    return handleMemoryForStaff(request, env, ctx, route.slice("/memory".length), request.headers.get("X-Nova-App") === "hub" ? "Nova Hub" : "Nova Index", member);
+    return handleMemoryForStaff(request, env, ctx, route.slice("/memory".length), request.headers.get("X-Nova-App") === "hub" ? "Studio" : "Nova Index", member);
   }
   if (route === "/links" && request.method === "GET") return json(await checkedLinks(env));
   if (route === "/quests/action" && request.method === "POST") return questAction(request, env);
@@ -93,7 +93,7 @@ export async function handleApp(request, env, ctx, answer) {
 
 // ===== NOVA QUESTS =====
 
-// A tap on a quest or mission in Nova Hub, passed on to Nova Agent
+// A tap on a quest or mission in Studio, passed on to Nova Agent
 const QUEST_ACTIONS = ["done", "start", "skip", "reopen", "snooze", "finish", "pause", "resume"];
 async function questAction(request, env) {
   const body = await readJson(request);
@@ -133,7 +133,7 @@ async function login(request, env) {
   });
 }
 
-// Signing out of Nova Hub signs out of Nova Portal too (the whole suite)
+// Signing out of Studio signs out of Crew too (the whole suite)
 async function logout(request, env) {
   await endSession(env, request).catch(() => {});
   const headers = new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -143,7 +143,7 @@ async function logout(request, env) {
 }
 
 async function signedIn(request, env) {
-  // Signed in with Nova Portal (any active staff member)
+  // Signed in with Crew (any active staff member)
   if (await requireStaff(request, env)) return true;
   // Or with the studio's shared password (until everyone has a Portal account)
   return legacySignedIn(request, env);
@@ -255,11 +255,11 @@ async function staffChat(request, env, ctx, answer) {
     .map((m) => ({ role: m.role, content: m.content.slice(0, 1500) }));
   while (list.length && list[0].role !== "user") list.shift();
   if (!list.length) return json({ error: "No message" }, 400);
-  const visitor = { chatId: null, page: "Nova Hub (staff)", ip: request.headers.get("CF-Connecting-IP") || "staff" };
+  const visitor = { chatId: null, page: "Studio (staff)", ip: request.headers.get("CF-Connecting-IP") || "staff" };
   // Staff can also find, cancel, reschedule and change bookings (manage-bookings.js)
   const reply = (await answer(list, env, visitor, (work) => ctx.waitUntil(work), { staff: true })).text;
   // What the team says about clients and the studio feeds Nova Index (in the background)
-  ctx.waitUntil(learnFromStaffChat(env, [...list, { role: "assistant", content: reply }]).catch((err) => console.log("Memory from Nova Hub failed:", err.message)));
+  ctx.waitUntil(learnFromStaffChat(env, [...list, { role: "assistant", content: reply }]).catch((err) => console.log("Memory from Studio failed:", err.message)));
   return json({ reply });
 }
 
@@ -288,7 +288,7 @@ async function unsubscribe(request, env) {
 async function testNotification(env) {
   // Send it to every signed-up phone and count how many it reached
   // (tests stay out of the Alerts tab)
-  const delivered = await notifyPhones(env, { title: "Nova Hub", body: "Test notification: notifications are working 🎉", save: false });
+  const delivered = await notifyPhones(env, { title: "Studio", body: "Test notification: notifications are working 🎉", save: false });
   // Report back
   return json({ delivered });
 }
@@ -379,7 +379,7 @@ async function voice(request, env) {
         // Ignore silence
         vad_filter: true,
         // Words it should expect
-        initial_prompt: "Nova, show alerts. Nova, call Eric. Staff giving a command to Nova Hub, the Novacane Studios app: show enquiries, alerts, chats, delete alerts, call, email, ask NovaBot.",
+        initial_prompt: "Nova, show alerts. Nova, call Eric. Staff giving a command to Studio, the Novacane Studios app: show enquiries, alerts, chats, delete alerts, call, email, ask NovaBot.",
       });
       // Hand back the words
       return json({ text: (result.text || "").trim() });

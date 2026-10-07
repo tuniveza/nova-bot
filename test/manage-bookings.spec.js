@@ -256,7 +256,7 @@ describe("who gets these tools", () => {
 		expect(claudeCalls[0].system.map((s) => s.text).join("\n")).not.toContain("YOU ARE TALKING TO STAFF");
 	});
 
-	it("offers them in Nova Hub's staff chat, and runs them", async () => {
+	it("offers them in Studio's staff chat, and runs them", async () => {
 		const login = await post("/app/api/login", { password: "test-admin-password" }, { Origin: BASE });
 		const cookie = login.headers.get("Set-Cookie").split(";")[0];
 

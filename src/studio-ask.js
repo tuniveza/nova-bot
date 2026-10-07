@@ -1,5 +1,5 @@
 // "Nova, what time is Eric ShortSaw's session?": questions about the studio's
-// own bookings, enquiries and alerts, answered in Nova Hub (staff only).
+// own bookings, enquiries and alerts, answered in Studio (staff only).
 //
 //   POST /app/api/ask   { question, history }  ->  { answer }
 //
@@ -21,13 +21,13 @@ const MAX_ALERTS = 30;
 const MAX_DETAILS = 300;
 
 // What Nova is told about its job
-const INSTRUCTIONS = `You are Nova, the assistant inside Nova Hub, the staff app for Novacane Studios (a recording studio in Forest Hill, London).
+const INSTRUCTIONS = `You are Nova, the assistant inside Studio, the staff app for Novacane Studios (a recording studio in Forest Hill, London).
 Staff ask you about the studio's own bookings, enquiries and alerts. Answer using only the data below.
 - You're talking to a member of the studio team, never a customer: speak as a colleague, refer to customers in the third person, and never sell or invite them to book.
 - Be brief and natural: your answer may be read aloud. One to three short sentences, no lists or markdown unless asked for a list.
 - Times are UK time. Say days like "Thursday 22 October" and times like "2:15pm".
 - Match names loosely (people may say a first name only, or speech-to-text may spell it slightly wrong). If more than one person could match, say so.
-- If the answer isn't in the data, say you can't see it in Nova Hub. Never make up bookings, times or contact details.
+- If the answer isn't in the data, say you can't see it in Studio. Never make up bookings, times or contact details.
 - BOOKINGS are the current Acuity diary (cancelled bookings aren't in it; recent cancellations and moves are in ALERTS).`;
 
 // Answer one question
@@ -52,7 +52,7 @@ export async function askHub(request, env) {
   if (!env.ANTHROPIC_API_KEY) return Response.json({ answer: `🧪 Sandbox: Nova isn't connected to an AI, so it can't answer "${question.slice(0, 120)}".` });
   // Everything Nova knows, as text
   const data = await snapshot(env);
-  // What the Nova suite remembers about the people and work this question is about (Nova Index)
+  // What Nova Agent remembers about the people and work this question is about (Nova Index)
   const memory = memoryPrompt(await readForStaff(env, question).catch(() => null), "the people the team talks about");
   // Ask Claude
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -71,7 +71,7 @@ export async function askHub(request, env) {
   // Claude didn't answer
   if (!res.ok) {
     // Note why in the logs
-    console.log("Nova Hub question failed:", res.status, await res.text());
+    console.log("Studio question failed:", res.status, await res.text());
     // Tell the app
     return Response.json({ error: "Nova couldn't answer just now. Try again." }, { status: 502 });
   }
@@ -112,7 +112,7 @@ async function snapshot(env) {
     }
   } catch (err) {
     // The feed couldn't be read
-    console.log("Nova Hub question: couldn't read bookings:", err);
+    console.log("Studio question: couldn't read bookings:", err);
     parts.push("BOOKINGS: couldn't be read just now.");
   }
 

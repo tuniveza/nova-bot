@@ -1,4 +1,4 @@
-// The Nova placeholder theme: all the art direction for Nova suite planets.
+// The Nova placeholder theme: all the art direction for Nova Agent planets.
 // The generator never picks a colour or a style by itself; it reads them from
 // here. The studio's lore will be a new file shaped like this one.
 //
