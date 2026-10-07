@@ -141,4 +141,22 @@ describe("who Nova Agent works for (its Nova Portal badge)", () => {
 		expect(after).toMatchObject({ linked: true, staff: { display_name: "Kai Mensah", role: "admin" } });
 		expect(after.staff.email).toBeUndefined();
 	});
+
+	it("picks the studio's first admin by itself, and hands it what Nova Agent learned as \"owner\"", async () => {
+		await env.DB.batch(["DELETE FROM staff", "DELETE FROM memory_files"].map((q) => env.DB.prepare(q)));
+		// Nobody in Nova Portal yet: a stand-in
+		expect((await agent("/hub/agent/me", {})).data).toMatchObject({ linked: false, auto: true, staff: { id: "owner" } });
+		await env.DB.batch([
+			env.DB.prepare("INSERT INTO staff (id, email, display_name, role, status, created_at, planet_seed, index_partition) VALUES ('kai-m', 'kai@example.com', 'Kai Mensah', 'staff', 'active', '2026-09-01', 'kai-m', 'staff:kai-m')"),
+			env.DB.prepare("INSERT INTO staff (id, email, display_name, role, status, created_at, planet_seed, index_partition) VALUES ('dana-h', 'dana@example.com', 'Dana Hollis', 'admin', 'active', '2026-09-02', 'dana-h', 'staff:dana-h')"),
+			env.DB.prepare("INSERT INTO staff (id, email, display_name, role, status, created_at, planet_seed, index_partition) VALUES ('eric-a', 'eric@example.com', 'Eric A', 'admin', 'active', '2026-09-03', 'eric-a', 'staff:eric-a')"),
+			env.DB.prepare("INSERT INTO memory_files (id, scope, owner_id, path, name, description, aliases, body, version, source_app, updated_at) VALUES ('m1', 'staff', 'owner', 'profile', 'profile', '', '', '- [stated] mixes late', 'v1', 'agent', 1759300000000)"),
+		]);
+		const me = (await agent("/hub/agent/me", {})).data;
+		expect(me).toMatchObject({ linked: true, auto: true, staff: { id: "dana-h", role: "admin" } });
+		const moved = await env.DB.prepare("SELECT owner_id FROM memory_files WHERE id = 'm1'").first("owner_id");
+		expect(moved).toBe("dana-h");
+		// Asking for someone (connected, or NOVA_STAFF_ID) gets them
+		expect((await agent("/hub/agent/me", { staff_id: "kai-m" })).data.staff.id).toBe("kai-m");
+	});
 });

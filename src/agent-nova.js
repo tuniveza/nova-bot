@@ -20,7 +20,8 @@
 //   POST /hub/notify         { title, message, source?, kind?, tag?, ttl?, urgent?, keep? }
 //                            -> staff phones get Nova Agent's, Nova Quest's and Nova Mission's alerts
 //
-//   POST /hub/agent/me       { staff_id }          -> who Nova Agent works for (its Nova Portal badge)
+//   POST /hub/agent/me       { staff_id? }         -> who Nova Agent works for (its Nova Portal badge and memory);
+//                            without an id, the studio's first admin
 //
 // All of them need header Authorization: Bearer <AGENT_NOVA_KEY>.
 
@@ -264,11 +265,40 @@ async function sameText(a, b) {
   return crypto.subtle.timingSafeEqual(await hash(a), await hash(b));
 }
 
-// Who Nova Agent works for (its NOVA_STAFF_ID), for the Nova Portal badge in Nova Agent
-// and the apps it serves. Before that person has a Portal account, a stand-in from the id.
+// Who Nova Agent works for, for its Nova Portal badge and its Nova Index memory. With a
+// staff_id (someone who pressed "Connect as me", or NOVA_STAFF_ID), that person; without
+// one, the studio's first admin (the account set up with the studio password). Before
+// Nova Portal has anyone, a stand-in from the id.
 async function agentStaff(env, body) {
-  const id = String(body.staff_id || "owner").slice(0, 64);
-  const row = env.DB ? await env.DB.prepare("SELECT * FROM staff WHERE id = ?").bind(id).first().catch(() => null) : null;
-  const who = row ? profile(row) : { id, display_name: id === "owner" ? "Studio" : id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()), role: "staff", status: "local", planet_seed: id, planet_overrides: null, planet_theme: "nova", index_partition: `staff:${id}`, created_at: null };
-  return Response.json({ staff: { ...who, planet: await planetFacts(who.planet_seed, who.planet_overrides) }, via: "nova-agent", linked: Boolean(row) });
+  const asked = String(body.staff_id || "").toLowerCase().slice(0, 64);
+  let row = null;
+  if (env.DB) {
+    row = asked
+      ? await env.DB.prepare("SELECT * FROM staff WHERE id = ?").bind(asked).first().catch(() => null)
+      : await env.DB.prepare("SELECT * FROM staff WHERE role = 'admin' AND status = 'active' ORDER BY created_at, id LIMIT 1").first().catch(() => null);
+  }
+  // Picked automatically: what Nova Agent learned before it knew who (as "owner") becomes theirs
+  if (row && !asked) await adoptOwnerMemory(env, row.id);
+  const id = asked || "owner";
+  const who = row
+    ? profile(row)
+    : { id, display_name: id === "owner" ? "Studio" : id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()), role: "staff", status: "local", planet_seed: id, planet_overrides: null, planet_theme: "nova", index_partition: `staff:${id}`, created_at: null };
+  return Response.json({ staff: { ...who, planet: await planetFacts(who.planet_seed, who.planet_overrides) }, via: "nova-agent", linked: Boolean(row), auto: !asked });
+}
+
+// Nova Index files kept under "owner" (before Nova Agent knew who it works for) move to that
+// person, unless they already have a file at the same path. Runs once in practice: after the
+// move there's nothing left under "owner".
+async function adoptOwnerMemory(env, staffId) {
+  if (staffId === "owner") return;
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE memory_files SET owner_id = ?1 WHERE scope = 'staff' AND owner_id = 'owner' AND path NOT IN (SELECT path FROM memory_files WHERE scope = 'staff' AND owner_id = ?1)"
+      ).bind(staffId),
+      env.DB.prepare("UPDATE memory_pending SET owner_id = ?1 WHERE scope = 'staff' AND owner_id = 'owner'").bind(staffId),
+    ]);
+  } catch {
+    // The memory tables may not exist (an older database); the badge still works
+  }
 }
