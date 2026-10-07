@@ -909,6 +909,7 @@ async function page(env, title, url, body) {
 <script src="/app/themes.js"></script>
 <script src="/app/sfx.js" defer></script>
 <script src="/portal/badge.js" defer></script>
+<script src="/portal/manual.js" defer></script>
 <style>${ADMIN_STYLE}</style>
 </head>
 <body>
@@ -919,6 +920,7 @@ async function page(env, title, url, body) {
   </a>
   <nav class="tabs">${tabs}</nav>
   <a class="open-hub" href="/app/">Open Nova Hub ↗</a>
+  <nova-manual compact></nova-manual>
   <nova-portal-badge></nova-portal-badge>
 </header>
 <main>
