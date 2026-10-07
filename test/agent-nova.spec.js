@@ -129,3 +129,16 @@ describe("Nova Agent collecting jobs", () => {
 		expect(results).toEqual([{ status: "waiting" }]);
 	});
 });
+
+describe("who Nova Agent works for (its Nova Portal badge)", () => {
+	it("returns the Portal profile, or a stand-in before there is one", async () => {
+		await env.DB.prepare("DELETE FROM staff").run();
+		const before = (await agent("/hub/agent/me", { staff_id: "kai-m" })).data;
+		expect(before).toMatchObject({ via: "nova-agent", linked: false, staff: { id: "kai-m", display_name: "Kai M" } });
+		expect(before.staff.planet.name).toBeTruthy();
+		await env.DB.prepare("INSERT INTO staff (id, email, display_name, role, status, created_at, planet_seed, index_partition) VALUES ('kai-m', 'kai@example.com', 'Kai Mensah', 'admin', 'active', '2026-10-01', 'kai-m', 'staff:kai-m')").run();
+		const after = (await agent("/hub/agent/me", { staff_id: "kai-m" })).data;
+		expect(after).toMatchObject({ linked: true, staff: { display_name: "Kai Mensah", role: "admin" } });
+		expect(after.staff.email).toBeUndefined();
+	});
+});

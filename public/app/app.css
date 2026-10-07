@@ -1073,3 +1073,11 @@ html[data-align="center"] .q-tags { justify-content: center; }
 /* Signing in: Nova Portal first, the shared studio password underneath */
 .portal-btn { display: inline-flex; justify-content: center; width: 100%; text-decoration: none; }
 .login-or { margin: 10px 0 -2px; font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.08em; color: var(--muted); text-align: center; }
+
+/* ===================== Nova Portal badge (header) ===================== */
+/* Your planet, name and role; on a phone just the planet, so the brand stays centred */
+.top-actions nova-portal-badge { margin-right: 2px; }
+@media (max-width: 560px) {
+  .top-actions nova-portal-badge::part(words) { display: none; }
+  .top-actions nova-portal-badge::part(chip) { padding: 0 3px; gap: 0; }
+}

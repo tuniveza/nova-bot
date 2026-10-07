@@ -6,6 +6,8 @@
 // app token (native apps, "Authorization: Bearer nsess_..."). Only the token's
 // SHA-256 is stored, so the sessions table can't be used to sign in, and signing
 // out deletes the row, so it stops working everywhere at once.
+// A third kind, "profile" ("Bearer nprof_..."), is read-only: it lets a suite app
+// on another site (Nova Notes, Nova Calendar) show who you are, and nothing else.
 
 export const COOKIE = "nova_session";
 export const SESSION_DAYS = 30;
@@ -57,7 +59,7 @@ export function passwordProblem(password) {
 // ---- Sessions ----
 
 export async function createSession(env, staffId, { kind = "cookie", userAgent = "" } = {}) {
-  const token = (kind === "token" ? "nsess_" : "") + b64url(crypto.getRandomValues(new Uint8Array(32)));
+  const token = (kind === "token" ? "nsess_" : kind === "profile" ? "nprof_" : "") + b64url(crypto.getRandomValues(new Uint8Array(32)));
   const now = new Date();
   const expires = new Date(now.getTime() + SESSION_DAYS * 864e5);
   await env.DB.prepare("INSERT INTO sessions (id, staff_id, kind, created_at, expires_at, last_seen_at, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)")
@@ -78,13 +80,15 @@ export const clearCookie = () => `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secur
 export function tokenOf(request) {
   const auth = request.headers.get("Authorization") || "";
   if (auth.startsWith("Bearer nsess_")) return { token: auth.slice(7), kind: "token" };
+  if (auth.startsWith("Bearer nprof_")) return { token: auth.slice(7), kind: "profile" };
   const cookie = (request.headers.get("Cookie") || "").split(/;\s*/).find((c) => c.startsWith(COOKIE + "="));
   return cookie ? { token: cookie.slice(COOKIE.length + 1), kind: "cookie" } : null;
 }
 
 // The signed-in staff member (active, session not expired), or null.
 // Every protected route asks this; the staff record comes back attached.
-export async function requireStaff(request, env, { admin = false } = {}) {
+// A read-only profile token only counts where the route says so ({ profile: true }).
+export async function requireStaff(request, env, { admin = false, profile = false } = {}) {
   if (!env.DB) return null;
   const t = tokenOf(request);
   if (!t || !t.token) return null;
@@ -96,6 +100,7 @@ export async function requireStaff(request, env, { admin = false } = {}) {
     .first()
     .catch(() => null);
   if (!row || row.expires_at < new Date().toISOString() || row.status !== "active") return null;
+  if (row.kind === "profile" && !profile) return null;
   if (admin && row.role !== "admin") return null;
   // Note it's in use (at most every 10 minutes, to keep writes down)
   if (Date.now() - Date.parse(row.last_seen_at) > 600_000) {

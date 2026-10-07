@@ -15,6 +15,9 @@
 //   PATCH /staff/:id            admin: role, status, name, planet; yourself: name, planet
 //   GET  /staff/:id/planet.svg  the planet badge (?size=, ?animate=1)
 //   GET  /staff/:id/index       that person's Nova Index view (yourself or an admin)
+//   POST /auth/connect          { return_to } → a read-only profile token for another suite site
+//                               (Nova Notes, Nova Calendar...), so its Portal badge can show you
+// /auth/me and /auth/logout also answer those sites (CORS), with a profile token.
 // Changes from a browser must come from this site (the Origin header); apps
 // using a token are exempt (a token can't be sent by another website).
 
@@ -28,8 +31,33 @@ const STATUSES = ["active", "invited", "disabled"];
 const text = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
+// The other suite sites whose Portal badge may ask who you are (with a read-only token)
+export const SUITE_ORIGINS = [
+  "https://nova-notes.novacane-studio.workers.dev",
+  "https://nova-calendar.novacane-studio.workers.dev",
+  "http://localhost:4545",
+  "http://localhost:4546",
+  "http://localhost:4610",
+];
+const PROFILE_DAYS = 90;
+
+// CORS for the badge on those sites: a Bearer token, never cookies
+function suiteCors(request) {
+  const origin = request.headers.get("Origin") || "";
+  return SUITE_ORIGINS.includes(origin)
+    ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Max-Age": "86400", Vary: "Origin" }
+    : {};
+}
+
+// The planet's name, a short description and its glow colour (the badge's halo)
+export async function planetFacts(seed, overrides) {
+  const { generatePlanet, novaTheme } = await import("./planet/index.js");
+  const p = generatePlanet(seed, novaTheme, overrides || undefined);
+  return { name: p.name, description: p.description, surface: p.surface, glow: p.glow && p.glow.color };
+}
+
 // What anyone may see of a staff member (plus email for admins and themselves)
-function profile(row, { full = false } = {}) {
+export function profile(row, { full = false } = {}) {
   if (!row) return null;
   let overrides = null;
   try {
@@ -96,10 +124,13 @@ export async function handlePortal(request, env, ctx, pathname) {
   if (!env.DB) return json({ error: "No database" }, 503);
   const url = new URL(request.url);
   const method = request.method;
-  // Changes from a browser must come from this site; app tokens are exempt
+  // The Portal badge on other suite sites: who's signed in, and signing out
+  const cors = pathname === "/auth/me" || pathname === "/auth/logout" ? suiteCors(request) : {};
+  if (method === "OPTIONS") return new Response(null, { status: Object.keys(cors).length ? 204 : 404, headers: cors });
+  // Changes from a browser must come from this site; app and profile tokens are exempt
   if (method !== "GET" && method !== "HEAD") {
     const t = tokenOf(request);
-    if (!(t && t.kind === "token") && request.headers.get("Origin") !== url.origin) return json({ error: "Forbidden" }, 403);
+    if (!(t && (t.kind === "token" || t.kind === "profile")) && request.headers.get("Origin") !== url.origin) return json({ error: "Forbidden" }, 403);
   }
   const body = method === "POST" || method === "PATCH" ? await request.json().catch(() => ({})) : {};
   const count = async () => (await env.DB.prepare("SELECT COUNT(*) AS n FROM staff").first("n")) || 0;
@@ -123,12 +154,33 @@ export async function handlePortal(request, env, ctx, pathname) {
 
   if (pathname === "/auth/logout" && method === "POST") {
     await endSession(env, request);
-    return json({ ok: true }, 200, { "Set-Cookie": clearCookie() });
+    return json({ ok: true }, 200, { ...cors, "Set-Cookie": clearCookie() });
   }
 
+  // Who's signed in, with their planet's name and colour (every app's Portal badge starts here).
+  // A profile token from another suite site gets the profile without the email.
   if (pathname === "/auth/me" && method === "GET") {
+    const me = await requireStaff(request, env, { profile: true });
+    if (!me) return json({ error: "Not signed in" }, 401, cors);
+    const full = me.session_kind !== "profile";
+    return json({ staff: { ...profile(me, { full }), planet: await planetFacts(me.planet_seed, profile(me).planet_overrides) }, via: full ? "portal" : "connect" }, 200, cors);
+  }
+
+  // Another suite site wants to show who you are: a read-only token, sent back only to a suite site
+  if (pathname === "/auth/connect" && method === "POST") {
     const me = await requireStaff(request, env);
-    return me ? json({ staff: profile(me, { full: true }) }) : json({ error: "Not signed in" }, 401);
+    if (!me) return json({ error: "Please sign in" }, 401);
+    let to;
+    try {
+      to = new URL(String(body.return_to || ""));
+    } catch {
+      return json({ error: "Unknown site" }, 400);
+    }
+    if (!SUITE_ORIGINS.includes(to.origin)) return json({ error: "That isn't a Nova suite site." }, 400);
+    const token = await createSession(env, me.id, { kind: "profile", userAgent: request.headers.get("User-Agent") || "" });
+    await env.DB.prepare("UPDATE sessions SET expires_at = ? WHERE id = ?").bind(new Date(Date.now() + PROFILE_DAYS * 864e5).toISOString(), await sha256(token)).run();
+    to.hash = `nova_portal=${token}`;
+    return json({ ok: true, redirect: to.toString(), site: to.host });
   }
 
   // The very first account: an admin, proven with the studio's current (shared) password
