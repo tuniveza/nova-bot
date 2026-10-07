@@ -102,7 +102,9 @@ async function questAction(request, env) {
   const kind = body.kind === "mission" ? "mission" : "quest";
   if (!id || !QUEST_ACTIONS.includes(action)) return json({ error: "That isn't something Nova Agent can do" }, 400);
   const minutes = Math.min(Math.max(Number(body.minutes) || 15, 1), 1440);
-  await queueQuestAction(env, { kind, id, action, minutes });
+  // The session it was tapped on, so a late or repeated "done" can't count against the next one
+  const session = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(body.session) ? body.session : undefined;
+  await queueQuestAction(env, { kind, id, action, minutes, ...(session && { session }) });
   return json({ ok: true });
 }
 

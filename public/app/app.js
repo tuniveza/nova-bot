@@ -868,9 +868,9 @@
   }
 
   // Send a tap to Nova Agent, then look again a moment later
-  async function questTap(id, action, kind = "quest", minutes) {
+  async function questTap(id, action, kind = "quest", minutes, session) {
     try {
-      await api("quests/action", { body: { id, action, kind, minutes } });
+      await api("quests/action", { body: { id, action, kind, minutes, session } });
       toast(lastQuests && lastQuests.online ? "Sent to Nova Agent" : "Sent: Nova Agent will do it when it's back online");
       setTimeout(loadQuests, 1500);
       setTimeout(loadQuests, 4000);
@@ -895,7 +895,7 @@
   function questButtons(q) {
     const row = el("div", "actions");
     if (q.status === "todo") row.appendChild(questButton("▶ Start", () => questTap(q.id, "start"), true));
-    if (q.status !== "done") row.appendChild(questButton(q.ongoing ? "✓ Session done" : "✓ Done", () => questTap(q.id, "done"), q.status === "doing"));
+    if (q.status !== "done") row.appendChild(questButton(q.ongoing ? "✓ Session done" : "✓ Done", () => questTap(q.id, "done", "quest", undefined, q.start), q.status === "doing"));
     if (q.status === "doing") row.appendChild(questButton("+15 min", () => questTap(q.id, "snooze", "quest", 15)));
     if (q.status === "todo" && !q.ongoing) row.appendChild(questButton("Not now", () => questTap(q.id, "snooze", "quest", 60)));
     if (q.status === "todo" && !q.ongoing) row.appendChild(questButton("Skip", () => questTap(q.id, "skip")));

@@ -236,11 +236,17 @@ export async function questsForHub(env) {
   return { ...saved, online: Date.now() - seen < ONLINE_MINUTES * 60000 };
 }
 
-// A tap in Nova Hub, for Nova Agent to carry out
+// A tap in Nova Hub, for Nova Agent to carry out. Each gets an id (so Nova
+// Agent counts it once) and is added in one statement, so taps made at the
+// same moment are all kept.
 export async function queueQuestAction(env, action) {
-  const list = await readActions(env);
-  list.push({ ...action, at: new Date().toISOString() });
-  await setSetting(env, ACTIONS_KEY, JSON.stringify(list.slice(-50)));
+  const tap = JSON.stringify({ ...action, tapId: crypto.randomUUID(), at: new Date().toISOString() });
+  await env.DB.prepare(
+    `INSERT INTO settings (key, value) VALUES (?1, json_array(json(?2)))
+     ON CONFLICT (key) DO UPDATE SET value = CASE WHEN json_valid(value) AND json_type(value) = 'array' THEN json_insert(value, '$[#]', json(?2)) ELSE json_array(json(?2)) END`
+  )
+    .bind(ACTIONS_KEY, tap)
+    .run();
 }
 
 async function readActions(env) {
@@ -253,10 +259,16 @@ async function readActions(env) {
 async function hasQuestActions(env) {
   return (await readActions(env)).length > 0;
 }
+// Taken and cleared in one statement, so two collectors (the job check and the
+// plan upload) never both get the same tap (the last 50, if many piled up)
 async function takeQuestActions(env) {
-  const list = await readActions(env);
-  if (list.length) await setSetting(env, ACTIONS_KEY, "[]");
-  return list;
+  const row = await env.DB.prepare("DELETE FROM settings WHERE key = ? RETURNING value").bind(ACTIONS_KEY).first();
+  try {
+    const list = JSON.parse(row?.value || "[]");
+    return Array.isArray(list) ? list.slice(-50) : [];
+  } catch {
+    return [];
+  }
 }
 
 // Compare two secrets without giving away how much matched

@@ -1,7 +1,7 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
-import { agentNovaProblem, queueAgentJob } from "../src/agent-nova.js";
+import { agentNovaProblem, queueAgentJob, queueQuestAction } from "../src/agent-nova.js";
 
 const BASE = "https://novacane-worker.test";
 const KEY = "agent-nova-test-key";
@@ -158,5 +158,29 @@ describe("who Nova Agent works for (its Nova Portal badge)", () => {
 		expect(moved).toBe("dana-h");
 		// Asking for someone (connected, or NOVA_STAFF_ID) gets them
 		expect((await agent("/hub/agent/me", { staff_id: "kai-m" })).data.staff.id).toBe("kai-m");
+	});
+});
+
+describe("Nova Hub quest taps", () => {
+	const tap = (n, extra = {}) => queueQuestAction(env, { kind: "quest", id: `q${n}`, action: "done", minutes: 15, ...extra });
+
+	it("hands each tap over exactly once, even to two collectors at the same moment", async () => {
+		await Promise.all([1, 2, 3].map((n) => tap(n)));
+		const [next, quests] = await Promise.all([agent("/hub/agent/next", { wait: 0 }), agent("/hub/agent/quests", { state: { quests: [] } })]);
+		const handed = [...(next.data.questActions || []), ...(quests.data.actions || [])].map((a) => a.id).sort();
+		expect(handed).toEqual(["q1", "q2", "q3"]);
+	});
+
+	it("loses no tap when several are made at once", async () => {
+		await Promise.all(Array.from({ length: 10 }, (_, n) => tap(n)));
+		const { data } = await agent("/hub/agent/next", { wait: 0 });
+		expect(data.questActions).toHaveLength(10);
+	});
+
+	it("gives each tap an id, and keeps the session it was tapped on", async () => {
+		await tap(1, { session: "2026-10-07T10:30" });
+		const { data } = await agent("/hub/agent/next", { wait: 0 });
+		expect(data.questActions[0]).toMatchObject({ id: "q1", action: "done", session: "2026-10-07T10:30" });
+		expect(data.questActions[0].tapId).toMatch(/^[\w-]{8,}$/);
 	});
 });
