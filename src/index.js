@@ -1406,6 +1406,11 @@ const NOT_PAGES = /^\/(lossless\/(ws|ice)|admin\/google(\/callback)?)$/;
 // /agent/<name>: Nova Agent with that panel open
 const PANEL_NAMES = { portal: "/portal/", calendar: "/calendar/", notes: "/notes/", index: "/app/memory/", observatory: "/observatory/", lossless: "/lossless/", visualizer: "/visualizer", admin: "/admin" };
 const AGENT = "/agent/";
+// Admin lives inside Portal: an admin page's address opens Portal's Admin section showing it
+function opened(panel, search) {
+  if (panel === "/admin" || panel.startsWith("/admin/")) return "/portal/?view=admin&page=" + encodeURIComponent(panel);
+  return panel + search;
+}
 function novaAgentPage(request, env, pathname) {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
   const url = new URL(request.url);
@@ -1418,7 +1423,7 @@ function novaAgentPage(request, env, pathname) {
   if (pathname === "/agent" || pathname === "/agent/index.html") return toAgent();
   if (pathname.startsWith("/agent/") && PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")]) {
     const panel = PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")];
-    return toAgent(panel + url.search);
+    return toAgent(opened(panel, url.search));
   }
   if (pathname === AGENT) {
     return env.ASSETS.fetch(new Request(new URL(AGENT, url), request)).then((res) =>
@@ -1430,7 +1435,7 @@ function novaAgentPage(request, env, pathname) {
   const last = pathname.slice(pathname.lastIndexOf("/") + 1);
   const isPage = !last.includes(".") || last.endsWith(".html");
   if (!isPage || !PANELS.some((p) => pathname === p || pathname.startsWith(p + "/")) || NOT_PAGES.test(pathname)) return null;
-  if (request.headers.get("Sec-Fetch-Dest") === "document") return toAgent(pathname + url.search);
+  if (request.headers.get("Sec-Fetch-Dest") === "document") return toAgent(opened(pathname, url.search));
   // Inside Nova Agent: the panel's page itself. Everything else (the admin pages, Observatory's
   // files, Lossless audio's signalling) is made further on.
   if (pathname === "/admin" || pathname.startsWith("/admin/") || pathname.startsWith("/observatory/data/") || pathname.startsWith("/observatory/media/")) return null;
@@ -1462,7 +1467,7 @@ function onlyNovaAgent(request, env, pathname) {
   if (last.includes(".") && !last.endsWith(".html")) return null;
   const url = new URL(request.url);
   const panel = panelFor(pathname);
-  return Response.redirect(new URL(AGENT + (panel ? "?open=" + encodeURIComponent(panel + url.search) : ""), url).toString(), 302);
+  return Response.redirect(new URL(AGENT + (panel ? "?open=" + encodeURIComponent(opened(panel, url.search)) : ""), url).toString(), 302);
 }
 
 function movedPage(request, env, pathname) {
