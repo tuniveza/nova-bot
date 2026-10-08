@@ -672,7 +672,7 @@ approved.
 // ===== THE CODE (you shouldn't need to change this) =====
 
 // How NovaBot talks in Hub: to a colleague on the Novacane team, not a customer
-const STAFF_VOICE = `YOU ARE TALKING TO STAFF. This chat is inside Hub, the staff app: the person writing is a member of the Novacane Studios team, never a customer, whatever they ask.
+const STAFF_VOICE = `YOU ARE TALKING TO STAFF. This chat is inside Portal, the staff app: the person writing is a member of the Novacane Studios team, never a customer, whatever they ask.
 - Talk to them as a colleague: plain, direct and factual. No greetings or sign-offs for customers, no selling, no "we'd love to have you", no inviting them to book or visit.
 - Refer to customers in the third person ("they", "the client", or their name).
 - When they want a booking link, times or prices, give it as something to pass on: "Here's the link to send them: ...", "They can book Thursday at 2pm".
@@ -704,8 +704,8 @@ export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
 
-    // Nova Agent's Hub and Portal panels online (their pages are copied into public/ from
-    // Nova Agent's repo; their data is here). The staff API keeps its address.
+    // Nova Agent's Portal panel online (its pages are copied into public/ from Nova Agent's
+    // repo; its data is here). The staff API keeps its address (/app/api/, from when it was Hub).
     if (pathname.startsWith("/app/api/")) return handleApp(request, env, ctx, answer);
     // Addresses the panels had for a day go back to their own
     const moved = movedPage(request, env, pathname);
@@ -1243,12 +1243,12 @@ function privacyPage() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hub – Privacy Policy</title>
+<title>Portal – Privacy Policy</title>
 </head>
 <body>
-<h1>Hub – Privacy Policy</h1>
-<p>Hub is a staff-only tool for Novacane Studios. It displays customer enquiries and chat conversations submitted through the novacane.co.uk chatbot, and lets staff chat with the Novabot assistant.</p>
-<p>Data handled: names, contact details and messages customers submit. This data is stored on Novacane Studios' Cloudflare backend and processed by an AI provider solely to run the chatbot and to answer staff questions in Hub.</p>
+<h1>Portal – Privacy Policy</h1>
+<p>Portal is a staff-only tool for Novacane Studios. It displays customer enquiries and chat conversations submitted through the novacane.co.uk chatbot, and lets staff chat with the Novabot assistant.</p>
+<p>Data handled: names, contact details and messages customers submit. This data is stored on Novacane Studios' Cloudflare backend and processed by an AI provider solely to run the chatbot and to answer staff questions in Portal.</p>
 <p>Memory: to give better help over time, short notes may be kept from chats, such as a preferred session time or what a customer is working on. Notes about customers are only kept after a member of the Novacane team has approved each one. Card, bank and ID details are never kept. To see or delete any notes about you, contact Novacane Studios via novacane.co.uk.</p>
 <p>For bookings made through Acuity, the booking confirmation page sends the session, date, time, price and the customer's email to Novacane Studios' Cloudflare backend, and the booking's details (name, contact details, booking details and booking form answers) are read from Acuity's private calendar feed and Acuity's booking emails to the studio, so staff are notified of the booking. Staff notifications on registered staff phones are delivered through Apple's or Google's push service, encrypted so only the staff phone can read them. Booking details and notifications are kept for 90 days.</p>
 <p>Data is never sold, shared for advertising, or used for any other purpose. To request deletion, contact Novacane Studios via novacane.co.uk.</p>
@@ -1356,8 +1356,6 @@ function fallback(bookingPage = BOOKING_LINK) {
   return "NovaBot's having a moment and can't answer right now. You can book directly here: " + bookingPage;
 }
 
-// Addresses the panels had for a day (GET only): back to their own
-//   /studio/... → /app/...   /crew/... → /portal/...   /index/... → /app/memory/...
 async function observatoryFiles(request, env, pathname) {
   if (await requireStaff(request, env)) {
     const res = await env.ASSETS.fetch(request);
@@ -1371,11 +1369,17 @@ async function observatoryFiles(request, env, pathname) {
   return new Response("Sign in with Portal first", { status: 401, headers: { "Cache-Control": "no-store" } });
 }
 
+// Pages that moved (GET only):
+//   /app/... → /portal/...   Hub is part of Portal now. Its API (/app/api/), Index (/app/memory/)
+//                           and the files phones that installed Hub still use (/app/sw.js, its
+//                           manifest and icons: real files, served before this runs) stay put.
+//   /studio/... → /portal/   /crew/... → /portal/...   /index/... → /app/memory/...   (names for a day)
 function movedPage(request, env, pathname) {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
   const url = new URL(request.url);
   const to = (path) => Response.redirect(new URL(path + url.search + url.hash, url).toString(), 302);
-  if (pathname === "/studio" || pathname.startsWith("/studio/")) return to("/app/" + pathname.slice("/studio/".length));
+  if ((pathname === "/app" || pathname.startsWith("/app/")) && !/^\/app\/((api|memory)(\/|$)|(sw\.js|manifest\.webmanifest|icon[\w-]*\.(svg|png)|apple-touch-icon\.png)$)/.test(pathname)) return to("/portal/");
+  if (pathname === "/studio" || pathname.startsWith("/studio/")) return to("/portal/");
   if (pathname === "/crew" || pathname.startsWith("/crew/")) return to("/portal/" + pathname.slice("/crew/".length));
   if (pathname === "/index" || pathname.startsWith("/index/")) return to("/app/memory/" + pathname.slice("/index/".length));
   return null;

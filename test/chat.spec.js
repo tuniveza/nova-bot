@@ -322,7 +322,7 @@ describe("privacy page", () => {
 		expect(res.status).toBe(200);
 		expect(res.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
 		const html = await res.text();
-		expect(html).toContain("<h1>Hub – Privacy Policy</h1>");
+		expect(html).toContain("<h1>Portal – Privacy Policy</h1>");
 		expect(html).toContain("Data is never sold");
 	});
 });

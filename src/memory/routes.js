@@ -171,7 +171,7 @@ export function learnFromStaffChat(env, messages) {
     .slice(-6)
     .map((m) => `${m.role === "user" ? "Staff" : "NovaBot"}: ${m.content}`)
     .join("\n");
-  return learn(env, { transcript, scope: "studio", owner_id: null, mode: "auto", source_app: "Hub", who: "the studio team in Hub", paths: PATHS.hub });
+  return learn(env, { transcript, scope: "studio", owner_id: null, mode: "auto", source_app: "Portal", who: "the studio team in Portal", paths: PATHS.hub });
 }
 
 // ---- Website chats, read for facts by the every-minute job ----

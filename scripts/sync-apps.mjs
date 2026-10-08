@@ -2,8 +2,10 @@
 // the studio PC (they share Nova Bot's sign-in and staff API). They live in Nova
 // Agent's repo (web/), so before every deploy or local run (wrangler's build step)
 // they're copied in:
-//   na/web/hub       → public/app/        Hub: enquiries, chats, bookings, alerts, push
-//   na/web/portal    → public/portal/     Portal: sign-in, me, the team, invites
+//   na/web/portal    → public/portal/     Portal: sign-in, enquiries, chats, bookings, alerts,
+//                                         push, your planet, the crew (Hub is part of it now)
+//   na/web/portal/old-app-address → public/app/   what phones that installed Hub from /app/
+//                                         still use: its push helper (sw.js), manifest and icons
 //   na/web/index     → public/app/memory/ Index
 //   na/web/calendar  → public/calendar/   Calendar (online, it saves in the browser)
 //   na/web/notes     → public/notes/      Notes
@@ -24,8 +26,8 @@ import { fileURLToPath } from "node:url";
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const agent = process.env.NOVA_AGENT_DIR ? resolve(process.env.NOVA_AGENT_DIR) : here("../../../na");
 const copies = [
-  ["web/hub/", "../public/app/", "Hub"],
-  // after the Hub, which replaces public/app/ whole
+  ["web/portal/old-app-address/", "../public/app/", "Hub's old address (push helper, manifest, icons)"],
+  // after that, which replaces public/app/ whole
   ["web/index/", "../public/app/memory/", "Index"],
   ["web/portal/", "../public/portal/", "Portal"],
   ["web/calendar/", "../public/calendar/", "Calendar"],
@@ -44,7 +46,7 @@ for (const [from, to, name] of copies) {
   }
   rmSync(here(to), { recursive: true, force: true });
   // The planet generator is code for this Worker, not a page; tests and samples stay behind
-  cpSync(src, here(to), { recursive: true, filter: (f) => !/(test\.mjs|gallery\.html|README\.md)$/.test(f) && !(to.includes("public/portal") && /[\\/]planet([\\/]|$)/.test(f.slice(src.length - 1))) });
+  cpSync(src, here(to), { recursive: true, filter: (f) => !/(test\.mjs|gallery\.html|README\.md)$/.test(f) && !(to.includes("public/portal") && /[\\/](planet|old-app-address)([\\/]|$)/.test(f.slice(src.length - 1))) });
   console.log(`${name}: copied in`);
 }
 
