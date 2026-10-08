@@ -1,5 +1,5 @@
 // Brings Admin → Links (the "url_directory" setting in D1) up to date with Nova Agent as the one
-// app: for the studio team there's Nova Agent online (Nova Bot's main address) and on the studio
+// app: for the studio team there's Nova Agent online (/agent/ on Nova Bot's address) and on the studio
 // computer, and the panels (Portal, Calendar, Notes, Index, Observatory, Lossless audio, Admin)
 // are inside it, so they aren't listed one by one. Also: plain names, Hub folded into Portal, the
 // Nova Agent addresses at /nova-agent/*, and the old standalone sites and dead addresses gone.
@@ -76,6 +76,8 @@ for (const g of list.groups || []) {
   g.items = g.items.filter((i) => i.kind === "machine" || (!PANEL.test(i.url) && !(/^Nova Agent\b/.test(g.title) && i.url.startsWith(A))));
   if (/studio team/i.test(g.title)) {
     g.note = "Nova Agent is the one app: everything for the team is inside it.";
+    // Nova Agent moved from the main address to /agent/: drop its old links (the main address is Nova Bot's)
+    g.items = g.items.filter((i) => ![`${W}/`, W, `${A}/`, A].includes(i.url));
     team.forEach((t, n) => upsert(g.items, t, n));
   }
   if (/behind the scenes/i.test(g.title)) {
