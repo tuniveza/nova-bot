@@ -1,0 +1,9 @@
+// The old standalone notes site, replaced by a page that moves people to Nova Bot's /notes/ (see move.js).
+// Deploy: npx wrangler deploy -c tools/old-sites/wrangler.notes.jsonc
+{
+	"name": "nova-notes",
+	"main": "move.js",
+	"compatibility_date": "2026-09-26",
+	"workers_dev": true,
+	"vars": { "APP": "notes" }
+}

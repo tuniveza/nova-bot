@@ -53,6 +53,10 @@ import * as novaForm from "./nova/booking-form.js";
 import * as novaBooking from "./nova/booking.js";
 import * as novaBookSession from "./nova/book-session.js";
 import * as novaManage from "./nova/manage-bookings.js";
+// Lossless audio (copied in from Nova Agent's web/lossless by scripts/sync-apps.mjs)
+import lossless from "./lossless/worker.js";
+import { requireStaff } from "./portal/auth.js";
+export { LosslessRoom } from "./lossless/room.js";
 
 // ===== THINGS YOU CAN EDIT =====
 
@@ -706,6 +710,10 @@ export default {
     // Addresses the panels had for a day go back to their own
     const moved = movedPage(request, env, pathname);
     if (moved) return moved;
+    // Lossless audio: its page is in public/lossless/; signalling and the relay setup are here
+    if (pathname === "/lossless/ws" || pathname === "/lossless/ice") return lossless.fetch(request, env);
+    // Observatory's projects and media (the studio's own work) are for signed-in staff
+    if (pathname.startsWith("/observatory/data/") || pathname.startsWith("/observatory/media/")) return observatoryFiles(request, env, pathname);
 
     // Referral tracking: these aren't called from the chat widget, so they
     // skip the chat's website check below
@@ -1350,6 +1358,19 @@ function fallback(bookingPage = BOOKING_LINK) {
 
 // Addresses the panels had for a day (GET only): back to their own
 //   /studio/... → /app/...   /crew/... → /portal/...   /index/... → /app/memory/...
+async function observatoryFiles(request, env, pathname) {
+  if (await requireStaff(request, env)) {
+    const res = await env.ASSETS.fetch(request);
+    const out = new Response(res.body, res);
+    out.headers.set("Cache-Control", "private, no-cache");
+    return out;
+  }
+  // The page loads data/projects.js as a script: tell it to ask for a sign-in instead
+  if (pathname === "/observatory/data/projects.js")
+    return new Response("window.OBSERVATORY_LOCKED = true;\n", { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" } });
+  return new Response("Sign in with Portal first", { status: 401, headers: { "Cache-Control": "no-store" } });
+}
+
 function movedPage(request, env, pathname) {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
   const url = new URL(request.url);
