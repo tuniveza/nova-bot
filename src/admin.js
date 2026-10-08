@@ -28,8 +28,10 @@ import { feedbackCounts, recentFeedback } from "./feedback.js";
 // Nova Bot's own booking system, behind the switch (mode.js, src/nova/)
 import { bookingSystem, setBookingSystem } from "./mode.js";
 import { bookingLink as novaBookingLink, getSessionTypes as novaSessionTypes, publicUrl } from "./nova/booking.js";
-import { calendarId, connectedAccount, consentUrl, disconnect, finishConnecting, googleProblem, googleReady, offline, redirectUri, sendEmail } from "./nova/google.js";
+import { calendarId, connectedAccount, consentUrl, disconnect, finishConnecting, googleProblem, googleReady, offline, sendEmail } from "./nova/google.js";
 import { stripeOffline, stripeProblem, stripeReady } from "./nova/stripe.js";
+import { googleClient } from "./nova/google-keys.js";
+import { googleSetupPage, removeClient, saveGoogleLogins, saveGoogleSetup } from "./admin-google.js";
 
 export async function handleAdmin(request, env) {
   // Portal is the one sign-in: admins only; signed out, go and sign in, then come back
@@ -60,6 +62,19 @@ export async function handleAdmin(request, env) {
       await disconnect(env);
       return back("Google disconnected.", "/admin/connections");
     }
+    // Admin → Google (admin-google.js)
+    if (url.pathname === "/admin/google/setup") {
+      const problem = await saveGoogleSetup(env, form);
+      return back(problem || "Saved ✓ Now press Connect Google.", "/admin/google/setup");
+    }
+    if (url.pathname === "/admin/google/setup/remove") {
+      await removeClient(env);
+      return back("The Google key is removed.", "/admin/google/setup");
+    }
+    if (url.pathname === "/admin/google/logins") {
+      const problem = await saveGoogleLogins(env, form);
+      return back(problem || "Saved ✓", "/admin/google/setup");
+    }
     if (url.pathname === "/admin/connections/test-email") return testBookingEmail(env);
     if (url.pathname === "/admin/links") return saveLinksForm(env, form);
     return text("Not found", 404);
@@ -72,6 +87,7 @@ export async function handleAdmin(request, env) {
   if (url.pathname === "/admin/acuity") return acuityPage(env, url);
   if (url.pathname === "/admin/connections") return connectionsPage(env, url);
   if (url.pathname === "/admin/links") return linksPage(env, url);
+  if (url.pathname === "/admin/google/setup") return googleSetupPage(env, url, page);
   if (url.pathname === "/admin/google") return connectGoogle(env, url);
   if (url.pathname === "/admin/google/callback") return googleCallback(request, env, url);
   if (url.pathname === "/admin" || url.pathname === "/admin/") return adminPage(env, url);
@@ -483,33 +499,43 @@ async function acuityPage(env, url) {
 // ===== CONNECTIONS (Google and Stripe) =====
 
 // "Connect Google": a one-off random value, kept in a short-lived cookie, must come back
-// from Google unchanged (so nobody can trick the admin into connecting their account)
+// from Google unchanged (so nobody can trick the admin into connecting their account).
+// From Admin → Google it runs in a small window (?popup=1): Google won't show inside Nova Agent.
 async function connectGoogle(env, url) {
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
-    return back("Set the GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET secrets first (see README.md).", "/admin/connections");
-  }
+  if (!(await googleClient(env)).id) return back("Set Google up first: paste the key in step 5.", "/admin/google/setup");
   const state = crypto.randomUUID();
+  const popup = url.searchParams.get("popup") === "1" ? "p" : "n";
   return new Response(null, {
     status: 302,
     headers: {
-      Location: consentUrl(env, url.origin, state),
-      "Set-Cookie": `nv_gstate=${state}; Path=/admin/google; Max-Age=600; HttpOnly; Secure; SameSite=Lax`,
+      Location: await consentUrl(env, url.origin, state),
+      "Set-Cookie": `nv_gstate=${state}.${popup}; Path=/admin/google; Max-Age=600; HttpOnly; Secure; SameSite=Lax`,
     },
   });
 }
 
 async function googleCallback(request, env, url) {
-  const cookie = (request.headers.get("Cookie") || "").match(/(?:^|;\s*)nv_gstate=([0-9a-f-]{36})/);
+  const cookie = (request.headers.get("Cookie") || "").match(/(?:^|;\s*)nv_gstate=([0-9a-f-]{36})(?:\.([pn]))?/);
+  const popup = Boolean(cookie && cookie[2] === "p");
   const clear = { "Set-Cookie": "nv_gstate=; Path=/admin/google; Max-Age=0; HttpOnly; Secure; SameSite=Lax" };
-  const fail = (message) => new Response(null, { status: 303, headers: { ...clear, Location: "/admin/connections?msg=" + encodeURIComponent(message) } });
-  if (url.searchParams.get("error")) return fail("Google said: " + url.searchParams.get("error") + ". Nothing was connected.");
-  if (!cookie || cookie[1] !== url.searchParams.get("state")) return fail("That sign-in didn't start here (or took over 10 minutes). Press Connect Google again.");
+  const done = (ok, message) =>
+    popup
+      ? new Response(
+          `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Google · Nova Agent</title>
+<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#100816;color:#EBD3E7;font:16px/1.5 system-ui,sans-serif;padding:24px;text-align:center">
+<main><h1 style="color:#fff;font-size:22px">${ok ? "✓ Google connected" : "Not connected"}</h1><p>${escapeHtml(message)}</p><p>You can close this window.</p></main>
+<script>try{window.opener&&window.opener.postMessage({type:"nova-google",ok:${ok}},"*")}catch(e){}${ok ? "setTimeout(function(){window.close()},900)" : ""}</script></body>`,
+          { status: ok ? 200 : 400, headers: { ...clear, "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } }
+        )
+      : new Response(null, { status: 303, headers: { ...clear, Location: "/admin/google/setup?msg=" + encodeURIComponent(message) } });
+  if (url.searchParams.get("error")) return done(false, "Google said: " + url.searchParams.get("error") + ". Nothing was connected.");
+  if (!cookie || cookie[1] !== url.searchParams.get("state")) return done(false, "That sign-in didn't start here (or took over 10 minutes). Press Connect Google again.");
   try {
     const email = await finishConnecting(env, url.origin, url.searchParams.get("code") || "");
-    return new Response(null, { status: 303, headers: { ...clear, Location: "/admin/connections?msg=" + encodeURIComponent(`Connected as ${email || "your Google account"}.`) } });
+    return done(true, `Connected as ${email || "your Google account"}.`);
   } catch (err) {
     console.log("Google connection failed:", err);
-    return fail("Couldn't connect Google: " + err.message);
+    return done(false, "Couldn't connect Google: " + err.message);
   }
 }
 
@@ -562,10 +588,9 @@ async function connectionsPage(env, url) {
       <tr><th>Status</th><td>${offline(env) ? "Sandbox: working offline (no Google keys), emails only go to the list below" : ok(gProblem)}</td></tr>
       <tr><th>Account</th><td>${e(account || "not connected")}${connectedAt ? ` <span class="dim small">since ${when(connectedAt)}</span>` : ""}</td></tr>
       <tr><th>Calendar</th><td>${e(calendarId(env))} <span class="dim small">(GOOGLE_CALENDAR_ID; "primary" is the account's own calendar)</span></td></tr>
-      <tr><th>Redirect URI</th><td><code>${e(redirectUri(url.origin))}</code><br><span class="dim small">Add this to the OAuth client in Google Cloud Console.</span></td></tr>
     </table>
     <p>
-      <a class="btn" href="/admin/google" target="_top">${account ? "Reconnect Google" : "Connect Google"}</a>
+      <a class="btn" href="/admin/google/setup">${account ? "Google settings" : "Set up Google"}</a>
       ${account ? `<form method="post" action="/admin/connections/test-email" style="display:inline"><button class="btn ghost">Send a test email</button></form>
       <form method="post" action="/admin/google/disconnect" style="display:inline" onsubmit="return confirm('Disconnect Google? Online booking stops until it is connected again.')"><button class="btn ghost">Disconnect</button></form>` : ""}
     </p>
@@ -876,6 +901,7 @@ async function page(env, title, url, body) {
     ["Conversations", "/admin/conversations"],
     ["Feedback", "/admin/feedback"],
     ["Booking system", "/admin/connections"],
+    ["Google", "/admin/google/setup"],
     ["Links", "/admin/links"],
   ]
     .map(([label, href]) => `<a href="${href}" class="${label.startsWith(title) ? "current" : ""}">${e(label)}</a>`)

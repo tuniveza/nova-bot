@@ -339,7 +339,7 @@ Everything secret is a **Wrangler secret** (`npx wrangler secret put NAME`), or 
 | `AGENT_NOVA_KEY` | Nova Agent's routes (`/nova-agent/*`, and the older `/hub/agent/*` and `/hub/notify`; `/memory/*`) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Phone notifications (Web Push) |
 | `RESEND_API_KEY`, `ENQUIRY_EMAIL_TO`, `ENQUIRY_EMAIL_FROM` | Emailing enquiries (optional) |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Nova Bot's own booking system: Google Calendar and Gmail (optional) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional: Admin → Google keeps the same key without them (Sign in with Google, Notes' Google Docs, Calendar and Gmail for bookings) |
 | `GOOGLE_REFRESH_TOKEN`, `GOOGLE_CALENDAR_ID`, `GOOGLE_ACCOUNT` | Optional overrides; normally set by "Connect Google" on `/admin/connections` |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Nova Bot's own booking system: deposits (optional) |
 
@@ -408,16 +408,18 @@ booking system, switched **off** until you choose otherwise:
 <details>
 <summary><b>Setting it up</b></summary>
 
-1. **Google:** in Google Cloud, switch on the Calendar and Gmail APIs and create an OAuth
-   client (Web application) with the redirect URI `https://<worker>/admin/google/callback`.
-   Then `npx wrangler secret put GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+1. **Google:** in Nova Agent, Admin → Google walks through it a step at a time (Google
+   Cloud's pages open from buttons, with copy buttons for every address to paste), then takes
+   the key and has a **Connect Google** button. The same key gives everyone **Sign in with
+   Google** and Notes' Google Docs. (Setting `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` as
+   secrets still works, and wins.)
 2. **Stripe:** `npx wrangler secret put STRIPE_SECRET_KEY` (use a `sk_test_…` key to try
    it). Add a webhook endpoint `https://<worker>/stripe/webhook` with the events
    `checkout.session.completed`, `checkout.session.async_payment_succeeded` and
    `checkout.session.expired`, and save its signing secret as `STRIPE_WEBHOOK_SECRET`.
 3. **Database:** `npx wrangler d1 migrations apply novabot --remote`.
-4. **Deploy,** then on `/admin/connections`: press **Connect Google**, press **Send a test
-   email**, and flip the switch to try it.
+4. **Deploy,** then on `/admin/connections`: press **Send a test email**, and flip the switch
+   to try it.
 
 Sessions, prices and rules (opening hours, 50% deposit, 48-hour cancellation) are in
 `src/nova/studio.js`.
