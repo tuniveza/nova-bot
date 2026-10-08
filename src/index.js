@@ -59,6 +59,7 @@ import { requireStaff } from "./portal/auth.js";
 export { LosslessRoom } from "./lossless/room.js";
 export { AgentLink } from "./agent-relay.js";
 import { calendarPage, handleLink, handleRelay, isRelayed, linkStatus } from "./agent-relay.js";
+import { sendCalendarReminders } from "./calendar/reminders.js";
 
 // ===== THINGS YOU CAN EDIT =====
 
@@ -696,6 +697,8 @@ export default {
         dailyAcuityCheck(env, new Date(at)),
         expireHolds(env, at).catch((err) => console.log("Nova hold check failed:", err)),
         sendReminders(env, at).catch((err) => console.log("Nova reminders failed:", err)),
+        // Calendar reminders on phones (src/calendar/reminders.js)
+        sendCalendarReminders(env, at).catch((err) => console.log("Calendar reminders failed:", err)),
         dailyHealthCheck(env, new Date(at)).catch((err) => console.log("Nova health check failed:", err)),
         // Read quiet website chats for facts worth remembering (they wait for approval in Index)
         learnFromWebsiteChats(env).catch((err) => console.log("Memory from website chats failed:", err)),

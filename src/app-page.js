@@ -22,6 +22,7 @@
 //   POST /app/api/notifications/settings { days } -> alerts delete themselves after this many days (0 = off)
 //   POST /app/api/voice                 a recording (WAV) -> { text } (for voice commands)
 //   GET  /app/api/calendar              every booking in Acuity's diary (the Calendar tab)
+//   GET|PUT|DELETE /app/api/calendar/items[/:id]  the studio's events and day cards (src/calendar/items.js)
 //   POST /app/api/ask                   { question, history } -> { answer } (questions about bookings, enquiries, alerts)
 
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
@@ -33,6 +34,7 @@ import { checkedLinks } from "./links.js";
 import { listBookings } from "./booking-calendar.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
 import { usesNova } from "./mode.js";
+import { handleCalendarItems } from "./calendar/items.js";
 import { bookingLink as novaBookingLink, getSessionTypes as novaSessionTypes } from "./nova/booking.js";
 import { listBookings as novaListBookings } from "./nova/booking-calendar.js";
 import { AUTO_DELETE_CHOICES, autoDeleteDays, deleteAlerts, forgetPhone, listAlerts, notifyPhones, savePhone, setAutoDelete, verifyBooking } from "./push.js";
@@ -71,6 +73,12 @@ export async function handleApp(request, env, ctx, answer) {
   if (route === "/notifications/delete" && request.method === "POST") return removeAlerts(request, env);
   if (route === "/notifications/settings" && request.method === "POST") return alertSettings(request, env);
   if (route === "/voice" && request.method === "POST") return voice(request, env);
+  // Calendar's events and day cards (src/calendar/items.js). Changes only from this site or an app's sign-in.
+  if (route === "/calendar/items" || route.startsWith("/calendar/items/")) {
+    const app = (request.headers.get("Authorization") || "").startsWith("Bearer nsess_");
+    if (request.method !== "GET" && !app && request.headers.get("Origin") !== url.origin) return json({ error: "Forbidden" }, 403);
+    return handleCalendarItems(request, env, route);
+  }
   if (route === "/calendar" && request.method === "GET") return calendar(env);
   if (route === "/quests" && request.method === "GET") return json(await questsForHub(env));
   // Index: the suite's memory (browse, edit, approve)

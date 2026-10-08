@@ -41,6 +41,7 @@ const copies = [
   ["web/index/", "../public/app/memory/", "Index"],
   ["web/portal/", "../public/portal/", "Portal"],
   ["web/calendar/", "../public/calendar/", "Calendar"],
+  ["web/calendar/js/recur.js", "../src/calendar/recur.js", "Calendar's repeat rules (for reminders on phones)"],
   ["web/notes/", "../public/notes/", "Notes"],
   ["web/shared/", "../public/shared/", "the shared look, badge and manual"],
   ["web/portal/planet/", "../src/portal/planet/", "the planet generator"],

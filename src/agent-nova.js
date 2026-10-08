@@ -27,6 +27,7 @@
 
 import { planetFacts, profile } from "./portal/routes.js";
 import { notifyPhones } from "./push.js";
+import { syncFromAgent } from "./calendar/items.js";
 
 // A job Nova Agent took but never reported on (e.g. it was restarted) is
 // offered again after this long
@@ -95,6 +96,8 @@ export async function handleAgentNova(request, env, pathname) {
   if (pathname === "/hub/agent/result") return reportResult(env, body);
   if (pathname === "/hub/notify") return sendAlert(env, body);
   if (pathname === "/hub/agent/me") return agentStaff(env, body);
+  // Calendar: Nova Agent's copy on the PC and this one, kept the same (src/calendar/items.js)
+  if (pathname === "/hub/agent/calendar") return syncFromAgent(env, body);
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
