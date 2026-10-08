@@ -20,7 +20,8 @@
 
 import { clearCookie, createSession, endSession, hashPassword, passwordProblem, requireStaff, sameText, sessionCookie, sha256, tokenOf, verifyPassword } from "./auth.js";
 import { listFiles } from "../memory/store.js";
-import { handleGoogleSignIn } from "./google-signin.js";
+import { googleClientId } from "../nova/google-keys.js";
+import { connectedAccount } from "../nova/google.js";
 
 const json = (data, status = 200, headers = {}) => Response.json(data, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const INVITE_DAYS = 7;
@@ -119,10 +120,13 @@ export async function handlePortal(request, env, ctx, pathname) {
     return json({ setupNeeded: (await count()) === 0, signedIn: Boolean(me), staff: me ? profile(me, { full: true }) : null });
   }
 
-  // Signing in with Google (google-signin.js)
-  if (pathname.startsWith("/auth/google/")) {
-    if (method !== "GET" && (await tooMany(env, request, "google"))) return json({ error: "Too many tries. Wait a minute and try again." }, 429);
-    return handleGoogleSignIn(request, env, url, pathname, body, signedIn);
+  // Google is a connection (Docs, Calendar, Gmail), never a way in: is it set up, and as whom?
+  // For Portal's "You" page and Notes' Google Docs (the client ID is public). Signed-in staff only.
+  if (pathname === "/auth/google-status" && method === "GET") {
+    const me = await requireStaff(request, env);
+    if (!me) return json({ error: "Sign in first", signedIn: false }, 401);
+    const clientId = await googleClientId(env).catch(() => "");
+    return json({ setUp: Boolean(clientId), clientId, account: clientId ? await connectedAccount(env).catch(() => "") : "", admin: me.role === "admin" });
   }
 
   if (pathname === "/auth/login" && method === "POST") {

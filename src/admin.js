@@ -31,7 +31,7 @@ import { bookingLink as novaBookingLink, getSessionTypes as novaSessionTypes, pu
 import { calendarId, connectedAccount, consentUrl, disconnect, finishConnecting, googleProblem, googleReady, offline, sendEmail } from "./nova/google.js";
 import { stripeOffline, stripeProblem, stripeReady } from "./nova/stripe.js";
 import { googleClient } from "./nova/google-keys.js";
-import { googleSetupPage, removeClient, saveGoogleLogins, saveGoogleSetup } from "./admin-google.js";
+import { googleSetupPage, removeClient, saveGoogleSetup } from "./admin-google.js";
 
 export async function handleAdmin(request, env) {
   // Portal is the one sign-in: admins only; signed out, go and sign in, then come back
@@ -70,10 +70,6 @@ export async function handleAdmin(request, env) {
     if (url.pathname === "/admin/google/setup/remove") {
       await removeClient(env);
       return back("The Google key is removed.", "/admin/google/setup");
-    }
-    if (url.pathname === "/admin/google/logins") {
-      const problem = await saveGoogleLogins(env, form);
-      return back(problem || "Saved ✓", "/admin/google/setup");
     }
     if (url.pathname === "/admin/connections/test-email") return testBookingEmail(env);
     if (url.pathname === "/admin/links") return saveLinksForm(env, form);

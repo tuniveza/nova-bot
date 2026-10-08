@@ -339,7 +339,7 @@ Everything secret is a **Wrangler secret** (`npx wrangler secret put NAME`), or 
 | `AGENT_NOVA_KEY` | Nova Agent's routes (`/nova-agent/*`, and the older `/hub/agent/*` and `/hub/notify`; `/memory/*`), and its online link (`/nova-agent/link`, the AgentLink Durable Object in `src/agent-relay.js`: Nova Agent's chat, Missions, Quests, Calendar and Visualizer online, through the studio PC) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Phone notifications (Web Push) |
 | `RESEND_API_KEY`, `ENQUIRY_EMAIL_TO`, `ENQUIRY_EMAIL_FROM` | Emailing enquiries (optional) |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional: Admin → Google keeps the same key without them (Sign in with Google, Notes' Google Docs, Calendar and Gmail for bookings) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional: Admin → Google keeps the same key without them (Notes' Google Docs, Calendar and Gmail for bookings; Google is never a way to sign in, Portal is) |
 | `GOOGLE_REFRESH_TOKEN`, `GOOGLE_CALENDAR_ID`, `GOOGLE_ACCOUNT` | Optional overrides; normally set by "Connect Google" on `/admin/connections` |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Nova Bot's own booking system: deposits (optional) |
 

@@ -251,7 +251,7 @@ describe("admin: connections", () => {
 		// The addresses to paste into Google are on Admin → Google
 		const setup = await (await admin("/admin/google/setup")).text();
 		expect(setup).toContain(`${BASE}/admin/google/callback`);
-		expect(setup).toContain(`${BASE}/auth/google/callback`);
+		expect(setup).not.toContain(`${BASE}/auth/google/callback`); // Google is never a way to sign in
 		expect(html).toContain("test mode");
 	});
 

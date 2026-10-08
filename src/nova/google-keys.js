@@ -70,7 +70,7 @@ export async function googleClient(env) {
   return id && secret ? { id, secret, from: "app" } : { id: "", secret: "", from: "" };
 }
 
-// Just the client ID (public: the sign-in button and Notes' Google Docs use it in the browser)
+// Just the client ID (public: Notes' Google Docs uses it in the browser)
 export async function googleClientId(env) {
   return (await googleClient(env)).id;
 }
