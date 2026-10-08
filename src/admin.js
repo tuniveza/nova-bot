@@ -884,6 +884,36 @@ const ADMIN_STYLE = `
   html.embed main { padding: 16px 12px 40px; }
   html.embed h1 { font-size: 24px; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+  /* Phones: the tabs are one row you swipe; each table row becomes a small card, every value
+     with its column's name beside it (filled in by the script at the end of the page); fields at
+     16px so phones don't zoom in; no glass blur. */
+  @media (max-width: 640px) {
+    html.embed .brand { display: none; }
+    html.embed header.top { padding: 6px 8px; }
+    nav.tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; justify-content: flex-start !important; border-radius: 14px; }
+    nav.tabs a { padding: 8px 12px; }
+    main, html.embed main { padding: 10px 8px 28px; }
+    h1 { font-size: 22px; } h2 { font-size: 17px; margin-top: 18px; }
+    .card, .stat { padding: 12px; border-radius: 16px; backdrop-filter: none; -webkit-backdrop-filter: none; }
+    .card { overflow: hidden; }
+    table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+    table.stack thead { display: none; }
+    table.stack tr { padding: 8px 0; border-bottom: 1px solid var(--line); text-align: left; }
+    table.stack td { display: flex; gap: 10px; justify-content: space-between; align-items: baseline; padding: 3px 2px; border: 0; text-align: right !important; overflow-wrap: anywhere; }
+    table.stack td[data-label]::before { content: attr(data-label); flex: none; max-width: 45%; text-align: left; font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+    table.stack td:not([data-label]), table.stack td[colspan] { justify-content: center; text-align: center !important; }
+    table.stack td:empty { display: none; }
+    /* Tables of "name: value" rows (no column headings): the name above its value */
+    main table:not(.stack), main table:not(.stack) tbody, main table:not(.stack) tr, main table:not(.stack) th, main table:not(.stack) td { display: block; width: 100%; }
+    main table:not(.stack) th { padding-bottom: 0; border-bottom: 0; }
+    main table:not(.stack) td { overflow-wrap: anywhere; }
+    input[type=text], input:not([type]), input[type=email], input[type=url], input[type=password], input[type=number], input[type=search], select, textarea { font-size: 16px; }
+    .add { grid-template-columns: 1fr; }
+    .filters { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+    .stat { padding: 8px 6px; font-size: 11px; line-height: 1.25; min-width: 0; width: auto; flex: none; }
+    .stat b { font-size: 20px; }
+  }
 `;
 
 // The page around each admin section, with the tabs at the top
@@ -943,6 +973,15 @@ ${body}
     <div class="theme-list" data-theme-list></div>
   </section>
 </main>
+<script>
+// Phones: each table row is a small card; name every value after its column
+for (const t of document.querySelectorAll("main table")) {
+  const heads = [...t.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+  if (!heads.length) continue;
+  t.classList.add("stack");
+  for (const tr of t.querySelectorAll("tbody tr")) [...tr.children].forEach((td, i) => { if (heads[i] && !td.hasAttribute("colspan")) td.dataset.label = heads[i]; });
+}
+</script>
 </body>
 </html>`;
 
