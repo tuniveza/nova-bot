@@ -114,5 +114,5 @@ To stop anyone running up the bill, each visitor (by IP address) can send up to
 
 ## Admin password
 
-All of this is behind the same password as the referral admin page (the
-`ADMIN_PASSWORD` secret, see README-REFERRALS.md).
+All of this is behind the same sign-in as the referral admin page: a Portal
+admin.

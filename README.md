@@ -93,8 +93,8 @@ Its guide and pictures are in Nova Agent's `docs/apps/studio`.
 
 ## The admin pages
 
-`/admin`, in Hub's look and themes. Sign in as a Portal admin, or with the
-studio's shared password (any username).
+`/admin`, in Hub's look and themes. Sign in with Portal as an admin; signed out,
+it sends you to Portal and back.
 
 | Page | What's there |
 |---|---|
@@ -204,8 +204,8 @@ pages are Nova Agent's Portal panel (`web/portal` in Nova Agent's repo), copied 
 - **Planets.** Every person gets a planet, drawn fresh from their seed by the planet
   generator: `GET /staff/:id/planet.svg?size=&animate=1`. It's their avatar across the
   suite.
-- **The shared password still works** for now, so nobody is locked out while everyone
-  gets an account.
+- **One sign-in.** There's no shared password any more: Hub, Index, the admin pages and
+  every other panel take a Portal sign-in.
 
 <details>
 <summary><b>The API</b></summary>
@@ -327,7 +327,7 @@ Everything secret is a **Wrangler secret** (`npx wrangler secret put NAME`), or 
 | Name | Needed for |
 |---|---|
 | `ANTHROPIC_API_KEY` | Claude answers and memory (required live) |
-| `ADMIN_PASSWORD` | The studio's shared password (admin pages, Hub, and setting up the first Portal admin) |
+| `ADMIN_PASSWORD` | Only proves it's you when setting up the very first Portal admin |
 | `ACUITY_USER_ID`, `ACUITY_API_KEY` | Referral tracking, real-booking checks and managing bookings from Hub (Acuity's Powerhouse plan) |
 | `ACUITY_WEBHOOK_KEY` | Accepting Acuity's webhook (`/acuity/webhook?key=…`) |
 | `ACUITY_CALENDAR_URL` | Acuity's private calendar feed: booking details, the Calendar tab and Nova Club's busy times |

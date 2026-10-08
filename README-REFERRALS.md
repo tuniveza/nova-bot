@@ -49,7 +49,7 @@ API and webhooks need a plan that includes them.
 ```sh
 npx wrangler secret put ACUITY_USER_ID
 npx wrangler secret put ACUITY_API_KEY
-npx wrangler secret put ADMIN_PASSWORD     # choose a strong password for /admin
+npx wrangler secret put ADMIN_PASSWORD     # only to set up the first Portal admin
 ```
 
 ### 3. Deploy
@@ -92,7 +92,7 @@ with "referral" in its name is picked up automatically.
 
 ### 5. Add your first codes
 
-Open `/admin`, sign in (any username, your ADMIN_PASSWORD) and add codes, e.g.
+Open `/admin`, sign in with Portal as an admin and add codes, e.g.
 `JAMES10` belonging to "James Smith". Codes are 3–32 letters, numbers or dashes,
 and aren't case-sensitive for clients. **Retire** a code to stop it being accepted.
 Past bookings keep it.
