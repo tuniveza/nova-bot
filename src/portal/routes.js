@@ -20,6 +20,7 @@
 
 import { clearCookie, createSession, endSession, hashPassword, passwordProblem, requireStaff, sameText, sessionCookie, sha256, tokenOf, verifyPassword } from "./auth.js";
 import { listFiles } from "../memory/store.js";
+import { handleGoogleSignIn } from "./google-signin.js";
 
 const json = (data, status = 200, headers = {}) => Response.json(data, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const INVITE_DAYS = 7;
@@ -116,6 +117,12 @@ export async function handlePortal(request, env, ctx, pathname) {
   if (pathname === "/auth/status" && method === "GET") {
     const me = await requireStaff(request, env);
     return json({ setupNeeded: (await count()) === 0, signedIn: Boolean(me), staff: me ? profile(me, { full: true }) : null });
+  }
+
+  // Signing in with Google (google-signin.js)
+  if (pathname.startsWith("/auth/google/")) {
+    if (method !== "GET" && (await tooMany(env, request, "google"))) return json({ error: "Too many tries. Wait a minute and try again." }, 429);
+    return handleGoogleSignIn(request, env, url, pathname, body, signedIn);
   }
 
   if (pathname === "/auth/login" && method === "POST") {

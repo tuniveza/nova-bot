@@ -1,20 +1,19 @@
 // Google: the studio's Google Calendar (where every booking lives) and Gmail
 // (which sends every booking email), through Google's official APIs.
 //
-// Setting up (once, see README.md "Google Calendar and Gmail"):
-//   1. A Google Cloud project with the Calendar and Gmail APIs switched on, and an
-//      OAuth client (type "Web application") whose redirect URI is
-//      https://<worker>/admin/google/callback
-//   2. npx wrangler secret put GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
-//   3. Open /admin/google and press "Connect Google", signed in as the studio's
-//      Google account. The refresh token Google hands back is kept in the
-//      settings table (or set it yourself as the GOOGLE_REFRESH_TOKEN secret).
+// Setting up (once): Admin → Google in Nova Agent walks through it, a step at a time:
+//   1. A Google Cloud project with the Calendar, Gmail and Drive APIs switched on, and an
+//      OAuth client (type "Web application"); its ID and secret are pasted into Admin → Google
+//      (google-keys.js keeps them; GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET secrets still work).
+//   2. "Connect Google", signed in as the studio's Google account. The refresh token Google
+//      hands back is kept encrypted in the settings table (or set GOOGLE_REFRESH_TOKEN).
 // GOOGLE_CALENDAR_ID picks the calendar (default "primary": the account's own).
 //
 // Sandbox: with SANDBOX=true and no Google keys, everything works offline:
 // the "calendar" is just the bookings table, and emails go to the outbox table.
 
 import { TIME_ZONE } from "./studio.js";
+import { googleClient, keepRefreshToken, REFRESH_KEYS, refreshToken } from "./google-keys.js";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -33,7 +32,7 @@ const TIMEOUT_MS = 10_000;
 // Is Google set up (keys, plus a refresh token)? In the sandbox without keys, the offline stand-in counts.
 export async function googleReady(env) {
   if (offline(env)) return true;
-  return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && (await refreshToken(env)));
+  return Boolean((await googleClient(env)).id && (await refreshToken(env)));
 }
 
 // The sandbox with no Google keys: work without Google
@@ -43,18 +42,13 @@ export function offline(env) {
 
 export const calendarId = (env) => env.GOOGLE_CALENDAR_ID || "primary";
 
-async function refreshToken(env) {
-  if (env.GOOGLE_REFRESH_TOKEN) return env.GOOGLE_REFRESH_TOKEN;
-  return (await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_refresh_token'").first("value")) || "";
-}
-
 // Where Google sends the browser back to after "Connect Google"
 export const redirectUri = (origin) => `${origin}/admin/google/callback`;
 
 // The address of Google's "allow access" page. `state` protects the callback.
-export function consentUrl(env, origin, state) {
+export async function consentUrl(env, origin, state) {
   const params = new URLSearchParams({
-    client_id: env.GOOGLE_CLIENT_ID,
+    client_id: (await googleClient(env)).id,
     redirect_uri: redirectUri(origin),
     response_type: "code",
     scope: SCOPES.join(" "),
@@ -69,13 +63,14 @@ export function consentUrl(env, origin, state) {
 // Google sent the browser back with a code: swap it for tokens and keep the refresh token.
 // Returns the connected account's email.
 export async function finishConnecting(env, origin, code) {
+  const client = await googleClient(env);
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code,
-      client_id: env.GOOGLE_CLIENT_ID,
-      client_secret: env.GOOGLE_CLIENT_SECRET,
+      client_id: client.id,
+      client_secret: client.secret,
       redirect_uri: redirectUri(origin),
       grant_type: "authorization_code",
     }),
@@ -87,7 +82,7 @@ export async function finishConnecting(env, origin, code) {
   const missing = SCOPES.filter((s) => s.startsWith("https://") && !String(data.scope || "").includes(s));
   if (missing.length) throw new Error("Google didn't grant everything Nova Bot needs (tick every box on Google's page): " + missing.join(", "));
   await env.DB.batch([
-    setting(env, "google_refresh_token", data.refresh_token),
+    ...(await keepRefreshToken(env, data.refresh_token)),
     setting(env, "google_account", email || ""),
     setting(env, "google_connected_at", new Date().toISOString()),
   ]);
@@ -96,7 +91,7 @@ export async function finishConnecting(env, origin, code) {
 }
 
 export async function disconnect(env) {
-  await env.DB.prepare("DELETE FROM settings WHERE key IN ('google_refresh_token', 'google_account', 'google_connected_at')").run();
+  await env.DB.prepare(`DELETE FROM settings WHERE key IN ('${REFRESH_KEYS.join("', '")}', 'google_account', 'google_connected_at')`).run();
   accessCache = null;
 }
 
@@ -129,12 +124,12 @@ export function forgetGoogleToken() {
 
 async function accessToken(env) {
   if (accessCache && Date.now() < accessCache.until) return accessCache.token;
-  const refresh = await refreshToken(env);
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !refresh) throw new GoogleError("Google isn't connected yet (see /admin/google).", 0);
+  const [refresh, client] = await Promise.all([refreshToken(env), googleClient(env)]);
+  if (!client.id || !refresh) throw new GoogleError("Google isn't connected yet (Admin → Google in Nova Agent).", 0);
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, refresh_token: refresh, grant_type: "refresh_token" }),
+    body: new URLSearchParams({ client_id: client.id, client_secret: client.secret, refresh_token: refresh, grant_type: "refresh_token" }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const data = await res.json().catch(() => ({}));
@@ -142,7 +137,7 @@ async function accessToken(env) {
     // invalid_grant: the access was removed, or the OAuth app is still in "testing" (tokens last 7 days)
     throw new GoogleError(
       data.error === "invalid_grant"
-        ? "Google turned down the saved connection (invalid_grant). Reconnect Google at /admin/google."
+        ? "Google turned down the saved connection (invalid_grant). Press Connect Google again (Admin → Google)."
         : `Couldn't get a Google access token (${data.error || res.status}).`,
       res.status
     );
@@ -317,8 +312,8 @@ const wrap = (b64) => b64.replace(/.{76}/g, "$&\r\n");
 // "" if Calendar and Gmail both answer, otherwise what's wrong
 export async function googleProblem(env) {
   if (offline(env)) return "";
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) return "The GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET secrets aren't set.";
-  if (!(await refreshToken(env))) return "Google isn't connected yet: open /admin/google and press Connect Google.";
+  if (!(await googleClient(env)).id) return "Google isn't set up yet: Admin → Google.";
+  if (!(await refreshToken(env))) return "Google isn't connected yet: Admin → Google, then Connect Google.";
   try {
     const now = Date.now();
     await busyTimes(env, now, now + 3_600_000);

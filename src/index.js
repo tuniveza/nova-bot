@@ -1396,9 +1396,10 @@ async function observatoryFiles(request, env, pathname) {
 // says which (Sec-Fetch-Dest); the panels' own inside.js catches browsers that don't.
 // (wrangler.jsonc sends / and the panels' pages through here first: "run_worker_first".)
 const PANELS = ["/portal", "/calendar", "/notes", "/app/memory", "/observatory", "/lossless", "/visualizer", "/admin"];
-// Under the panels' addresses but not pages: Lossless audio's signalling, and connecting Google
-// (Google won't show its sign-in inside a frame, so that one leaves Nova Agent and comes back)
-const NOT_PAGES = /^\/(lossless\/(ws|ice)|admin\/google(\/callback)?)$/;
+// Under the panels' addresses but not pages: Lossless audio's signalling, and connecting or
+// signing in with Google (Google won't show its pages inside a frame, so those leave Nova Agent
+// for a moment, in a popup, and come back)
+const NOT_PAGES = /^\/(lossless\/(ws|ice)|admin\/google(\/callback)?|auth\/google\/(start|callback))$/;
 // /agent/<name>: Nova Agent with that panel open
 const PANEL_NAMES = { portal: "/portal/", calendar: "/calendar/", notes: "/notes/", index: "/app/memory/", observatory: "/observatory/", lossless: "/lossless/", visualizer: "/visualizer", admin: "/admin" };
 const AGENT = "/agent/";

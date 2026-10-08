@@ -1,3 +1,4 @@
+import { refreshToken } from "../src/nova/google-keys.js";
 import { env } from "cloudflare:test";
 import { STAFF_AUTH, STAFF_COOKIE } from "./sign-in.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -245,8 +246,12 @@ describe("admin: connections", () => {
 		await connectGoogle();
 		const html = await (await admin("/admin/connections")).text();
 		expect(html).toContain("studio@novacane.test");
-		expect(html).toContain(`${BASE}/admin/google/callback`);
+		expect(html).toContain("/admin/google/setup");
 		expect(html).toContain(`${BASE}/stripe/webhook`);
+		// The addresses to paste into Google are on Admin → Google
+		const setup = await (await admin("/admin/google/setup")).text();
+		expect(setup).toContain(`${BASE}/admin/google/callback`);
+		expect(setup).toContain(`${BASE}/auth/google/callback`);
 		expect(html).toContain("test mode");
 	});
 
@@ -275,6 +280,9 @@ describe("admin: connections", () => {
 		const state = "0f8fad5b-d9cb-469f-a165-70867728950e";
 		const res = await admin(`/admin/google/callback?code=abc&state=${state}`, { headers: { Cookie: `${STAFF_COOKIE}; nv_gstate=${state}` } });
 		expect(decodeURIComponent(res.headers.get("Location"))).toContain("Connected as studio@novacane.co.uk");
-		expect(await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_refresh_token'").first("value")).toBe("rt-new");
+		// Kept encrypted, never as typed
+		expect(await refreshToken(env)).toBe("rt-new");
+		expect(await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_refresh_token'").first("value")).toBe(null);
+		expect(await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_refresh_token_enc'").first("value")).not.toContain("rt-new");
 	});
 });
