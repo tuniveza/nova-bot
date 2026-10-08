@@ -27,8 +27,8 @@ describe("a panel opened on its own opens inside Nova Agent", () => {
     ["/app/memory/?scope=studio", "/app/memory/?scope=studio"],
     ["/observatory/", "/observatory/"],
     ["/lossless/?room=abc", "/lossless/?room=abc"],
-    ["/admin", "/admin"],
-    ["/admin/links", "/admin/links"],
+    ["/admin", "/portal/?view=admin&page=%2Fadmin"],
+    ["/admin/links", "/portal/?view=admin&page=%2Fadmin%2Flinks"],
     ["/visualizer", "/visualizer"],
   ])("%s → /agent/?open=%s", async (from, address) => {
     const res = await get(from, onItsOwn);
@@ -90,7 +90,7 @@ describe("what isn't a page stays as it is", () => {
     ["/agent/calendar", "?open=" + encodeURIComponent("/calendar/")],
     ["/agent/portal?view=chats", "?open=" + encodeURIComponent("/portal/?view=chats")],
     ["/agent/index", "?open=" + encodeURIComponent("/app/memory/")],
-    ["/agent/admin", "?open=" + encodeURIComponent("/admin")],
+    ["/agent/admin", "?open=" + encodeURIComponent("/portal/?view=admin&page=%2Fadmin")],
   ])("%s opens Nova Agent%s", async (from, query) => {
     const res = await get(from, onItsOwn);
     expect(res.status).toBe(302);
@@ -101,7 +101,7 @@ describe("what isn't a page stays as it is", () => {
 describe("/agent/ is the only address", () => {
   it.each([
     ["/anything-else", ""],
-    ["/admin/enquiries", "?open=" + encodeURIComponent("/admin/enquiries")],
+    ["/admin/enquiries", "?open=" + encodeURIComponent("/portal/?view=admin&page=%2Fadmin%2Fenquiries")],
     ["/app/api/me", "?open=" + encodeURIComponent("/portal/")],
     ["/studio/", "?open=" + encodeURIComponent("/portal/")],
     ["/crew/x", "?open=" + encodeURIComponent("/portal/x")],
