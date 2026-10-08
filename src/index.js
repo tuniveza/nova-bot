@@ -706,9 +706,15 @@ export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
 
+    // https://…/agent/ is the only address: any other page opened in a browser goes there
+    const onlyAgent = onlyNovaAgent(request, env, pathname);
+    if (onlyAgent) return onlyAgent;
     // Nova Agent's Portal panel online (its pages are copied into public/ from Nova Agent's
     // repo; its data is here). The staff API keeps its address (/app/api/, from when it was Hub).
     if (pathname.startsWith("/app/api/")) return handleApp(request, env, ctx, answer);
+    // Nova Agent, the one app: its page is the main address, and the panels open only inside it
+    const novaAgent = novaAgentPage(request, env, pathname);
+    if (novaAgent) return novaAgent;
     // Addresses the panels had for a day go back to their own
     const moved = movedPage(request, env, pathname);
     if (moved) return moved;
@@ -1251,12 +1257,12 @@ function privacyPage() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Portal – Privacy Policy</title>
+<title>Nova Agent – Privacy Policy</title>
 </head>
 <body>
-<h1>Portal – Privacy Policy</h1>
-<p>Portal is a staff-only tool for Novacane Studios. It displays customer enquiries and chat conversations submitted through the novacane.co.uk chatbot, and lets staff chat with the Novabot assistant.</p>
-<p>Data handled: names, contact details and messages customers submit. This data is stored on Novacane Studios' Cloudflare backend and processed by an AI provider solely to run the chatbot and to answer staff questions in Portal.</p>
+<h1>Nova Agent – Privacy Policy</h1>
+<p>Nova Agent is the staff-only app for Novacane Studios. It displays customer enquiries and chat conversations submitted through the novacane.co.uk chatbot, and lets staff chat with the Novabot assistant.</p>
+<p>Data handled: names, contact details and messages customers submit. This data is stored on Novacane Studios' Cloudflare backend and processed by an AI provider solely to run the chatbot and to answer staff questions in Nova Agent.</p>
 <p>Memory: to give better help over time, short notes may be kept from chats, such as a preferred session time or what a customer is working on. Notes about customers are only kept after a member of the Novacane team has approved each one. Card, bank and ID details are never kept. To see or delete any notes about you, contact Novacane Studios via novacane.co.uk.</p>
 <p>For bookings made through Acuity, the booking confirmation page sends the session, date, time, price and the customer's email to Novacane Studios' Cloudflare backend, and the booking's details (name, contact details, booking details and booking form answers) are read from Acuity's private calendar feed and Acuity's booking emails to the studio, so staff are notified of the booking. Staff notifications on registered staff phones are delivered through Apple's or Google's push service, encrypted so only the staff phone can read them. Booking details and notifications are kept for 90 days.</p>
 <p>Data is never sold, shared for advertising, or used for any other purpose. To request deletion, contact Novacane Studios via novacane.co.uk.</p>
@@ -1382,6 +1388,78 @@ async function observatoryFiles(request, env, pathname) {
 //                           and the files phones that installed Hub still use (/app/sw.js, its
 //                           manifest and icons: real files, served before this runs) stay put.
 //   /studio/... → /portal/   /crew/... → /portal/...   /index/... → /app/memory/...   (names for a day)
+// Nova Agent online: its page (web/agent/chat.html, copied to public/agent/index.html at build
+// time) is /agent/. The main address stays Nova Bot's (the website chat posts to it); a browser
+// opening it goes on to Nova Agent. /agent/<panel> (/agent/calendar, /agent/portal...) opens Nova
+// Agent with that panel. The panels have no pages of their own: opened on their own (a bookmark,
+// a typed address, an old link or a notification), they open inside Nova Agent instead, as
+// /agent/?open=<their address>. Inside Nova Agent's viewer (a frame) they load as themselves. The browser
+// says which (Sec-Fetch-Dest); the panels' own inside.js catches browsers that don't.
+// (wrangler.jsonc sends / and the panels' pages through here first: "run_worker_first".)
+const PANELS = ["/portal", "/calendar", "/notes", "/app/memory", "/observatory", "/lossless", "/visualizer", "/admin"];
+// Under the panels' addresses but not pages: Lossless audio's signalling, and connecting Google
+// (Google won't show its sign-in inside a frame, so that one leaves Nova Agent and comes back)
+const NOT_PAGES = /^\/(lossless\/(ws|ice)|admin\/google(\/callback)?)$/;
+// /agent/<name>: Nova Agent with that panel open
+const PANEL_NAMES = { portal: "/portal/", calendar: "/calendar/", notes: "/notes/", index: "/app/memory/", observatory: "/observatory/", lossless: "/lossless/", visualizer: "/visualizer", admin: "/admin" };
+const AGENT = "/agent/";
+function novaAgentPage(request, env, pathname) {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const url = new URL(request.url);
+  const toAgent = (open) => Response.redirect(new URL(AGENT + (open ? "?open=" + encodeURIComponent(open) : ""), url).toString(), 302);
+  if (pathname === "/") {
+    // The sandbox keeps its demo page here (see README.md); otherwise a browser goes on to Nova Agent
+    if (env.SANDBOX === "true") return null;
+    return request.headers.get("Sec-Fetch-Dest") === "document" || (request.headers.get("Accept") || "").includes("text/html") ? toAgent() : null;
+  }
+  if (pathname === "/agent" || pathname === "/agent/index.html") return toAgent();
+  if (pathname.startsWith("/agent/") && PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")]) {
+    const panel = PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")];
+    return toAgent(panel + url.search);
+  }
+  if (pathname === AGENT) {
+    return env.ASSETS.fetch(new Request(new URL(AGENT, url), request)).then((res) =>
+      res.status === 404
+        ? new Response("<!doctype html><title>Nova Agent</title><p>Nova Agent isn't built into this copy of Nova Bot (run <code>node scripts/sync-apps.mjs</code>).</p>", { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } })
+        : res
+    );
+  }
+  const last = pathname.slice(pathname.lastIndexOf("/") + 1);
+  const isPage = !last.includes(".") || last.endsWith(".html");
+  if (!isPage || !PANELS.some((p) => pathname === p || pathname.startsWith(p + "/")) || NOT_PAGES.test(pathname)) return null;
+  if (request.headers.get("Sec-Fetch-Dest") === "document") return toAgent(pathname + url.search);
+  // Inside Nova Agent: the panel's page itself. Everything else (the admin pages, Observatory's
+  // files, Lossless audio's signalling) is made further on.
+  if (pathname === "/admin" || pathname.startsWith("/admin/") || pathname.startsWith("/observatory/data/") || pathname.startsWith("/observatory/media/")) return null;
+  if (pathname.endsWith("/") || pathname.endsWith(".html") || pathname === "/visualizer") return env.ASSETS.fetch(request);
+  return null;
+}
+
+// Nova Agent's one address. A page opened in a browser (Sec-Fetch-Dest: document) anywhere else
+// goes to /agent/: a panel's address (or one it had before, or /agent/<panel>) opens that panel,
+// anything else just Nova Agent. Files (scripts, icons, a CSV) aren't pages and stay as they are,
+// and so do the website chat's pages for customers (Nova Bot's own) and connecting Google.
+const CUSTOMER_PAGES = /^\/(book(\/.*)?|referral|privacy)$/;
+function panelFor(pathname) {
+  if (pathname.startsWith(AGENT)) return PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")] || "";
+  if (PANELS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return pathname;
+  if (pathname === "/app" || pathname.startsWith("/app/") || pathname === "/studio" || pathname.startsWith("/studio/")) return "/portal/";
+  if (pathname === "/crew" || pathname.startsWith("/crew/")) return "/portal/" + pathname.slice("/crew/".length);
+  if (pathname === "/index" || pathname.startsWith("/index/")) return "/app/memory/" + pathname.slice("/index/".length);
+  return "";
+}
+function onlyNovaAgent(request, env, pathname) {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  if (request.headers.get("Sec-Fetch-Dest") !== "document") return null;
+  if (pathname === AGENT || CUSTOMER_PAGES.test(pathname) || NOT_PAGES.test(pathname)) return null;
+  if (env.SANDBOX === "true" && (pathname === "/" || pathname === "/sandbox")) return null;
+  const last = pathname.slice(pathname.lastIndexOf("/") + 1);
+  if (last.includes(".") && !last.endsWith(".html")) return null;
+  const url = new URL(request.url);
+  const panel = panelFor(pathname);
+  return Response.redirect(new URL(AGENT + (panel ? "?open=" + encodeURIComponent(panel + url.search) : ""), url).toString(), 302);
+}
+
 function movedPage(request, env, pathname) {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
   const url = new URL(request.url);

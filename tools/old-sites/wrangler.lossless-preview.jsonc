@@ -1,0 +1,13 @@
+// The old Lossless audio preview site, replaced by a redirect into Nova Agent (see lossless.js).
+// Deploy: npx wrangler deploy -c tools/old-sites/wrangler.lossless-preview.jsonc
+// Its call rooms (a Durable Object) are retired with it: they only ever held a call in progress.
+{
+	"name": "nova-lossless-audio-preview",
+	"main": "lossless.js",
+	"compatibility_date": "2026-09-26",
+	"workers_dev": true,
+	"migrations": [
+		{ "tag": "lossless-v1", "new_sqlite_classes": ["LosslessRoom"] },
+		{ "tag": "lossless-retired", "deleted_classes": ["LosslessRoom"] }
+	]
+}

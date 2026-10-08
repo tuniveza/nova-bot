@@ -188,6 +188,11 @@ traces/
 *.har
 
 # Nova Agent's panels are copied in from its repo at build time (scripts/sync-apps.mjs)
+public/index.html
+public/agent/
+public/manifest.webmanifest
+public/sw.js
+public/visualizer.html
 public/app/
 public/portal/
 public/calendar/

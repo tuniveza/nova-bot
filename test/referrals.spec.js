@@ -316,9 +316,9 @@ describe("Admin page", () => {
 });
 
 describe("Chat routes", () => {
-	it("still answers the chat widget's health check", async () => {
-		const res = await worker.fetch(new Request(`${BASE}/`), env);
-		expect(await res.text()).toBe("Novacane chatbot is running.");
+	it("sends a browser at the main address on to Nova Agent (the chat widget only POSTs there)", async () => {
+		const res = await worker.fetch(new Request(`${BASE}/`, { headers: { Accept: "text/html" } }), env);
+		expect(res.headers.get("Location")).toBe(`${BASE}/agent/`);
 	});
 });
 

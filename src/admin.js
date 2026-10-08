@@ -565,7 +565,7 @@ async function connectionsPage(env, url) {
       <tr><th>Redirect URI</th><td><code>${e(redirectUri(url.origin))}</code><br><span class="dim small">Add this to the OAuth client in Google Cloud Console.</span></td></tr>
     </table>
     <p>
-      <a class="btn" href="/admin/google">${account ? "Reconnect Google" : "Connect Google"}</a>
+      <a class="btn" href="/admin/google" target="_top">${account ? "Reconnect Google" : "Connect Google"}</a>
       ${account ? `<form method="post" action="/admin/connections/test-email" style="display:inline"><button class="btn ghost">Send a test email</button></form>
       <form method="post" action="/admin/google/disconnect" style="display:inline" onsubmit="return confirm('Disconnect Google? Online booking stops until it is connected again.')"><button class="btn ghost">Disconnect</button></form>` : ""}
     </p>
@@ -855,6 +855,13 @@ const ADMIN_STYLE = `
   html[data-align="center"] nav.tabs { justify-content: center; }
   html[data-size="small"] body { zoom: 0.92; }
   html[data-size="large"] body { zoom: 1.12; }
+  /* Inside Nova Agent (the Admin panel): Nova Agent's header has the planet and the Manual already */
+  html.embed header.top { position: static; gap: 10px; padding: 8px 12px; }
+  html.embed .brand img { width: 30px; height: 30px; }
+  html.embed .brand .kicker, html.embed .open-hub, html.embed header.top nova-portal-badge, html.embed header.top nova-manual { display: none; }
+  html.embed[data-align="center"] .brand { flex-direction: row; }
+  html.embed main { padding: 16px 12px 40px; }
+  html.embed h1 { font-size: 24px; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 `;
 
@@ -883,7 +890,8 @@ async function page(env, title, url, body) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#06040D">
-<title>${e(title)} | Admin · Portal</title>
+<script src="/shared/inside.js"></script>
+<title>${e(title)} | Admin · Nova Agent</title>
 <link rel="icon" href="/portal/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Saira:wght@300..700&family=Source+Code+Pro:wght@400;500;600&display=swap">
@@ -898,10 +906,10 @@ async function page(env, title, url, body) {
 <header class="top">
   <a class="brand" href="/admin">
     <img src="/portal/icon.svg" alt="" width="40" height="40">
-    <span><span class="kicker">Nova Agent · Novacane</span><span class="wordmark">Portal <em>admin</em></span></span>
+    <span><span class="kicker">Nova Agent · Novacane</span><span class="wordmark">Admin</span></span>
   </a>
   <nav class="tabs">${tabs}</nav>
-  <a class="open-hub" href="/portal/">Open Portal ↗</a>
+  <a class="open-hub" href="/portal/">Portal</a>
   <nova-manual compact></nova-manual>
   <nova-portal-badge></nova-portal-badge>
 </header>
@@ -917,7 +925,8 @@ ${body}
 </html>`;
 
   return new Response(html, {
-    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Frame-Options": "DENY" },
+    // Shown inside Nova Agent's Admin panel (same site only)
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Frame-Options": "SAMEORIGIN", "Content-Security-Policy": "frame-ancestors 'self'" },
   });
 }
 
