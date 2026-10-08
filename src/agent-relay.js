@@ -33,12 +33,12 @@ export const RELAYED = [
   { methods: ["GET"], path: /^\/status$/ },
   { methods: ["GET"], path: /^\/quests\/(state|events)$/ },
   { methods: ["POST"], path: /^\/actions\/(chat|missions|quests|blocks|rhythm|replan)$/ },
-  { methods: ["POST"], path: /^\/actions\/(missions|quests)\/[\w-]+(\/refine)?$/ },
-  { methods: ["GET"], path: /^\/calendar-sync\.js$/ },
+  { methods: ["POST"], path: /^\/actions\/(missions|quests)\/[\w-]+(\/(refine|export))?$/ },
+  { methods: ["POST"], path: /^\/actions\/files\/[\w-]+\/remove$/ },
+  { methods: ["GET"], path: /^\/files\/(list|[\w-]+\/[^/]+)$/ },
   { methods: ["GET", "PUT"], path: /^\/calendar-api\/data$/ },
   { methods: ["GET"], path: /^\/calendar-api\/events$/ },
-  { methods: ["GET", "POST", "PUT", "DELETE"], path: /^\/files\/[^/]+(\/[^/]+)?$/ },
-  { methods: ["GET"], path: /^\/(visualizer|events|cache|tasks)$/, admin: true },
+  { methods: ["GET"], path: /^\/(events|cache|tasks)$/, admin: true },
   { methods: ["POST"], path: /^\/actions\/(run\/[\w-]+|forget)$/, admin: true },
 ];
 
@@ -147,11 +147,11 @@ export async function linkStatus(request, env) {
 }
 
 // ---- Calendar online uses Nova Agent's calendar ----
-// Its page gets the same small script as on the PC (calendar-sync.js, from the PC), so it shows and
-// saves Nova Agent's calendar. PC off: it keeps this browser's last copy, and changes wait in
+// Its page gets the same small script as on the PC (calendar-sync.js, copied in at build time from
+// Nova Agent, so it loads even when the PC is off), so it shows and saves Nova Agent's calendar. PC off: it keeps this browser's last copy, and changes wait in
 // the browser and save when the PC is back (calendar-sync.js does both).
 export async function calendarPage(request, env) {
-  const res = await env.ASSETS.fetch(new Request(new URL("/calendar/index.html", request.url), { headers: request.headers }));
+  const res = await env.ASSETS.fetch(new Request(new URL("/calendar/", request.url), { headers: request.headers }));
   if (!res.ok || !(res.headers.get("Content-Type") || "").includes("text/html")) return res;
   const html = (await res.text()).replace('<script src="js/store.js"></script>', '<script src="/calendar-sync.js"></script>\n<script src="js/store.js"></script>');
   const headers = new Headers(res.headers);

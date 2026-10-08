@@ -336,7 +336,7 @@ Everything secret is a **Wrangler secret** (`npx wrangler secret put NAME`), or 
 | `ACUITY_WEBHOOK_KEY` | Accepting Acuity's webhook (`/acuity/webhook?key=…`) |
 | `ACUITY_CALENDAR_URL` | Acuity's private calendar feed: booking details, the Calendar tab and Nova Club's busy times |
 | `ACUITY_EMAIL_KEY` | The Google Apps Script that forwards Acuity's emails (`tools/acuity-email-forwarder.gs`) |
-| `AGENT_NOVA_KEY` | Nova Agent's routes (`/nova-agent/*`, and the older `/hub/agent/*` and `/hub/notify`; `/memory/*`) |
+| `AGENT_NOVA_KEY` | Nova Agent's routes (`/nova-agent/*`, and the older `/hub/agent/*` and `/hub/notify`; `/memory/*`), and its online link (`/nova-agent/link`, the AgentLink Durable Object in `src/agent-relay.js`: Nova Agent's chat, Missions, Quests, Calendar and Visualizer online, through the studio PC) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Phone notifications (Web Push) |
 | `RESEND_API_KEY`, `ENQUIRY_EMAIL_TO`, `ENQUIRY_EMAIL_FROM` | Emailing enquiries (optional) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Nova Bot's own booking system: Google Calendar and Gmail (optional) |

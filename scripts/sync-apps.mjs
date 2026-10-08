@@ -35,6 +35,7 @@ const copies = [
   ["web/agent/assets/manifest.webmanifest", "../public/manifest.webmanifest", "Nova Agent's manifest"],
   ["web/agent/assets/sw.js", "../public/sw.js", "Nova Agent's service worker"],
   ["web/agent/page.html", "../public/visualizer.html", "Visualizer"],
+  ["web/agent/calendar-sync.js", "../public/calendar-sync.js", "Calendar's link to Nova Agent's calendar"],
   ["web/portal/old-app-address/", "../public/app/", "Hub's old address (push helper, manifest, icons)"],
   // after that, which replaces public/app/ whole
   ["web/index/", "../public/app/memory/", "Index"],

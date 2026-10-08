@@ -71,6 +71,14 @@ describe("which addresses go to the PC", () => {
     expect(relayRule("GET", "/events").admin).toBe(true);
     expect(relayRule("GET", "/actions/chat")).toBeNull();
     expect(relayRule("DELETE", "/quests/state")).toBeNull();
+    // Files Nova Agent wrote: the list, one to read, removing one; a mission saved as a file
+    expect(relayRule("GET", "/files/list")).toBeTruthy();
+    expect(relayRule("POST", "/actions/files/f-1/remove")).toBeTruthy();
+    expect(relayRule("POST", "/actions/missions/m-1/export")).toBeTruthy();
+    expect(relayRule("POST", "/files/abc/report.pdf")).toBeNull();
+    // Pages and scripts this worker serves itself (the Visualizer's page, Calendar's sync script)
+    expect(relayRule("GET", "/visualizer")).toBeNull();
+    expect(relayRule("GET", "/calendar-sync.js")).toBeNull();
   });
 
   it("never Portal's, Hub's API or the staff pages", () => {

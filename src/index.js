@@ -718,10 +718,9 @@ export default {
     // Addresses the panels had for a day go back to their own
     const moved = movedPage(request, env, pathname);
     if (moved) return moved;
-    // Nova Agent online: its own addresses (chat, Missions, Quests, Calendar's data, Visualizer)
-    // go to the studio PC over its link (src/agent-relay.js); Calendar's page saves there too
+    // Nova Agent online: its own addresses (chat, Missions, Quests, Calendar's data, the Visualizer's
+    // feeds) go to the studio PC over its link (src/agent-relay.js)
     if (isRelayed(pathname)) return handleRelay(request, env, ctx);
-    if (request.method === "GET" && (pathname === "/calendar/" || pathname === "/calendar/index.html")) return calendarPage(request, env);
     // Lossless audio: its page is in public/lossless/; signalling and the relay setup are here
     if (pathname === "/lossless/ws" || pathname === "/lossless/ice") return lossless.fetch(request, env);
     // Observatory's projects and media (the studio's own work) are for signed-in staff
@@ -1431,6 +1430,8 @@ function novaAgentPage(request, env, pathname) {
   // Inside Nova Agent: the panel's page itself. Everything else (the admin pages, Observatory's
   // files, Lossless audio's signalling) is made further on.
   if (pathname === "/admin" || pathname.startsWith("/admin/") || pathname.startsWith("/observatory/data/") || pathname.startsWith("/observatory/media/")) return null;
+  // Calendar's page saves to Nova Agent's calendar on the studio PC (src/agent-relay.js)
+  if (pathname === "/calendar/" || pathname === "/calendar/index.html") return calendarPage(request, env);
   if (pathname.endsWith("/") || pathname.endsWith(".html") || pathname === "/visualizer") return env.ASSETS.fetch(request);
   return null;
 }
