@@ -1,6 +1,6 @@
-# Nova Agent online: its page (the main address), and its service worker and manifest for the
-# whole app. It isn't shown inside other pages; the panels below are shown inside it (same site only).
-/
+# Nova Agent online: its page (/agent/), and its service worker and manifest for the whole app.
+# It isn't shown inside other pages; the panels below are shown inside it (same site only).
+/agent/
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin

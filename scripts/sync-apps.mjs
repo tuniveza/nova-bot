@@ -2,7 +2,7 @@
 // phones and anywhere away from the studio PC; they share Nova Bot's sign-in and staff API).
 // They live in Nova Agent's repo (web/), so before every deploy or local run (wrangler's build
 // step) they're copied in:
-//   na/web/agent/chat.html → public/index.html   Nova Agent's page (the main address)
+//   na/web/agent/chat.html → public/agent/index.html   Nova Agent's page (/agent/)
 //   na/web/agent/assets    → public/agent/       its icons; its manifest and service worker also
 //                                                 go to the top (public/manifest.webmanifest, public/sw.js)
 //   na/web/agent/page.html → public/visualizer.html   the Visualizer panel
@@ -30,8 +30,8 @@ import { fileURLToPath } from "node:url";
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const agent = process.env.NOVA_AGENT_DIR ? resolve(process.env.NOVA_AGENT_DIR) : here("../../../na");
 const copies = [
-  ["web/agent/chat.html", "../public/index.html", "Nova Agent"],
   ["web/agent/assets/", "../public/agent/", "Nova Agent's icons"],
+  ["web/agent/chat.html", "../public/agent/index.html", "Nova Agent"],
   ["web/agent/assets/manifest.webmanifest", "../public/manifest.webmanifest", "Nova Agent's manifest"],
   ["web/agent/assets/sw.js", "../public/sw.js", "Nova Agent's service worker"],
   ["web/agent/page.html", "../public/visualizer.html", "Visualizer"],
@@ -47,6 +47,8 @@ const copies = [
   ["web/lossless/public/lossless/", "../public/lossless/", "Lossless audio"],
   ["web/lossless/src/", "../src/lossless/", "Lossless audio's signalling"],
 ];
+// Nova Agent's page used to be the main address (public/index.html); the main address is Nova Bot's again
+rmSync(here("../public/index.html"), { force: true });
 for (const [from, to, name] of copies) {
   const src = resolve(agent, from);
   if (!existsSync(src)) {

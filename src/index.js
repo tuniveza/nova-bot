@@ -1377,22 +1377,37 @@ async function observatoryFiles(request, env, pathname) {
 //                           and the files phones that installed Hub still use (/app/sw.js, its
 //                           manifest and icons: real files, served before this runs) stay put.
 //   /studio/... → /portal/   /crew/... → /portal/...   /index/... → /app/memory/...   (names for a day)
-// Nova Agent online: its page (web/agent/chat.html, copied to public/index.html at build time)
-// is the main address. The panels have no pages of their own: opened on their own (a bookmark,
+// Nova Agent online: its page (web/agent/chat.html, copied to public/agent/index.html at build
+// time) is /agent/. The main address stays Nova Bot's (the website chat posts to it); a browser
+// opening it goes on to Nova Agent. /agent/<panel> (/agent/calendar, /agent/portal...) opens Nova
+// Agent with that panel. The panels have no pages of their own: opened on their own (a bookmark,
 // a typed address, an old link or a notification), they open inside Nova Agent instead, as
-// /?open=<their address>. Inside Nova Agent's viewer (a frame) they load as themselves. The browser
+// /agent/?open=<their address>. Inside Nova Agent's viewer (a frame) they load as themselves. The browser
 // says which (Sec-Fetch-Dest); the panels' own inside.js catches browsers that don't.
 // (wrangler.jsonc sends / and the panels' pages through here first: "run_worker_first".)
 const PANELS = ["/portal", "/calendar", "/notes", "/app/memory", "/observatory", "/lossless", "/visualizer", "/admin"];
 // Under the panels' addresses but not pages: Lossless audio's signalling, and connecting Google
 // (Google won't show its sign-in inside a frame, so that one leaves Nova Agent and comes back)
 const NOT_PAGES = /^\/(lossless\/(ws|ice)|admin\/google(\/callback)?)$/;
+// /agent/<name>: Nova Agent with that panel open
+const PANEL_NAMES = { portal: "/portal/", calendar: "/calendar/", notes: "/notes/", index: "/app/memory/", observatory: "/observatory/", lossless: "/lossless/", visualizer: "/visualizer", admin: "/admin" };
+const AGENT = "/agent/";
 function novaAgentPage(request, env, pathname) {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const url = new URL(request.url);
+  const toAgent = (open) => Response.redirect(new URL(AGENT + (open ? "?open=" + encodeURIComponent(open) : ""), url).toString(), 302);
   if (pathname === "/") {
-    // The sandbox keeps its demo page here (see README.md)
+    // The sandbox keeps its demo page here (see README.md); otherwise a browser goes on to Nova Agent
     if (env.SANDBOX === "true") return null;
-    return env.ASSETS.fetch(request).then((res) =>
+    return request.headers.get("Sec-Fetch-Dest") === "document" || (request.headers.get("Accept") || "").includes("text/html") ? toAgent() : null;
+  }
+  if (pathname === "/agent" || pathname === "/agent/index.html") return toAgent();
+  if (pathname.startsWith("/agent/") && PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")]) {
+    const panel = PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")];
+    return toAgent(panel + url.search);
+  }
+  if (pathname === AGENT) {
+    return env.ASSETS.fetch(new Request(new URL(AGENT, url), request)).then((res) =>
       res.status === 404
         ? new Response("<!doctype html><title>Nova Agent</title><p>Nova Agent isn't built into this copy of Nova Bot (run <code>node scripts/sync-apps.mjs</code>).</p>", { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } })
         : res
@@ -1401,10 +1416,7 @@ function novaAgentPage(request, env, pathname) {
   const last = pathname.slice(pathname.lastIndexOf("/") + 1);
   const isPage = !last.includes(".") || last.endsWith(".html");
   if (!isPage || !PANELS.some((p) => pathname === p || pathname.startsWith(p + "/")) || NOT_PAGES.test(pathname)) return null;
-  if (request.headers.get("Sec-Fetch-Dest") === "document") {
-    const url = new URL(request.url);
-    return Response.redirect(new URL("/?open=" + encodeURIComponent(pathname + url.search), url).toString(), 302);
-  }
+  if (request.headers.get("Sec-Fetch-Dest") === "document") return toAgent(pathname + url.search);
   // Inside Nova Agent: the panel's page itself. Everything else (the admin pages, Observatory's
   // files, Lossless audio's signalling) is made further on.
   if (pathname === "/admin" || pathname.startsWith("/admin/") || pathname.startsWith("/observatory/data/") || pathname.startsWith("/observatory/media/")) return null;

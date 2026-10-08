@@ -336,11 +336,11 @@ describe("sandbox mode", () => {
 	it("serves the demo page only in the sandbox", async () => {
 		let res = await worker.fetch(new Request(BASE + "/"), { ...env, ...sandbox });
 		expect(await res.text()).toContain("NovaBot sandbox");
-		// Everywhere else the main address is Nova Agent
+		// Everywhere else the main address is Nova Bot's (a browser goes on to Nova Agent at /agent/)
 		res = await worker.fetch(new Request(BASE + "/"), env);
-		const page = await res.text();
-		expect(page).toContain("Nova Agent");
-		expect(page).not.toContain("NovaBot sandbox");
+		expect(await res.text()).not.toContain("NovaBot sandbox");
+		res = await worker.fetch(new Request(BASE + "/", { headers: { Accept: "text/html" } }), env);
+		expect(res.headers.get("Location")).toBe(BASE + "/agent/");
 	});
 
 	it("gives a labelled stand-in reply without an AI key, and lets local pages use it", async () => {

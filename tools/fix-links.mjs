@@ -50,8 +50,8 @@ const MOVED = [
   [/\/hub\/notify$/, `${W}/nova-agent/notify`],
 ];
 const team = [
-  { name: "Nova Agent", url: `${W}/`, kind: "live", note: "The studio's one app, anywhere: chat, Missions and Quests (through the studio PC), with Portal, Calendar, Notes, Index, Observatory, Lossless audio and Admin inside it. Sign in once with the planet at the top." },
-  { name: "Nova Agent on the studio computer", url: `${A}/`, kind: "local", note: "The same app, on the studio PC (where its chat, Missions and Quests run)" },
+  { name: "Nova Agent", url: `${W}/agent/`, kind: "live", note: "The studio's one app, anywhere: chat, Missions and Quests (through the studio PC), with Portal, Calendar, Notes, Index, Observatory, Lossless audio and Admin inside it. Sign in once with the planet at the top." },
+  { name: "Nova Agent on the studio computer", url: `${A}/agent/`, kind: "local", note: "The same app, on the studio PC (where its chat, Missions and Quests run)" },
 ];
 
 const byUrl = (items, url) => items.findIndex((i) => i.url.replace(/\/$/, "") === url.replace(/\/$/, ""));

@@ -30,10 +30,10 @@ describe("a panel opened on its own opens inside Nova Agent", () => {
     ["/admin", "/admin"],
     ["/admin/links", "/admin/links"],
     ["/visualizer", "/visualizer"],
-  ])("%s → /?open=%s", async (from, address) => {
+  ])("%s → /agent/?open=%s", async (from, address) => {
     const res = await get(from, onItsOwn);
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe(`${BASE}/?open=${encodeURIComponent(address)}`);
+    expect(res.headers.get("Location")).toBe(`${BASE}/agent/?open=${encodeURIComponent(address)}`);
   });
 
   it("Hub's old address still goes to Portal first (then into Nova Agent)", async () => {
@@ -68,9 +68,32 @@ describe("what isn't a page stays as it is", () => {
     expect(res.status).toBe(403); // routed to the chat (which turns other websites away), not the page
   });
 
-  it("Nova Agent's own page is the main address", async () => {
-    const res = await get("/", onItsOwn);
+  it("Nova Agent's own page is /agent/", async () => {
+    const res = await get("/agent/", onItsOwn);
     expect(res.status).not.toBe(302);
     expect(await res.text()).toContain("Nova Agent");
+  });
+
+  it("a browser opening the main address goes on to Nova Agent", async () => {
+    const res = await get("/", onItsOwn);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`${BASE}/agent/`);
+  });
+
+  it("the main address is still Nova Bot's for anything else", async () => {
+    const res = await get("/");
+    expect(await res.text()).toBe("Novacane chatbot is running.");
+  });
+
+  it.each([
+    ["/agent", ""],
+    ["/agent/calendar", "?open=" + encodeURIComponent("/calendar/")],
+    ["/agent/portal?view=chats", "?open=" + encodeURIComponent("/portal/?view=chats")],
+    ["/agent/index", "?open=" + encodeURIComponent("/app/memory/")],
+    ["/agent/admin", "?open=" + encodeURIComponent("/admin")],
+  ])("%s opens Nova Agent%s", async (from, query) => {
+    const res = await get(from, onItsOwn);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`${BASE}/agent/${query}`);
   });
 });

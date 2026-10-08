@@ -198,9 +198,9 @@ describe("Admin page", () => {
 });
 
 describe("Chat routes", () => {
-	it("shows Nova Agent at the main address (the chat widget only POSTs there)", async () => {
-		const res = await worker.fetch(new Request(`${BASE}/`), env);
-		expect(await res.text()).toContain("Nova Agent");
+	it("sends a browser at the main address on to Nova Agent (the chat widget only POSTs there)", async () => {
+		const res = await worker.fetch(new Request(`${BASE}/`, { headers: { Accept: "text/html" } }), env);
+		expect(res.headers.get("Location")).toBe(`${BASE}/agent/`);
 	});
 });
 
