@@ -1249,12 +1249,12 @@ function privacyPage() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Portal – Privacy Policy</title>
+<title>Nova Agent – Privacy Policy</title>
 </head>
 <body>
-<h1>Portal – Privacy Policy</h1>
-<p>Portal is a staff-only tool for Novacane Studios. It displays customer enquiries and chat conversations submitted through the novacane.co.uk chatbot, and lets staff chat with the Novabot assistant.</p>
-<p>Data handled: names, contact details and messages customers submit. This data is stored on Novacane Studios' Cloudflare backend and processed by an AI provider solely to run the chatbot and to answer staff questions in Portal.</p>
+<h1>Nova Agent – Privacy Policy</h1>
+<p>Nova Agent is the staff-only app for Novacane Studios. It displays customer enquiries and chat conversations submitted through the novacane.co.uk chatbot, and lets staff chat with the Novabot assistant.</p>
+<p>Data handled: names, contact details and messages customers submit. This data is stored on Novacane Studios' Cloudflare backend and processed by an AI provider solely to run the chatbot and to answer staff questions in Nova Agent.</p>
 <p>Memory: to give better help over time, short notes may be kept from chats, such as a preferred session time or what a customer is working on. Notes about customers are only kept after a member of the Novacane team has approved each one. Card, bank and ID details are never kept. To see or delete any notes about you, contact Novacane Studios via novacane.co.uk.</p>
 <p>For bookings made through Acuity, the booking confirmation page sends the session, date, time, price and the customer's email to Novacane Studios' Cloudflare backend, and the booking's details (name, contact details, booking details and booking form answers) are read from Acuity's private calendar feed and Acuity's booking emails to the studio, so staff are notified of the booking. Staff notifications on registered staff phones are delivered through Apple's or Google's push service, encrypted so only the staff phone can read them. Booking details and notifications are kept for 90 days.</p>
 <p>Data is never sold, shared for advertising, or used for any other purpose. To request deletion, contact Novacane Studios via novacane.co.uk.</p>

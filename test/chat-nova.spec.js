@@ -320,12 +320,12 @@ describe("admin: enquiries and conversations", () => {
 });
 
 describe("privacy page", () => {
-	it("shows the Hub privacy policy to anyone", async () => {
+	it("shows the Nova Agent privacy policy to anyone", async () => {
 		const res = await worker.fetch(new Request(BASE + "/privacy"), env);
 		expect(res.status).toBe(200);
 		expect(res.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
 		const html = await res.text();
-		expect(html).toContain("<h1>Portal – Privacy Policy</h1>");
+		expect(html).toContain("<h1>Nova Agent – Privacy Policy</h1>");
 		expect(html).toContain("Data is never sold");
 	});
 });
