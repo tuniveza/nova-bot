@@ -1,0 +1,9 @@
+// The old standalone calendar site, replaced by a page that moves people to Nova Bot's /calendar/ (see move.js).
+// Deploy: npx wrangler deploy -c tools/old-sites/wrangler.calendar.jsonc
+{
+	"name": "nova-calendar",
+	"main": "move.js",
+	"compatibility_date": "2026-09-26",
+	"workers_dev": true,
+	"vars": { "APP": "calendar" }
+}

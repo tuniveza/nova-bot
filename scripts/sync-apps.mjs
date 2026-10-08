@@ -8,10 +8,15 @@
 //   na/web/calendar  → public/calendar/   Calendar (online, it saves in the browser)
 //   na/web/notes     → public/notes/      Notes
 //   na/web/shared    → public/shared/     the look, sounds, badge and manual they share
+//   na/web/observatory → public/observatory/ Observatory (its projects and media only for signed-in staff)
+//   na/web/lossless/public/lossless → public/lossless/  Lossless audio's page
+//   na/web/lossless/src  → src/lossless/  its signalling (LosslessRoom) and relay setup (/lossless/ice)
 //   na/web/portal/planet → src/portal/planet/  the planet generator (also draws planet.svg)
 // NOVA_AGENT_DIR points somewhere else than ../../na (e.g. a branch's worktree).
-// The page copies are never saved in this repo (.gitignore); the planet generator
-// copy is, so this project still builds and tests on its own.
+// The page copies are never saved in this repo (.gitignore); the planet generator and
+// Lossless copies are, so this project still builds and tests on its own.
+// Observatory's scan (data/) and screenshots (media/) aren't in Nova Agent's git: they're made on
+// the studio PC. A clean worktree has none, so they come from the studio PC's own Nova Agent folder.
 import { cpSync, existsSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +32,9 @@ const copies = [
   ["web/notes/", "../public/notes/", "Notes"],
   ["web/shared/", "../public/shared/", "the shared look, badge and manual"],
   ["web/portal/planet/", "../src/portal/planet/", "the planet generator"],
+  ["web/observatory/", "../public/observatory/", "Observatory"],
+  ["web/lossless/public/lossless/", "../public/lossless/", "Lossless audio"],
+  ["web/lossless/src/", "../src/lossless/", "Lossless audio's signalling"],
 ];
 for (const [from, to, name] of copies) {
   const src = resolve(agent, from);
@@ -38,4 +46,17 @@ for (const [from, to, name] of copies) {
   // The planet generator is code for this Worker, not a page; tests and samples stay behind
   cpSync(src, here(to), { recursive: true, filter: (f) => !/(test\.mjs|gallery\.html|README\.md)$/.test(f) && !(to.includes("public/portal") && /[\\/]planet([\\/]|$)/.test(f.slice(src.length - 1))) });
   console.log(`${name}: copied in`);
+}
+
+// Observatory's scan and media, from wherever they were made (see the top)
+for (const part of ["data", "media"]) {
+  const to = here(`../public/observatory/${part}/`);
+  if (existsSync(to)) continue;
+  const from = [agent, here("../../../na"), resolve(agent, "../na")].map((d) => resolve(d, `web/observatory/${part}/`)).find((d) => existsSync(d));
+  if (!from) {
+    console.log(`Observatory: no ${part}/ yet (run "npm run scan" in Nova Agent's scripts/observatory), so it shows none`);
+    continue;
+  }
+  cpSync(from, to, { recursive: true });
+  console.log(`Observatory: ${part}/ copied in from ${from}`);
 }
