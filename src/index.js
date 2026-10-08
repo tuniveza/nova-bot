@@ -59,6 +59,7 @@ import { requireStaff } from "./portal/auth.js";
 export { LosslessRoom } from "./lossless/room.js";
 export { AgentLink } from "./agent-relay.js";
 import { calendarPage, handleLink, handleRelay, isRelayed, linkStatus } from "./agent-relay.js";
+import { handleSharedNotes } from "./notes-shared.js";
 import { sendCalendarReminders } from "./calendar/reminders.js";
 
 // ===== THINGS YOU CAN EDIT =====
@@ -712,6 +713,8 @@ export default {
     // https://…/agent/ is the only address: any other page opened in a browser goes there
     const onlyAgent = onlyNovaAgent(request, env, pathname);
     if (onlyAgent) return onlyAgent;
+    // Shared notes (Notes inside Nova Agent): the team's notes, for signed-in staff (src/notes-shared.js)
+    if (pathname.startsWith("/notes-api/")) return handleSharedNotes(request, env, pathname);
     // Nova Agent's Portal panel online (its pages are copied into public/ from Nova Agent's
     // repo; its data is here). The staff API keeps its address (/app/api/, from when it was Hub).
     if (pathname.startsWith("/app/api/")) return handleApp(request, env, ctx, answer);
