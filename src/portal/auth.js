@@ -99,9 +99,16 @@ export async function requireStaff(request, env, { admin = false } = {}) {
   // Old read-only "connect" sessions (from before Portal was the one sign-in) don't count
   if (row.kind === "profile") return null;
   if (admin && row.role !== "admin") return null;
-  // Note it's in use (at most every 10 minutes, to keep writes down)
+  // Note it's in use (at most every 10 minutes, to keep writes down). An app's sign-in (Nova
+  // Agent on the studio PC) also keeps going while it's used: it lasts until someone signs out.
   if (Date.now() - Date.parse(row.last_seen_at) > 600_000) {
-    await env.DB.prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?").bind(new Date().toISOString(), id).run().catch(() => {});
+    const now = new Date();
+    if (row.kind === "token") {
+      const expires = new Date(now.getTime() + SESSION_DAYS * 864e5).toISOString();
+      await env.DB.prepare("UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE id = ?").bind(now.toISOString(), expires, id).run().catch(() => {});
+    } else {
+      await env.DB.prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?").bind(now.toISOString(), id).run().catch(() => {});
+    }
   }
   return { ...row, session_kind: row.kind };
 }
