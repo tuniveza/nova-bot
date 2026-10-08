@@ -8,6 +8,7 @@
 //   POST /auth/setup            the first admin, proven with the studio's current password
 //   GET  /auth/invite?token=    who an invite is for
 //   POST /auth/invite/accept    { token, password } → choose a password, signed in
+//   POST /auth/password         { password, current? } → a new password (admins needn't give the old one)
 //   GET  /staff                 admin: everyone
 //   POST /staff                 admin: invite someone { email, display_name, role } → an invite link
 //   POST /staff/:id/invite      admin: a fresh invite link
@@ -142,6 +143,20 @@ export async function handlePortal(request, env, ctx, pathname) {
   if (pathname === "/auth/logout" && method === "POST") {
     await endSession(env, request);
     return json({ ok: true }, 200, { "Set-Cookie": clearCookie() });
+  }
+
+  // A new password, from Portal's "You" page. Admins (and anyone who never had one) just choose it;
+  // everyone else confirms their current one. Their other sign-ins end; this one carries on.
+  if (pathname === "/auth/password" && method === "POST") {
+    const me = await requireStaff(request, env);
+    if (!me) return json({ error: "Sign in first", signedIn: false }, 401);
+    if (await tooMany(env, request, "password")) return json({ error: "Too many tries. Wait a minute and try again." }, 429);
+    if (me.role !== "admin" && me.password_hash && !(await verifyPassword(String(body.current || ""), me.password_hash))) return json({ error: "Your current password isn't right." }, 401);
+    const problem = passwordProblem(body.password);
+    if (problem) return json({ error: problem }, 400);
+    await env.DB.prepare("UPDATE staff SET password_hash = ? WHERE id = ?").bind(await hashPassword(body.password), me.id).run();
+    await env.DB.prepare("DELETE FROM sessions WHERE staff_id = ? AND id != ?").bind(me.id, me.session_id).run();
+    return json({ ok: true });
   }
 
   // Who's signed in, with their planet's name and colour (the badge on every panel starts here)
