@@ -1,5 +1,6 @@
 # Nova Agent's panels online (copied in from Nova Agent's repo at build time).
-# Hub (and Index, at /app/memory/) and Portal: their data comes from /app/api/, /auth/ and /staff here.
+# Portal (with Hub's old address, /app/: its push helper, manifest and icons) and Index (/app/memory/):
+# their data comes from /app/api/, /auth/ and /staff here.
 /app/*
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
@@ -27,4 +28,7 @@
   Content-Security-Policy: default-src 'self'; script-src 'self' https://accounts.google.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://www.googleapis.com https://accounts.google.com https://oauth2.googleapis.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdnjs.cloudflare.com; frame-src https://accounts.google.com; worker-src 'self'; manifest-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'
 
 /app/sw.js
+  Cache-Control: no-cache
+
+/portal/sw.js
   Cache-Control: no-cache

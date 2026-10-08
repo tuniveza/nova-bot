@@ -1,6 +1,7 @@
-// Hub: the staff app at /app
+// The staff API for Portal (the staff app, at /portal/; it was Hub, at /app/, so the API kept
+// that address)
 //
-// The app itself (public/app/) is plain files with no customer data in them.
+// The app itself (public/portal/) is plain files with no customer data in them.
 // Everything it shows comes from these /app/api/ requests, which need a Portal
 // sign-in (the one sign-in: /auth/login; there's no password here):
 //
@@ -79,7 +80,7 @@ export async function handleApp(request, env, ctx, answer) {
     // memory and their own partition (Portal decides who's who)
     const who = await requireStaff(request, env);
     const member = who && who.role !== "admin" ? who.id : null;
-    return handleMemoryForStaff(request, env, ctx, route.slice("/memory".length), request.headers.get("X-Nova-App") === "hub" ? "Hub" : "Index", member);
+    return handleMemoryForStaff(request, env, ctx, route.slice("/memory".length), ["hub", "portal"].includes(request.headers.get("X-Nova-App")) ? "Portal" : "Index", member);
   }
   if (route === "/links" && request.method === "GET") return json(await checkedLinks(env));
   if (route === "/quests/action" && request.method === "POST") return questAction(request, env);
@@ -201,11 +202,11 @@ async function staffChat(request, env, ctx, answer) {
     .map((m) => ({ role: m.role, content: m.content.slice(0, 1500) }));
   while (list.length && list[0].role !== "user") list.shift();
   if (!list.length) return json({ error: "No message" }, 400);
-  const visitor = { chatId: null, page: "Hub (staff)", ip: request.headers.get("CF-Connecting-IP") || "staff" };
+  const visitor = { chatId: null, page: "Portal (staff)", ip: request.headers.get("CF-Connecting-IP") || "staff" };
   // Staff can also find, cancel, reschedule and change bookings (manage-bookings.js)
   const reply = (await answer(list, env, visitor, (work) => ctx.waitUntil(work), { staff: true })).text;
   // What the team says about clients and the studio feeds Index (in the background)
-  ctx.waitUntil(learnFromStaffChat(env, [...list, { role: "assistant", content: reply }]).catch((err) => console.log("Memory from Hub failed:", err.message)));
+  ctx.waitUntil(learnFromStaffChat(env, [...list, { role: "assistant", content: reply }]).catch((err) => console.log("Memory from Portal failed:", err.message)));
   return json({ reply });
 }
 
@@ -234,7 +235,7 @@ async function unsubscribe(request, env) {
 async function testNotification(env) {
   // Send it to every signed-up phone and count how many it reached
   // (tests stay out of the Alerts tab)
-  const delivered = await notifyPhones(env, { title: "Hub", body: "Test notification: notifications are working 🎉", save: false });
+  const delivered = await notifyPhones(env, { title: "Portal", body: "Test notification: notifications are working 🎉", save: false });
   // Report back
   return json({ delivered });
 }
@@ -325,7 +326,7 @@ async function voice(request, env) {
         // Ignore silence
         vad_filter: true,
         // Words it should expect
-        initial_prompt: "Nova, show alerts. Nova, call Eric. Staff giving a command to Hub, the Novacane Studios app: show enquiries, alerts, chats, delete alerts, call, email, ask NovaBot.",
+        initial_prompt: "Nova, show alerts. Nova, call Eric. Staff giving a command to Portal, the Novacane Studios staff app: show enquiries, alerts, chats, delete alerts, call, email, ask NovaBot.",
       });
       // Hand back the words
       return json({ text: (result.text || "").trim() });

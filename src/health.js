@@ -28,7 +28,7 @@ export async function dailyAcuityCheck(env, now = new Date()) {
   await notifyPhones(env, {
     title: "NovaBot can't reach Acuity",
     body: `${problem}\nUntil it's fixed, NovaBot can't book sessions or change bookings. Check the ACUITY_API_KEY secret in Cloudflare.`,
-    url: "/app/",
+    url: "/portal/",
   });
 }
 

@@ -116,7 +116,7 @@ export async function sendEnquiry(env, input, { chatId, page, ip }, waitUntil) {
       // What it's about, how to reach them, then their message (leaving out anything missing)
       body: [enquiry.subject, enquiry.phone && "Phone: " + enquiry.phone, "Email: " + enquiry.email, enquiry.details].filter(Boolean).join("\n"),
       // Tapping it opens Hub
-      url: "/app/",
+      url: "/portal/",
       // Which enquiry it is, for the Alerts tab
       enquiryId: meta.last_row_id,
     })

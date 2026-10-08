@@ -54,7 +54,7 @@ const KEEP_ALERTS_DAYS = 90;
 // kind it is, a `tag` (a newer one replaces an older one with the same tag), how
 // long it's worth delivering (`ttl`, in seconds) and whether it's `urgent` (it
 // stays on screen until it's answered, with a stronger buzz).
-export async function notifyPhones(env, { title, body, url = "/app/", save = true, appointmentId = null, enquiryId = null, style = null }) {
+export async function notifyPhones(env, { title, body, url = "/portal/", save = true, appointmentId = null, enquiryId = null, style = null }) {
   // Keep the text short enough for Apple (it allows about 4,000 characters in all)
   body = String(body).slice(0, 1500);
   // Send it to every phone and count how many Apple accepted it for

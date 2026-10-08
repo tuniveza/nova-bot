@@ -124,7 +124,7 @@ export const MANAGE_BOOKING_TOOLS = [FIND_BOOKINGS_TOOL, CANCEL_BOOKING_TOOL, RE
 
 // The extra instructions NovaBot gets in the staff chat
 export const MANAGE_BOOKINGS_RULES = `STAFF CHAT: MANAGING BOOKINGS
-You're talking to Novacane staff in Hub, not a customer. Besides everything
+You're talking to Novacane staff in Portal, not a customer. Besides everything
 above, you can look up and change existing bookings:
 - find_bookings lists bookings with their IDs. Use it to answer questions ("what's
   on Saturday?", "when is Kai in next?") and before any change.

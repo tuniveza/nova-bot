@@ -92,7 +92,7 @@ async function tellStaff(env, b, title, extraLines = []) {
     await notifyPhones(env, {
       title,
       body: [...extraLines, ...bookingLines(b)].join("\n"),
-      url: b.event_link || "/app/",
+      url: b.event_link || "/portal/",
       appointmentId: b.id,
     });
   } catch (err) {
@@ -117,7 +117,7 @@ function eventFor(env, b) {
       b.notes ? `Notes: ${b.notes}` : "",
       "",
       `Customer's page: ${manageLink(env, b)}`,
-      "Manage it in Hub (change it there, not here, so the customer is emailed).",
+      "Manage it in Portal (change it there, not here, so the customer is emailed).",
     ]
       .filter((l, i, all) => l !== "" || (i > 0 && all[i - 1] !== ""))
       .join("\n"),
@@ -370,7 +370,7 @@ export async function cancelBooking(env, b, { by, notify = true, note = "", refu
     }
   } else if (amount > 0) {
     moneyLine = `Your refund of ${money(amount)} will be processed by the team shortly.`;
-    staffLine = `Refund due: ${money(amount)}. Ask NovaBot in Hub to "refund booking ${b.id}".`;
+    staffLine = `Refund due: ${money(amount)}. Ask NovaBot in Portal to "refund booking ${b.id}".`;
   } else if (moneyState(b).net > 0) {
     moneyLine = `As it was cancelled with less than ${CANCEL_NOTICE_HOURS} hours' notice, the deposit is non-refundable.`;
     staffLine = `Within ${CANCEL_NOTICE_HOURS} hours: deposit kept.`;

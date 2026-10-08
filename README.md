@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/media/banner.jpg" alt="Hub on three phones: Quests, the smart calendar with this week at a glance, and Alerts with a booking checked in Acuity" width="900">
+<img src="docs/media/banner.jpg" alt="Portal (then called Hub) on three phones: Quests, the smart calendar with this week at a glance, and Alerts with a booking checked in Acuity" width="900">
 
 # Nova Bot
 
@@ -23,7 +23,7 @@ recording studio in London. One Worker does four jobs:
 | | What it is | Where |
 |---|---|---|
 | ✦ **NovaBot** | The chat assistant on the studio's website. Answers questions with Claude and gets bookings ready, always with the deposit first | `public/novabot.js`, `src/index.js` |
-| ✦ **Hub** | The staff app: enquiries, chats, a smart calendar, quests, alerts and a staff chat with NovaBot | Nova Agent's Hub panel (copied into `public/app/`), `src/app-page.js` |
+| ✦ **Portal** | The staff app: enquiries, chats, a smart calendar, quests, alerts, a staff chat with NovaBot, sign-in, everyone's planet and the team | Nova Agent's Portal panel (copied into `public/portal/`), `src/app-page.js`, `src/portal/` |
 | ✦ **Admin pages** | Password-protected pages for referrals, enquiries, conversations, feedback, the booking system and the master list of links | `src/admin.js` |
 | ✦ **Suite engines** | The memory behind **Index** and the sign-in behind **Portal**, shared by every Nova app | `src/memory/`, `src/portal/` |
 
@@ -37,7 +37,7 @@ any accounts.
 ## Contents
 
 - [NovaBot, on the website](#novabot-on-the-website)
-- [Hub, the staff app](#studio-the-staff-app)
+- [Portal, the staff app](#portal-the-staff-app)
 - [The admin pages](#the-admin-pages)
 - [Index: the memory engine](#nova-index-the-memory-engine)
 - [Portal: one sign-in for the suite](#nova-portal-one-sign-in-for-the-suite)
@@ -78,22 +78,25 @@ any accounts.
   with the session, a strip of days, that day's free times and the visitor's details. The
   Worker checks the time again before anything happens.
 - **Enquiries** (`src/enquiries.js`): NovaBot can take an enquiry, show the visitor a
-  summary, and send it to the team once they confirm. It's saved for Hub and the
+  summary, and send it to the team once they confirm. It's saved for Portal and the
   admin pages, and can be emailed (Resend).
 - **Safety**: per-visitor rate limits, only allowed websites can use the chat, spam
   limits on enquiries, and IP addresses stored only as a hash.
 
-## Hub, the staff app
+## Portal, the staff app
 
 The staff app (enquiries, website chats, bookings, alerts, Ask NovaBot and push to the
-staff phones) is a panel of **Nova Agent**: its pages live in Nova Agent's repo
-(`web/hub`) and are copied in at build time (see [The build step](#the-build-step)).
-Online it's at `/app/`; this Worker is its back end (`/app/api/*`, `src/app-page.js`).
-Its guide and pictures are in Nova Agent's `docs/apps/studio`.
+staff phones, plus sign-in, everyone's planet and the team) is Nova Agent's **Portal**
+panel. Hub is part of it now. Its pages live in Nova Agent's repo (`web/portal`) and are
+copied in at build time (see [The build step](#the-build-step)). Online it's at
+`/portal/`; this Worker is its back end (`/app/api/*`, `src/app-page.js`, and `src/portal/`
+for sign-in and the team). Hub's old address, `/app/`, redirects to Portal, but phones
+that installed Hub keep their push helper (`/app/sw.js`). Its guide and pictures are in
+Nova Agent's `docs/apps/portal`.
 
 ## The admin pages
 
-`/admin`, in Hub's look and themes. Sign in with Portal as an admin; signed out,
+`/admin`, in Portal's look and themes. Sign in with Portal as an admin; signed out,
 it sends you to Portal and back.
 
 | Page | What's there |
@@ -111,7 +114,7 @@ it sends you to Portal and back.
 </p>
 
 The master list is kept in the database (`settings`), never in the code, because the code
-is public. Hub's suite sheet reads the same list from `/app/api/links`
+is public. Portal's Nova Agent sheet reads the same list from `/app/api/links`
 (`src/links.js`).
 
 ## Index: the memory engine
@@ -122,7 +125,7 @@ is public. Hub's suite sheet reads the same list from `/app/api/links`
 </p>
 
 `src/memory/` is one shared memory for Nova Agent. Nova Agent's Index panel (copied in at
-`/app/memory/`) is the window onto it; NovaBot, Hub and Nova Agent read and add to it.
+`/app/memory/`) is the window onto it; NovaBot, Portal and Nova Agent read and add to it.
 
 **How it's kept.** Small files of one-line facts, one file per subject, in D1 (never in
 git). Each line is tagged: `[stated]` said directly, `[observed]` seen in bookings or
@@ -139,7 +142,7 @@ them), and at most about 800 tokens of memory go into any one prompt.
 
 **What it learns, and when.** Always in the background, never while someone waits:
 
-- **Hub's staff chats**: facts are saved straight away (staff are trusted).
+- **Portal's staff chats**: facts are saved straight away (staff are trusted).
 - **Website chats**: the every-minute job reads a chat once it's been quiet for 10 minutes
   (or every 20 messages), two chats a run. Facts about clients go into an **approval
   queue** in Index instead of being saved.
@@ -168,7 +171,7 @@ For Nova Agent (`Authorization: Bearer <AGENT_NOVA_KEY>`):
 | `POST /memory/extract` | Hand over a conversation chunk; learned in the background (202) |
 | `GET /memory/index?scope=` | The listing (no bodies) |
 
-For Hub and Index (signed in), under `/app/api/memory/`: `index`, `file`
+For Portal and Index (signed in), under `/app/api/memory/`: `index`, `file`
 (GET/PUT/DELETE), `pending`, `pending/:id` (approve or reject, optionally with an edited
 fact), and `stats`.
 
@@ -183,7 +186,7 @@ fact), and `stats`.
   </tr>
 </table>
 
-`src/portal/` signs people in once for Hub, Index and the admin pages. The
+`src/portal/` signs people in once for Portal, Index and the admin pages. The
 pages are Nova Agent's Portal panel (`web/portal` in Nova Agent's repo), copied in at build time
 (see [the build step](#the-build-step)); this Worker serves them at `/portal/` and runs the API.
 
@@ -204,7 +207,7 @@ pages are Nova Agent's Portal panel (`web/portal` in Nova Agent's repo), copied 
 - **Planets.** Every person gets a planet, drawn fresh from their seed by the planet
   generator: `GET /staff/:id/planet.svg?size=&animate=1`. It's their avatar across the
   suite.
-- **One sign-in.** There's no shared password any more: Hub, Index, the admin pages and
+- **One sign-in.** There's no shared password any more: Portal, Index, the admin pages and
   every other panel take a Portal sign-in.
 
 <details>
@@ -233,7 +236,7 @@ Changes from a browser must come from this site (the Origin header).
 ```mermaid
 flowchart LR
     V[Website visitor] -->|chat widget| W
-    S[Staff · Hub /app<br/>Index · Portal] --> W
+    S[Staff · Portal<br/>Index] --> W
     C[Nova Club app] -->|/club/busy| W
     subgraph W[Nova Bot · Cloudflare Worker]
       R[Routes · src/index.js] --> CL[Claude]
@@ -249,7 +252,7 @@ flowchart LR
     W -.->|behind the switch| G[Google Calendar · Gmail · Stripe]
 ```
 
-- **One Worker** serves the widget, the chat API, Hub, Index, Portal, the
+- **One Worker** serves the widget, the chat API, Portal, Index, the
   admin pages, webhooks and a once-a-minute cron (booking pings, and reading website chats
   for memory).
 - **D1** holds enquiries, chat logs (90 days), referral codes, notifications, settings,
@@ -280,12 +283,12 @@ Open <http://localhost:8787>: a pretend website with the chat widget on it.
 - **Everything stays on your computer.** The sandbox has its own local database and
   can't reach any live Nova Bot, database or calendar.
 - **Without an AI key**, NovaBot gives clearly labelled stand-in replies, so you can try
-  the widget, enquiries, Hub and the admin pages for free.
+  the widget, enquiries, Portal and the admin pages for free.
 - **For real answers**, put your own Claude API key
   ([console.anthropic.com](https://console.anthropic.com)) in `.dev.vars` as
   `ANTHROPIC_API_KEY=...` and restart. That uses your own Anthropic account.
-- **Admin pages and Hub**: <http://localhost:8787/admin> and
-  <http://localhost:8787/app>, any username, password `sandbox` (set in `.dev.vars`).
+- **Admin pages and Portal**: <http://localhost:8787/admin> and
+  <http://localhost:8787/portal/>; set up the first admin with the password in `.dev.vars` (`sandbox`).
 - **The booking card** needs a booking system it can check times against. To try it
   offline, start the sandbox with Nova Bot's own system switched on:
   `npx wrangler dev --env sandbox --var BOOKING_SYSTEM:nova` (no Google key means the
@@ -297,15 +300,15 @@ Open <http://localhost:8787>: a pretend website with the chat widget on it.
 
 ## The build step
 
-Nova Agent's panels (Hub, Portal, Index, Calendar, Notes, and what they share) live in
+Nova Agent's panels (Portal, Index, Calendar, Notes, and what they share) live in
 Nova Agent's repo (`na/web`). They're served from here online, so they share this
 Worker's sign-in, so before every deploy or local run, wrangler's build step
 (`"build": { "command": "node scripts/sync-apps.mjs" }`) copies them in:
 
 | From (Nova Agent) | To | What |
 |---|---|---|
-| `web/hub/` | `public/app/` | Hub |
-| `web/portal/` | `public/portal/` | Portal |
+| `web/portal/` | `public/portal/` | Portal (Hub is part of it) |
+| `web/portal/old-app-address/` | `public/app/` | What phones that installed Hub from `/app/` still use: its push helper, manifest and icons |
 | `web/index/` | `public/app/memory/` | Index |
 | `web/calendar/`, `web/notes/` | `public/calendar/`, `public/notes/` | Calendar and Notes (online, they save in the browser) |
 | `web/shared/` | `public/shared/` | Themes, sounds, the badge and the Manual |
@@ -315,9 +318,10 @@ Nova Agent is expected at `../../na`; `NOVA_AGENT_DIR` points elsewhere. The pag
 never saved in this repo (`.gitignore`). The planet generator copy is, so the project
 still builds and tests on its own.
 
-**Addresses** are the panels' own: Hub at `/app/` (its push helper is `/app/sw.js`), Index at
-`/app/memory/`, Portal at `/portal/`. The addresses they had for a day (`/studio/`, `/crew/`,
-`/index/`) redirect back.
+**Addresses**: Portal at `/portal/`, Index at `/app/memory/`. Hub's old pages (`/app/`,
+`/app/?view=alerts` and so on) redirect to Portal (`src/index.js`, `movedPage`); its API
+(`/app/api/`) and the files in `public/app/` stay. The addresses the panels had for a day
+(`/studio/`, `/crew/`, `/index/`) redirect too.
 
 ## Configuration
 
@@ -328,7 +332,7 @@ Everything secret is a **Wrangler secret** (`npx wrangler secret put NAME`), or 
 |---|---|
 | `ANTHROPIC_API_KEY` | Claude answers and memory (required live) |
 | `ADMIN_PASSWORD` | Only proves it's you when setting up the very first Portal admin |
-| `ACUITY_USER_ID`, `ACUITY_API_KEY` | Referral tracking, real-booking checks and managing bookings from Hub (Acuity's Powerhouse plan) |
+| `ACUITY_USER_ID`, `ACUITY_API_KEY` | Referral tracking, real-booking checks and managing bookings from Portal (Acuity's Powerhouse plan) |
 | `ACUITY_WEBHOOK_KEY` | Accepting Acuity's webhook (`/acuity/webhook?key=…`) |
 | `ACUITY_CALENDAR_URL` | Acuity's private calendar feed: booking details, the Calendar tab and Nova Club's busy times |
 | `ACUITY_EMAIL_KEY` | The Google Apps Script that forwards Acuity's emails (`tools/acuity-email-forwarder.gs`) |
@@ -388,7 +392,7 @@ booking system, switched **off** until you choose otherwise:
 - **Booking page** at `/book`, with the studio's **Google Calendar** as the diary,
   confirmation emails from the studio's **Gmail**, and deposits through **Stripe**.
 - **Customer pages**: each customer gets a page to pay, move or cancel.
-- **Staff tools** in Hub: cancel, move, refund and send payment links.
+- **Staff tools** in Portal: cancel, move, refund and send payment links.
 
 **The switch** is on `/admin/connections`, under "Booking system". It's stored in the
 `settings` table as `booking_system` (`acuity` or `nova`), and falls back to the
@@ -465,7 +469,7 @@ public/app, portal, calendar, … Nova Agent's panels, copied in at build time (
   memory/                          Index (copied in at build time, not in git)
 public/portal/                   Portal's pages (copied in at build time, not in git)
 src/index.js                     the Worker: chat, voice, routes, NovaBot's instructions
-src/app-page.js                  Hub's API (/app/api/*)
+src/app-page.js                  Portal's staff API (/app/api/*, from when it was Hub)
 src/hub-ask.js                Ask Nova: questions about bookings, enquiries and alerts
 src/admin.js                     the admin pages
 src/links.js                     the master list: links, features, changelog
@@ -501,7 +505,7 @@ docs/media/                      README images (all sample data)
 
 | Project | What it is |
 |---|---|
-| [nova-agent](https://github.com/tuniveza/nova-agent) | The studio's one app: chat, Missions and Quests, and every panel (Hub, Portal, Calendar, Notes, Index, Observatory, Lossless audio). On the studio PC, and online from here for phones |
+| [nova-agent](https://github.com/tuniveza/nova-agent) | The studio's one app: chat, Missions and Quests, and every panel (Portal, Calendar, Notes, Index, Observatory, Lossless audio). On the studio PC, and online from here for phones |
 | **[nova-bot](https://github.com/tuniveza/nova-bot)** | This repo: NovaBot on the website, and the back end behind Nova Agent (sign-in, push, bookings, the memory engine, jobs) |
 | [nova-club](https://github.com/tuniveza/nova-club) | Members' Android app that shows the studio's busy times |
 

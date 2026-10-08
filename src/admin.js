@@ -716,7 +716,7 @@ async function saveLinksForm(env, form) {
   return back(`Saved: ${saved.groups.reduce((n, g) => n + g.items.length, 0)} links in ${saved.groups.length} groups.`, "/admin/links");
 }
 
-// The admin pages' look: Hub's (every colour comes from /app/themes.css)
+// The admin pages' look: Portal's (every colour comes from /shared/themes.css)
 const ADMIN_STYLE = `
   * { box-sizing: border-box; }
   body {
@@ -727,7 +727,7 @@ const ADMIN_STYLE = `
   a { color: var(--hi); }
   input, button, select, textarea { font: inherit; color: inherit; }
   .kicker { display: block; font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); }
-  /* The header: brand, tabs, a way into Hub */
+  /* The header: brand, tabs, a way into Portal */
   header.top {
     position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
     padding: 12px max(16px, 3vw); background: rgba(var(--void-rgb), 0.72); backdrop-filter: blur(14px) saturate(1.4);
@@ -796,7 +796,7 @@ const ADMIN_STYLE = `
   .transcript .line p { margin: 4px 0 0; white-space: pre-wrap; }
   .transcript .visitor p { color: var(--bright); }
   code { font-family: var(--f-mono); font-size: 0.92em; }
-  /* Theme picker at the bottom (drawn by /app/themes.js) */
+  /* Theme picker at the bottom (drawn by /shared/themes.js) */
   .theme-bar { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line); }
   .theme-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-top: 10px; max-width: 820px; }
   .theme-swatch { display: grid; gap: 6px; padding: 6px; border-radius: 14px; border: 1px solid var(--line); background: var(--glass); cursor: pointer; text-align: left; color: var(--text); }
@@ -844,7 +844,7 @@ const ADMIN_STYLE = `
     .open-hub { margin-left: 0; }
     nav.tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
   }
-  /* Centred (the default, as in Hub's Options; "left" brings back the classic layout) */
+  /* Centred (the default, as in Portal's Options; "left" brings back the classic layout) */
   html[data-align="center"] header.top { justify-content: center; text-align: center; }
   html[data-align="center"] .brand { flex-direction: column; gap: 6px; }
   html[data-align="center"] .open-hub { margin-left: 0; }
@@ -874,8 +874,8 @@ async function page(env, title, url, body) {
     .map(([label, href]) => `<a href="${href}" class="${label.startsWith(title) ? "current" : ""}">${e(label)}</a>`)
     .join("");
 
-  // The page, in Hub's look: the same theme colours (/app/themes.css) and theme picker
-  // (/app/themes.js) as the app, so a theme picked in either shows in both
+  // The page, in Portal's look: the same theme colours (/shared/themes.css) and theme picker
+  // (/shared/themes.js) as Portal, so a theme picked in either shows in both
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -883,8 +883,8 @@ async function page(env, title, url, body) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#06040D">
-<title>${e(title)} | Hub admin</title>
-<link rel="icon" href="/app/icon.svg" type="image/svg+xml">
+<title>${e(title)} | Admin · Portal</title>
+<link rel="icon" href="/portal/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Saira:wght@300..700&family=Source+Code+Pro:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/shared/themes.css">
@@ -897,11 +897,11 @@ async function page(env, title, url, body) {
 <body>
 <header class="top">
   <a class="brand" href="/admin">
-    <img src="/app/icon.svg" alt="" width="40" height="40">
-    <span><span class="kicker">Nova Agent · Novacane</span><span class="wordmark">Hub <em>admin</em></span></span>
+    <img src="/portal/icon.svg" alt="" width="40" height="40">
+    <span><span class="kicker">Nova Agent · Novacane</span><span class="wordmark">Portal <em>admin</em></span></span>
   </a>
   <nav class="tabs">${tabs}</nav>
-  <a class="open-hub" href="/app/">Open Hub ↗</a>
+  <a class="open-hub" href="/portal/">Open Portal ↗</a>
   <nova-manual compact></nova-manual>
   <nova-portal-badge></nova-portal-badge>
 </header>
