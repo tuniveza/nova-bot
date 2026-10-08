@@ -36,9 +36,9 @@ describe("a panel opened on its own opens inside Nova Agent", () => {
     expect(res.headers.get("Location")).toBe(`${BASE}/agent/?open=${encodeURIComponent(address)}`);
   });
 
-  it("Hub's old address still goes to Portal first (then into Nova Agent)", async () => {
+  it("Hub's old address opens Portal in Nova Agent, on the same view", async () => {
     const res = await get("/app/?view=alerts", onItsOwn);
-    expect(res.headers.get("Location")).toBe(`${BASE}/portal/?view=alerts`);
+    expect(res.headers.get("Location")).toBe(`${BASE}/agent/?open=${encodeURIComponent("/portal/?view=alerts")}`);
   });
 });
 
@@ -58,7 +58,7 @@ describe("inside Nova Agent the panels are themselves", () => {
 });
 
 describe("what isn't a page stays as it is", () => {
-  it.each(["/admin/report.csv", "/lossless/ice", "/lossless/ws", "/admin/google", "/admin/google/callback", "/app/api/me", "/portal/app.js", "/calendar/js/app.js"])("%s isn't sent to Nova Agent", async (path) => {
+  it.each(["/admin/report.csv", "/lossless/ice", "/lossless/ws", "/admin/google", "/admin/google/callback", "/portal/app.js", "/calendar/js/app.js"])("%s isn't sent to Nova Agent", async (path) => {
     const res = await get(path, onItsOwn);
     expect(res.headers.get("Location") || "").not.toContain("/?open=");
   });
@@ -95,5 +95,33 @@ describe("what isn't a page stays as it is", () => {
     const res = await get(from, onItsOwn);
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(`${BASE}/agent/${query}`);
+  });
+});
+
+describe("/agent/ is the only address", () => {
+  it.each([
+    ["/anything-else", ""],
+    ["/admin/enquiries", "?open=" + encodeURIComponent("/admin/enquiries")],
+    ["/app/api/me", "?open=" + encodeURIComponent("/portal/")],
+    ["/studio/", "?open=" + encodeURIComponent("/portal/")],
+    ["/crew/x", "?open=" + encodeURIComponent("/portal/x")],
+    ["/index/", "?open=" + encodeURIComponent("/app/memory/")],
+    ["/staff", ""],
+    ["/nova-agent/next", ""],
+    ["/agent/nothing", ""],
+  ])("a browser opening %s goes to /agent/%s", async (from, query) => {
+    const res = await get(from, onItsOwn);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`${BASE}/agent/${query}`);
+  });
+
+  it.each(["/privacy", "/referral", "/book", "/admin/google/callback", "/agent/icon.svg", "/novabot.js", "/admin/report.csv"])("%s stays (a customer page, connecting Google, or a file)", async (path) => {
+    const res = await get(path, onItsOwn);
+    expect(res.headers.get("Location") || "").not.toContain("/agent/");
+  });
+
+  it("the apps' own requests (not pages) aren't redirected", async () => {
+    const res = await get("/app/api/me");
+    expect(res.status).not.toBe(302);
   });
 });

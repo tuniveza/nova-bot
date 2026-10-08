@@ -704,6 +704,9 @@ export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
 
+    // https://…/agent/ is the only address: any other page opened in a browser goes there
+    const onlyAgent = onlyNovaAgent(request, env, pathname);
+    if (onlyAgent) return onlyAgent;
     // Nova Agent's Portal panel online (its pages are copied into public/ from Nova Agent's
     // repo; its data is here). The staff API keeps its address (/app/api/, from when it was Hub).
     if (pathname.startsWith("/app/api/")) return handleApp(request, env, ctx, answer);
@@ -1422,6 +1425,31 @@ function novaAgentPage(request, env, pathname) {
   if (pathname === "/admin" || pathname.startsWith("/admin/") || pathname.startsWith("/observatory/data/") || pathname.startsWith("/observatory/media/")) return null;
   if (pathname.endsWith("/") || pathname.endsWith(".html") || pathname === "/visualizer") return env.ASSETS.fetch(request);
   return null;
+}
+
+// Nova Agent's one address. A page opened in a browser (Sec-Fetch-Dest: document) anywhere else
+// goes to /agent/: a panel's address (or one it had before, or /agent/<panel>) opens that panel,
+// anything else just Nova Agent. Files (scripts, icons, a CSV) aren't pages and stay as they are,
+// and so do the website chat's pages for customers (Nova Bot's own) and connecting Google.
+const CUSTOMER_PAGES = /^\/(book(\/.*)?|referral|privacy)$/;
+function panelFor(pathname) {
+  if (pathname.startsWith(AGENT)) return PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")] || "";
+  if (PANELS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return pathname;
+  if (pathname === "/app" || pathname.startsWith("/app/") || pathname === "/studio" || pathname.startsWith("/studio/")) return "/portal/";
+  if (pathname === "/crew" || pathname.startsWith("/crew/")) return "/portal/" + pathname.slice("/crew/".length);
+  if (pathname === "/index" || pathname.startsWith("/index/")) return "/app/memory/" + pathname.slice("/index/".length);
+  return "";
+}
+function onlyNovaAgent(request, env, pathname) {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  if (request.headers.get("Sec-Fetch-Dest") !== "document") return null;
+  if (pathname === AGENT || CUSTOMER_PAGES.test(pathname) || NOT_PAGES.test(pathname)) return null;
+  if (env.SANDBOX === "true" && (pathname === "/" || pathname === "/sandbox")) return null;
+  const last = pathname.slice(pathname.lastIndexOf("/") + 1);
+  if (last.includes(".") && !last.endsWith(".html")) return null;
+  const url = new URL(request.url);
+  const panel = panelFor(pathname);
+  return Response.redirect(new URL(AGENT + (panel ? "?open=" + encodeURIComponent(panel + url.search) : ""), url).toString(), 302);
 }
 
 function movedPage(request, env, pathname) {

@@ -2,7 +2,7 @@
 //
 // Both apps keep everything in the browser, per site, so a plain redirect would strand what's
 // saved there. Instead, opening the old address shows a page that looks in this browser:
-//   nothing saved here → straight on to the new address (Nova Bot's /notes/ or /calendar/)
+//   nothing saved here → straight on to Nova Agent (/agent/), with Notes or Calendar open
 //   something saved    → "Download a backup", then open the new address and restore it there
 //                        (Notes: ⋯ → Restore a backup…; Calendar: Import)
 // Its old offline helper (/sw.js) is replaced by one that clears what it kept and steps aside,
@@ -41,7 +41,10 @@ export default {
   async fetch(request, env) {
     const app = APPS[env.APP] || APPS.notes;
     const url = new URL(request.url);
-    const target = NEW_SITE + app.path + url.pathname.replace(/^\/+/, "").replace(/^(index\.html)?$/, "") + url.search;
+    const moved = app.path + url.pathname.replace(/^\/+/, "").replace(/^(index\.html)?$/, "") + url.search;
+    // A page goes to Nova Agent (the only address), with this app's panel open; a file to its new address
+    const target = NEW_SITE + "/agent/?open=" + encodeURIComponent(moved);
+    const file = NEW_SITE + moved;
 
     if (url.pathname === "/sw.js") {
       return new Response(RETIRE_SW, { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" } });
@@ -49,7 +52,7 @@ export default {
     // Pages get the move page (it has to run here to see what this browser saved for this site);
     // everything else (scripts, icons, the manifest) goes straight to its new address
     const page = request.method === "GET" && (request.headers.get("Sec-Fetch-Mode") === "navigate" || (request.headers.get("Accept") || "").includes("text/html"));
-    if (!page) return Response.redirect(target, 301);
+    if (!page) return Response.redirect(file, 301);
     return new Response(movePage(app, target), {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
@@ -87,10 +90,10 @@ function movePage(app, target) {
   <h1>${app.name} has moved</h1>
   <p id="looking">Checking what's saved in this browser…</p>
   <div id="has" hidden>
-    <p>It's part of Nova Agent now. This browser still has <b id="count"></b> saved at this old address. Each address keeps its own, so bring them with you:</p>
+    <p>It's part of Nova Agent now (novacane-worker.novacane-studio.workers.dev/agent/). This browser still has <b id="count"></b> saved at this old address. Each address keeps its own, so bring them with you:</p>
     <button class="btn main" id="save" type="button">1. Download a backup</button>
     <p id="saved" class="done" hidden>Backup downloaded.</p>
-    <a class="btn" id="go" href="${target}">2. Open ${app.name} at its new address</a>
+    <a class="btn" id="go" href="${target}">2. Open ${app.name} in Nova Agent</a>
     <p style="margin-top:14px">${app.restore}</p>
   </div>
 </main>
