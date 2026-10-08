@@ -94,7 +94,7 @@ describe("staff and invites", () => {
 		const token = new URL(made.data.invite_url).searchParams.get("invite");
 		expect((await call(`/auth/invite?token=${encodeURIComponent(token)}`)).data.email).toBe("kai@novacane.co.uk");
 		expect((await call("/auth/login", { method: "POST", body: { email: "kai@novacane.co.uk", password: PASS } })).status).toBe(401);
-		expect((await call("/auth/invite/accept", { method: "POST", body: { token, password: "short" } })).status).toBe(400);
+		expect((await call("/auth/invite/accept", { method: "POST", body: { token, password: "" } })).status).toBe(400);
 		const joined = await call("/auth/invite/accept", { method: "POST", body: { token, password: PASS } });
 		expect(joined.status).toBe(200);
 		expect((await call("/auth/me", { cookie: joined.cookie })).data.staff).toMatchObject({ id: "kai", role: "staff", status: "active" });

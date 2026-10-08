@@ -51,10 +51,11 @@ describe("changing your password", () => {
     expect(await verifyPassword("a brand new password", await hashOf("test-staff"))).toBe(true);
   });
 
-  it("turns down a weak password", async () => {
-    const r = await call("/auth/password", { method: "POST", cookie: STAFF_COOKIE, body: { password: "short" } });
-    expect(r.status).toBe(400);
+  it("any password is fine, as long as there is one", async () => {
+    expect((await call("/auth/password", { method: "POST", cookie: STAFF_COOKIE, body: { password: "" } })).status).toBe(400);
     expect(await verifyPassword("old admin password", await hashOf("test-admin"))).toBe(true);
+    expect((await call("/auth/password", { method: "POST", cookie: STAFF_COOKIE, body: { password: "abc" } })).status).toBe(200);
+    expect(await verifyPassword("abc", await hashOf("test-admin"))).toBe(true);
   });
 
   it("only from this site", async () => {

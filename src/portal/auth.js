@@ -45,12 +45,12 @@ export async function verifyPassword(password, stored) {
   return sameText(b64url(await pbkdf2(String(password), fromB64url(salt), Number(rounds))), hash);
 }
 
-// A good-enough password: at least 10 characters, not all one kind of thing
+// Any password the person likes (the studio's choice): just not empty or absurdly long.
+// Guessing is held back by the few-tries-a-minute limit on signing in.
 export function passwordProblem(password) {
   const p = String(password || "");
-  if (p.length < 10) return "Use at least 10 characters.";
+  if (!p) return "Type a password.";
   if (p.length > 200) return "That's too long.";
-  if (/^(.)\1+$/.test(p) || /^(password|novacane|123456)/i.test(p)) return "Pick something harder to guess.";
   return "";
 }
 
