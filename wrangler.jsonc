@@ -30,7 +30,9 @@
 	"ai": { "binding": "AI" },
 	// The chat widget files (novabot.js, novabot.css) the website loads
 	// Observatory's projects and media are for signed-in staff, so this Worker answers them first
-	"assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/observatory/data/*", "/observatory/media/*"] },
+	// Nova Agent's page (/) and the panels' pages go through the Worker first, so a panel opened
+	// on its own can be sent into Nova Agent (novaAgentPage in src/index.js)
+	"assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/", "/visualizer", "/portal/", "/portal/index.html", "/calendar/", "/calendar/index.html", "/notes/", "/notes/index.html", "/app/memory/", "/app/memory/index.html", "/observatory/", "/observatory/index.html", "/lossless/", "/lossless/index.html", "/observatory/data/*", "/observatory/media/*"] },
 	// Lossless audio's signalling: one LosslessRoom per room code (src/lossless/room.js)
 	"durable_objects": { "bindings": [{ "name": "LOSSLESS_ROOMS", "class_name": "LosslessRoom" }] },
 	"migrations": [{ "tag": "lossless-v1", "new_sqlite_classes": ["LosslessRoom"] }],

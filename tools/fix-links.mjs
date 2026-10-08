@@ -1,6 +1,8 @@
-// Brings Admin → Links (the "url_directory" setting in D1) up to date with Nova Agent as one app:
-// plain panel names, Hub folded into Portal, every panel at its address on Nova Bot, the
-// Nova Agent addresses at /nova-agent/*, and the old standalone sites and deleted folders gone.
+// Brings Admin → Links (the "url_directory" setting in D1) up to date with Nova Agent as the one
+// app: for the studio team there's Nova Agent online (Nova Bot's main address) and on the studio
+// computer, and the panels (Portal, Calendar, Notes, Index, Observatory, Lossless audio, Admin)
+// are inside it, so they aren't listed one by one. Also: plain names, Hub folded into Portal, the
+// Nova Agent addresses at /nova-agent/*, and the old standalone sites and dead addresses gone.
 //
 // The list is only in the database (src/links.js), so this reads the live copy and writes SQL:
 //   npx wrangler d1 execute novabot --remote --json --command "SELECT value FROM settings WHERE key='url_directory'" > links-now.json
@@ -38,7 +40,9 @@ const plain = (s) =>
     .replace(/\bPortal and Portal\b/g, "Portal");
 
 // Items in a group: renamed and moved by their address, dropped, or added
-const RETIRED = [/\/\/nova-notes\./, /\/\/nova-calendar\./, /localhost:4610/, /github\.com\/tuniveza\/nova-portal$/];
+const RETIRED = [/\/\/nova-notes\./, /\/\/nova-calendar\./, /\/\/nova-agent\.novacane-studio\./, /localhost:4610/, /github\.com\/tuniveza\/nova-portal$/];
+// The panels' own addresses (online and on the studio computer): they open inside Nova Agent now
+const PANEL = new RegExp(`^(${W}|${A})/(portal|calendar|notes|app/memory|observatory|lossless|visualizer|admin)(/|$)`);
 const HUB = /\/app\/?$/;
 const MOVED = [
   [/\/hub\/agent\/next$/, `${W}/nova-agent/next`],
@@ -46,17 +50,8 @@ const MOVED = [
   [/\/hub\/notify$/, `${W}/nova-agent/notify`],
 ];
 const team = [
-  { name: "Portal", url: `${W}/portal/`, kind: "live", note: "One sign-in; enquiries, chats, calendar, quests, alerts and Nova Bot (what Hub was); your profile and planet, the team, invites" },
-  { name: "Index", url: `${W}/app/memory/`, kind: "live", note: "Everything Nova Agent remembers: browse, edit, approve (Portal sign-in)" },
-  { name: "Calendar", url: `${W}/calendar/`, kind: "live", note: "Note cards and day cards; online it saves in the browser" },
-  { name: "Notes", url: `${W}/notes/`, kind: "live", note: "Notes and documents, Google Docs export; online it saves in the browser" },
-  { name: "Observatory", url: `${W}/observatory/`, kind: "live", note: "Every project, lines of code and the star map (projects for signed-in staff)" },
-  { name: "Lossless audio", url: `${W}/lossless/`, kind: "live", note: "Raw PCM between two devices, anywhere (TURN relay once its key is set)" },
-];
-const agent = [
-  { name: "Nova Agent: Portal", url: `${A}/portal/`, kind: "local", note: "Portal inside Nova Agent, signed in as you" },
-  { name: "Nova Agent: Observatory", url: `${A}/observatory/`, kind: "local", note: "The project dashboard (always on)" },
-  { name: "Nova Agent: Lossless audio", url: `${A}/lossless/`, kind: "local", note: "The same page; calls go through Nova Bot, so the other device can be anywhere" },
+  { name: "Nova Agent", url: `${W}/`, kind: "live", note: "The studio's one app, anywhere: chat, Missions and Quests (through the studio PC), with Portal, Calendar, Notes, Index, Observatory, Lossless audio and Admin inside it. Sign in once with the planet at the top." },
+  { name: "Nova Agent on the studio computer", url: `${A}/`, kind: "local", note: "The same app, on the studio PC (where its chat, Missions and Quests run)" },
 ];
 
 const byUrl = (items, url) => items.findIndex((i) => i.url.replace(/\/$/, "") === url.replace(/\/$/, ""));
@@ -77,18 +72,11 @@ for (const g of list.groups || []) {
       const moved = MOVED.find(([r]) => r.test(i.url));
       return { ...i, name: plain(i.name).replace(/^Nova Agent: plan for Portal$/, "Nova Agent: its plan (Portal's Quests)"), url: moved ? moved[1] : i.url, note: plain(i.note) };
     });
+  // The panels are inside Nova Agent: no separate links for them (or for Nova Agent's own pages)
+  g.items = g.items.filter((i) => i.kind === "machine" || (!PANEL.test(i.url) && !(/^Nova Agent\b/.test(g.title) && i.url.startsWith(A))));
   if (/studio team/i.test(g.title)) {
-    g.note = "Nova Agent's panels, online for phones and anywhere away from the studio PC. Sign in once with Portal.";
+    g.note = "Nova Agent is the one app: everything for the team is inside it.";
     team.forEach((t, n) => upsert(g.items, t, n));
-  }
-  if (/^Nova Agent\b/.test(g.title)) {
-    for (const i of g.items) {
-      if (i.url === `${A}/calendar/`) i.name = "Nova Agent: Calendar";
-      if (i.url === `${A}/notes/`) i.name = "Nova Agent: Notes";
-      if (i.url === `${A}/app/memory/`) i.name = "Nova Agent: Index";
-      if (i.url === `${A}/observatory/`) i.name = "Nova Agent: Observatory";
-    }
-    for (const a of agent) upsert(g.items, a);
   }
   if (/behind the scenes/i.test(g.title)) {
     upsert(g.items, { name: "Lossless audio: calls", url: `${W}/lossless/ice`, kind: "machine", note: "Relay setup for a call; signalling is /lossless/ws" });
@@ -97,6 +85,9 @@ for (const g of list.groups || []) {
     for (const i of g.items) if (/dash\.cloudflare\.com/.test(i.url)) i.note = "Nova Bot (with Nova Agent's panels online)";
   }
 }
+
+// A group left with nothing in it (Nova Agent's studio-computer pages) goes
+list.groups = (list.groups || []).filter((g) => g.items.length);
 
 for (const f of list.features || []) {
   f.app = plain(f.app);
@@ -116,20 +107,20 @@ if (portals.length > 1) {
 }
 for (const f of list.features || []) {
   if (f.app === "Index") f.note = "Nova Agent's memory, and the panel to see it.";
-  if (f.app === "Observatory") f.note = "The project dashboard: a panel of Nova Agent, and online at /observatory/ for signed-in staff.";
-  if (f.app === "Notes") f.note = "A note editor in Nova Agent's look; a panel of Nova Agent, and online at /notes/.";
-  if (f.app === "Calendar") f.note = "Note cards and day cards; a panel of Nova Agent, and online at /calendar/.";
+  if (f.app === "Observatory") f.note = "The project dashboard: a panel of Nova Agent (projects for signed-in staff).";
+  if (f.app === "Notes") f.note = "A note editor in Nova Agent's look: a panel of Nova Agent.";
+  if (f.app === "Calendar") f.note = "Note cards and day cards: a panel of Nova Agent.";
 }
 
 // The change, in the changelog (once)
 const entry = {
   date: today,
   app: "Nova Agent",
-  size: "small",
-  title: "Every panel at its real address",
-  what: "Links now lists the panels by their plain names and real addresses on Nova Bot, with Observatory and Lossless audio online too. The old standalone Notes and Calendar sites now move people (and their saved notes) to the new addresses.",
-  why: "The list still pointed at addresses from before Nova Agent became one app.",
-  benefit: "Every link here opens the app you expect.",
+  size: "major",
+  title: "Nova Agent is the one app, everywhere",
+  what: "Nova Agent is at Nova Bot's main address online, as well as on the studio PC. Portal, Calendar, Notes, Index, Observatory, Lossless audio and Admin open only inside it; their old addresses open Nova Agent with that panel. One home-screen app, one sign-in (the planet at the top).",
+  why: "There were pages and pages of separate apps; Nova Agent is the only app there is.",
+  benefit: "One address, one app to install, and everything in one place.",
 };
 list.changelog = list.changelog || [];
 if (!list.changelog.some((c) => c.title === entry.title)) list.changelog.unshift(entry);

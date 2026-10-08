@@ -333,8 +333,11 @@ describe("sandbox mode", () => {
 	it("serves the demo page only in the sandbox", async () => {
 		let res = await worker.fetch(new Request(BASE + "/"), { ...env, ...sandbox });
 		expect(await res.text()).toContain("NovaBot sandbox");
+		// Everywhere else the main address is Nova Agent
 		res = await worker.fetch(new Request(BASE + "/"), env);
-		expect(await res.text()).toBe("Novacane chatbot is running.");
+		const page = await res.text();
+		expect(page).toContain("Nova Agent");
+		expect(page).not.toContain("NovaBot sandbox");
 	});
 
 	it("gives a labelled stand-in reply without an AI key, and lets local pages use it", async () => {

@@ -198,9 +198,9 @@ describe("Admin page", () => {
 });
 
 describe("Chat routes", () => {
-	it("still answers the chat widget's health check", async () => {
+	it("shows Nova Agent at the main address (the chat widget only POSTs there)", async () => {
 		const res = await worker.fetch(new Request(`${BASE}/`), env);
-		expect(await res.text()).toBe("Novacane chatbot is running.");
+		expect(await res.text()).toContain("Nova Agent");
 	});
 });
 
