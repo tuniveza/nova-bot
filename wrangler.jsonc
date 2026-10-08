@@ -30,10 +30,10 @@
 	"ai": { "binding": "AI" },
 	// The chat widget files (novabot.js, novabot.css) the website loads
 	// Observatory's projects and media are for signed-in staff, so this Worker answers them first
-	"assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/observatory/data/*", "/observatory/media/*"] },
+	"assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/observatory/data/*", "/observatory/media/*", "/calendar/", "/calendar/index.html"] },
 	// Lossless audio's signalling: one LosslessRoom per room code (src/lossless/room.js)
-	"durable_objects": { "bindings": [{ "name": "LOSSLESS_ROOMS", "class_name": "LosslessRoom" }] },
-	"migrations": [{ "tag": "lossless-v1", "new_sqlite_classes": ["LosslessRoom"] }],
+	"durable_objects": { "bindings": [{ "name": "LOSSLESS_ROOMS", "class_name": "LosslessRoom" }, { "name": "AGENT_LINK", "class_name": "AgentLink" }] },
+	"migrations": [{ "tag": "lossless-v1", "new_sqlite_classes": ["LosslessRoom"] }, { "tag": "agent-link-v1", "new_sqlite_classes": ["AgentLink"] }],
 	// Referral tracking: appointments and referral codes.
 	// Create it once with `npx wrangler d1 create novabot` and paste the
 	// database_id it prints here (see README-REFERRALS.md).
@@ -53,7 +53,7 @@
 		"sandbox": {
 			"name": "novabot-sandbox",
 			"vars": { "SANDBOX": "true", "PUBLIC_URL": "http://localhost:8787" },
-			"durable_objects": { "bindings": [{ "name": "LOSSLESS_ROOMS", "class_name": "LosslessRoom" }] },
+			"durable_objects": { "bindings": [{ "name": "LOSSLESS_ROOMS", "class_name": "LosslessRoom" }, { "name": "AGENT_LINK", "class_name": "AgentLink" }] },
 			"d1_databases": [
 				{
 					"binding": "DB",

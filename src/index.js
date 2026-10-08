@@ -57,6 +57,8 @@ import * as novaManage from "./nova/manage-bookings.js";
 import lossless from "./lossless/worker.js";
 import { requireStaff } from "./portal/auth.js";
 export { LosslessRoom } from "./lossless/room.js";
+export { AgentLink } from "./agent-relay.js";
+import { calendarPage, handleLink, handleRelay, isRelayed, linkStatus } from "./agent-relay.js";
 
 // ===== THINGS YOU CAN EDIT =====
 
@@ -710,6 +712,10 @@ export default {
     // Addresses the panels had for a day go back to their own
     const moved = movedPage(request, env, pathname);
     if (moved) return moved;
+    // Nova Agent online: its own addresses (chat, Missions, Quests, Calendar's data, Visualizer)
+    // go to the studio PC over its link (src/agent-relay.js); Calendar's page saves there too
+    if (isRelayed(pathname)) return handleRelay(request, env, ctx);
+    if (request.method === "GET" && (pathname === "/calendar/" || pathname === "/calendar/index.html")) return calendarPage(request, env);
     // Lossless audio: its page is in public/lossless/; signalling and the relay setup are here
     if (pathname === "/lossless/ws" || pathname === "/lossless/ice") return lossless.fetch(request, env);
     // Observatory's projects and media (the studio's own work) are for signed-in staff
@@ -732,6 +738,8 @@ export default {
     }
     // Nova Agent on the studio PC: collecting jobs, sending alerts and its plan, with its own key.
     // /nova-agent/* is the address; /hub/* still answers for a Nova Agent that hasn't updated yet.
+    if (pathname === "/nova-agent/link") return handleLink(request, env);
+    if (pathname === "/nova-agent/link/status") return linkStatus(request, env);
     if (pathname === "/nova-agent/notify") return handleAgentNova(request, env, "/hub/notify");
     if (pathname.startsWith("/nova-agent/")) return handleAgentNova(request, env, "/hub/agent/" + pathname.slice("/nova-agent/".length));
     if (pathname === "/hub/notify" || pathname.startsWith("/hub/agent/")) return handleAgentNova(request, env, pathname);
