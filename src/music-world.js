@@ -83,6 +83,21 @@ export async function handleMusicWorld(request, env, ctx, pathname) {
       return new Response("No photo", { status: 404, headers: { "Cache-Control": `public, max-age=${HOURS}` } });
     });
   }
+  // GET /music-world/file/<Commons file name>: one exact photo from Wikimedia Commons (a product
+  // photo chosen by hand), served from here. Kept a week. 404 when it can't be had.
+  const f = /^\/music-world\/file\/([^/]{1,160})$/.exec(pathname);
+  if (f) {
+    return cached(request, ctx, async () => {
+      try {
+        const name = decodeURIComponent(f[1]);
+        if (!/^[\w .()'&,-]+\.(jpe?g|png|webp)$/i.test(name)) return new Response("Not a photo", { status: 400 });
+        const img = await fetch(`https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(name)}?width=240`, { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" } });
+        if (img.ok && /^image\//.test(img.headers.get("Content-Type") || ""))
+          return new Response(img.body, { headers: { "Content-Type": img.headers.get("Content-Type"), "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${7 * 24 * HOURS}` } });
+      } catch (err) {}
+      return new Response("No photo", { status: 404, headers: { "Cache-Control": `public, max-age=${HOURS}` } });
+    });
+  }
   // GET /music-world/art?q=<artist and song>: album art for a song (Apple's public music search),
   // as a redirect to the picture. Kept a week. 404 when nothing's found.
   if (pathname === "/music-world/art") {
