@@ -6,8 +6,11 @@
 //   GET /music-world/photo/<Wiki_Title>
 //     A musician's photo (for the quote of the day): Wikipedia's picture for that page, as a
 //     redirect to the image. Kept a week. 404 when there isn't one (the page shows initials).
+//   GET /music-world/art?q=<artist and song>   album art (Apple's public music search)
 const MARKETS = ["us", "gb", "br", "mx", "de", "fr", "jp", "kr", "in", "ng", "au", "es"];
 const HOURS = 3600;
+// Apple's chart feed turns away requests that don't look like a browser
+const BROWSER = { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36", Accept: "application/json" };
 
 const json = (data, status = 200, maxAge = 6 * HOURS) =>
   new Response(JSON.stringify(data), {
@@ -28,7 +31,7 @@ async function cached(request, ctx, make) {
 async function topSongs() {
   const lists = await Promise.all(
     MARKETS.map((m) =>
-      fetch(`https://rss.applemarketingtools.com/api/v2/${m}/music/most-played/25/songs.json`, { cf: { cacheTtl: 6 * HOURS, cacheEverything: true } })
+      fetch(`https://rss.marketingtools.apple.com/api/v2/${m}/music/most-played/25/songs.json`, { headers: BROWSER, cf: { cacheTtl: 6 * HOURS, cacheEverything: true } })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null)
     )
@@ -55,7 +58,8 @@ export async function handleMusicWorld(request, env, ctx, pathname) {
   if (pathname === "/music-world") {
     return cached(request, ctx, async () => {
       const top = await topSongs();
-      if (!top.length) return json({ updated: new Date().toISOString(), top: [], note: "The charts couldn't be reached just now." }, 200, 600);
+      // (not kept: the next look tries again)
+      if (!top.length) return json({ updated: new Date().toISOString(), top: [], note: "The charts couldn't be reached just now." }, 503, 0);
       return json({ updated: new Date().toISOString(), source: "Apple Music most played, 12 markets", top });
     });
   }
@@ -66,10 +70,26 @@ export async function handleMusicWorld(request, env, ctx, pathname) {
         const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${m[1]}`, { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" } });
         const data = r.ok ? await r.json() : null;
         const src = data && data.thumbnail && data.thumbnail.source;
-        if (src && /^https:\/\/upload\.wikimedia\.org\//.test(src))
+        if (src && /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(src))
           return new Response(null, { status: 302, headers: { Location: src, "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${7 * 24 * HOURS}` } });
       } catch (err) {}
       return new Response("No photo", { status: 404, headers: { "Cache-Control": `public, max-age=${HOURS}` } });
+    });
+  }
+  // GET /music-world/art?q=<artist and song>: album art for a song (Apple's public music search),
+  // as a redirect to the picture. Kept a week. 404 when nothing's found.
+  if (pathname === "/music-world/art") {
+    const q = (new URL(request.url).searchParams.get("q") || "").slice(0, 120);
+    if (!q) return json({ error: "Say what to look for" }, 400, 0);
+    return cached(request, ctx, async () => {
+      try {
+        const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=1`, { headers: BROWSER });
+        const data = r.ok ? await r.json() : null;
+        const art = data && data.results && data.results[0] && data.results[0].artworkUrl100;
+        if (art && /^https:\/\/[\w.-]+\.mzstatic\.com\//.test(art))
+          return new Response(null, { status: 302, headers: { Location: art.replace(/100x100bb/, "200x200bb"), "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${7 * 24 * HOURS}` } });
+      } catch (err) {}
+      return new Response("No art", { status: 404, headers: { "Cache-Control": `public, max-age=${HOURS}` } });
     });
   }
   return json({ error: "Not found" }, 404, 0);
