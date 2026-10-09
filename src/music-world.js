@@ -20,7 +20,9 @@ const json = (data, status = 200, maxAge = 6 * HOURS) =>
 
 async function cached(request, ctx, make) {
   const cache = caches.default;
-  const key = new Request(new URL(request.url).toString(), { method: "GET" });
+  const u = new URL(request.url);
+  u.searchParams.set("v", "2"); // bump to forget what was kept before
+  const key = new Request(u.toString(), { method: "GET" });
   const hit = await cache.match(key);
   if (hit) return hit;
   const res = await make();
