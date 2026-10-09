@@ -35,7 +35,11 @@ const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 export async function planetFacts(seed, overrides) {
   const { generatePlanet, novaTheme } = await import("./planet/index.js");
   const p = generatePlanet(seed, novaTheme, overrides || undefined);
-  return { name: p.name, description: p.description, surface: p.surface, glow: p.glow && p.glow.color };
+  const c = p.colors || {};
+  const bg = p.background || {};
+  // Its colours too, so Nova Agent can colour everything from your planet (look.js)
+  const colors = { glow: c.glow || (p.glow && p.glow.color), streak: c.streak || c.base, light: c.light, base: c.base, sky: (bg.colors || [])[0], nebula0: (bg.nebula || [])[0], nebula2: (bg.nebula || [])[2] };
+  return { name: p.name, description: p.description, surface: p.surface, glow: p.glow && p.glow.color, colors };
 }
 
 // What anyone may see of a staff member (plus email for admins and themselves)
