@@ -21,12 +21,12 @@ const json = (data, status = 200, maxAge = 6 * HOURS) =>
 async function cached(request, ctx, make) {
   const cache = caches.default;
   const u = new URL(request.url);
-  u.searchParams.set("v", "2"); // bump to forget what was kept before
+  u.searchParams.set("v", "3"); // bump to forget what was kept before
   const key = new Request(u.toString(), { method: "GET" });
   const hit = await cache.match(key);
   if (hit) return hit;
   const res = await make();
-  if (res.ok || res.status === 302) ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
+  if (res.ok) ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
   return res;
 }
 
@@ -72,8 +72,13 @@ export async function handleMusicWorld(request, env, ctx, pathname) {
         const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${m[1]}`, { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" } });
         const data = r.ok ? await r.json() : null;
         const src = data && data.thumbnail && data.thumbnail.source;
-        if (src && /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(src))
-          return new Response(null, { status: 302, headers: { Location: src, "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${7 * 24 * HOURS}` } });
+        // Served from here (not a link to Wikipedia's image server), so nothing in the browser
+        // blocks it; without Wikipedia's tracking tags
+        if (src && /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(src)) {
+          const img = await fetch(src.split("?")[0], { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" } });
+          if (img.ok && /^image\//.test(img.headers.get("Content-Type") || ""))
+            return new Response(img.body, { headers: { "Content-Type": img.headers.get("Content-Type"), "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${7 * 24 * HOURS}` } });
+        }
       } catch (err) {}
       return new Response("No photo", { status: 404, headers: { "Cache-Control": `public, max-age=${HOURS}` } });
     });
@@ -88,8 +93,10 @@ export async function handleMusicWorld(request, env, ctx, pathname) {
         const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=1`, { headers: BROWSER });
         const data = r.ok ? await r.json() : null;
         const art = data && data.results && data.results[0] && data.results[0].artworkUrl100;
-        if (art && /^https:\/\/[\w.-]+\.mzstatic\.com\//.test(art))
-          return new Response(null, { status: 302, headers: { Location: art.replace(/100x100bb/, "200x200bb"), "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${7 * 24 * HOURS}` } });
+        if (art && /^https:\/\/[\w.-]+\.mzstatic\.com\//.test(art)) {
+          const img = await fetch(art.replace(/100x100bb/, "200x200bb"));
+          if (img.ok) return new Response(img.body, { headers: { "Content-Type": img.headers.get("Content-Type") || "image/jpeg", "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${7 * 24 * HOURS}` } });
+        }
       } catch (err) {}
       return new Response("No art", { status: 404, headers: { "Cache-Control": `public, max-age=${HOURS}` } });
     });
