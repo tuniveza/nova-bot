@@ -98,6 +98,20 @@ export async function handleMusicWorld(request, env, ctx, pathname) {
       return new Response("No photo", { status: 404, headers: { "Cache-Control": `public, max-age=${HOURS}` } });
     });
   }
+  // GET /music-world/img?u=<an Apple Music cover address>: that exact cover, served from here (so
+  // nothing in the browser blocks it). Only Apple's image servers. Kept a week.
+  if (pathname === "/music-world/img") {
+    const u = new URL(request.url).searchParams.get("u") || "";
+    if (!/^https:\/\/is\d-ssl\.mzstatic\.com\/image\/thumb\/[\w/.,%-]+$/.test(u)) return new Response("Not a cover", { status: 400 });
+    return cached(request, ctx, async () => {
+      try {
+        const img = await fetch(u);
+        if (img.ok && /^image\//.test(img.headers.get("Content-Type") || ""))
+          return new Response(img.body, { headers: { "Content-Type": img.headers.get("Content-Type"), "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${30 * 24 * HOURS}` } });
+      } catch (err) {}
+      return new Response("No cover", { status: 404, headers: { "Cache-Control": "public, max-age=600" } });
+    });
+  }
   // GET /music-world/art?q=<artist and song>: album art for a song (Apple's public music search),
   // as a redirect to the picture. Kept a week. 404 when nothing's found.
   if (pathname === "/music-world/art") {
