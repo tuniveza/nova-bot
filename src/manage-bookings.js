@@ -21,10 +21,10 @@
 //   job; it does them in Acuity's admin pages within a few minutes, and staff
 //   phones get a notification with the result.
 
-import { agentNovaProblem, queueAgentJob } from "./agent-nova.js";
 import { dayInWords, normaliseTime, ukToday } from "./booking.js";
 import { acuityFailure, acuityRequest, availableTimes, ukWallToUtc } from "./acuity/api.js";
 import { proposeAction } from "./booking-actions.js";
+import { agentNovaProblem } from "./agent-nova.js";
 
 // The most bookings find_bookings lists in one go (keeps replies readable)
 const MAX_LISTED = 15;
@@ -114,7 +114,7 @@ export const UPDATE_BOOKING_TOOL = {
 export const CHANGE_EXTRAS_TOOL = {
   name: "change_booking_extras",
   description:
-    "Change a booking's session type, price or paid status (what Acuity's API can't do). Nova Agent does it in Acuity within a few minutes, and staff phones get a notification when it's done. Only give what changes. Find the booking with find_bookings first.",
+    "Propose changing a booking's session type, price or paid status (what Acuity's API can't do). Once an admin approves it in Portal, Nova Agent does it in Acuity within a few minutes, and staff phones get a notification when it's done. Only give what changes. Find the booking with find_bookings first.",
   input_schema: {
     type: "object",
     properties: {
@@ -147,9 +147,9 @@ above, you can look up and change existing bookings:
   booking could be the one they mean, ask which.
 - Ask whether to email the client if staff haven't said (Acuity's emails are
   usually wanted).
-- Session type, price and paid status: use change_booking_extras. Nova Agent does
-  those in Acuity a few minutes later and staff get a phone notification; say
-  that, and never say they're already done.
+- Session type, price and paid status: use change_booking_extras. That proposes it
+  too: once an admin approves it in Portal, Nova Agent does it in Acuity a few
+  minutes later and staff get a phone notification; never say it's already done.
 - Never say something is cancelled, moved or changed: proposed changes happen only
   once an admin approves them.`;
 
@@ -325,48 +325,21 @@ async function changeExtras(env, input) {
   if (!env.AGENT_NOVA_KEY) {
     return { ok: false, message: "Nova Agent isn't connected (no AGENT_NOVA_KEY), so this can't be changed from here. Tell staff to change it in Acuity." };
   }
-  const booking = await getBooking(env, input?.appointment_id);
-  if (booking.problem) return { ok: false, message: booking.problem };
-
-  // Only what changes, tidied
-  const changes = {};
-  if (field(input?.session_type, 150)) changes.type = field(input.session_type, 150);
-  if (input?.price !== undefined) {
-    const price = String(input.price).replace(/[£\s,]/g, "");
-    if (!/^\d{1,5}(\.\d{1,2})?$/.test(price)) return { ok: false, message: "That price doesn't look right. Ask staff for the amount in pounds, e.g. 80.00." };
-    changes.price = Number(price).toFixed(2);
-  }
-  if (typeof input?.paid === "boolean") changes.paid = input.paid;
-  if (Object.keys(changes).length === 0) return { ok: false, message: "Nothing to change. Ask staff what should change." };
-
-  const list = [
-    changes.type ? `- Session type: "${booking.type}" → "${changes.type}"` : "",
-    changes.price ? `- Price: £${booking.price || "?"} → £${changes.price}` : "",
-    "paid" in changes ? `- Paid: ${changes.paid ? "yes" : "no"}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const offline = await agentNovaProblem(env);
-
+  const payload = { appointmentId: input?.appointment_id, type: input?.session_type, price: input?.price, paid: input?.paid };
   if (input?.confirmed !== true) {
+    const booking = await getBooking(env, input?.appointment_id);
+    if (booking.problem) return { ok: false, message: booking.problem };
+    const offline = await agentNovaProblem(env);
     return {
       ok: true,
       message:
-        `Not changed yet. Show staff this and ask them to confirm:\n- Booking: ${describe(booking)}\n${list}\n` +
-        "Nova Agent makes this change in Acuity a few minutes after it's confirmed, and staff phones get a notification when it's done." +
-        (offline ? ` Warn staff: ${offline}` : "") +
-        "\nOnly after they clearly say yes, call change_booking_extras again with confirmed true.",
+        `Not proposed yet. Show staff this and ask them to confirm:\n- Booking: ${describe(booking)}\n` +
+        [input?.session_type ? `- Session type → "${input.session_type}"` : "", input?.price !== undefined ? `- Price → £${String(input.price).replace(/[£\s,]/g, "")}` : "", typeof input?.paid === "boolean" ? `- Paid: ${input.paid ? "yes" : "no"}` : ""].filter(Boolean).join("\n") +
+        "\nOnce they say yes, call change_booking_extras again with confirmed true: that proposes it, and an admin approves it in Portal → Approvals before Nova Agent makes the change in Acuity." +
+        (offline ? ` Warn staff: ${offline}` : ""),
     };
   }
-
-  const summary = `${booking.firstName} ${booking.lastName}, ${describe(booking).split(", ")[0].replace(/^#\d+: /, "")}:\n${list}`;
-  const job = await queueAgentJob(env, { appointmentId: booking.id, clientName: `${booking.firstName} ${booking.lastName}`, changes, summary });
-  return {
-    ok: true,
-    message:
-      `Queued for Nova Agent (job #${job}). Tell staff it'll be done in Acuity within a few minutes and their phones will get a notification when it is. Don't say it's done yet.` +
-      (offline ? ` Also warn them: ${offline}` : ""),
-  };
+  return propose(env, "extras", payload);
 }
 
 // ===== HELPERS =====

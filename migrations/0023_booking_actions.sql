@@ -1,7 +1,8 @@
 -- Booking changes waiting for a person to approve them
 --
 -- Nova Agent's AI and the AI in Portal's staff chat can suggest a change in Acuity: make a
--- booking, move one, cancel one, change a booking's details, or add or remove a blocked-off
+-- booking, move one, cancel one, change a booking's details or its session type, price or
+-- paid status (Nova Agent does those on Acuity's pages), or add or remove a blocked-off
 -- time. They can't make the change themselves. Each suggestion is saved here as "pending",
 -- and nothing happens in Acuity until a signed-in admin presses Approve in Portal (then it's
 -- done straight away, and the row says how it went). See src/booking-actions.js.
@@ -11,7 +12,7 @@
 CREATE TABLE booking_actions (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   -- What to do in Acuity
-  kind         TEXT NOT NULL CHECK (kind IN ('create', 'reschedule', 'cancel', 'update', 'block_add', 'block_remove')),
+  kind         TEXT NOT NULL CHECK (kind IN ('create', 'reschedule', 'cancel', 'update', 'extras', 'block_add', 'block_remove')),
   -- The details (JSON), checked and tidied by Nova Bot; times in UTC (ISO 8601)
   payload      TEXT NOT NULL,
   -- What it does, in plain English, written by Nova Bot from Acuity's own data (never the AI's words)

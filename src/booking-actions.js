@@ -27,6 +27,7 @@
 // Logs carry ids and statuses only, never anyone's details.
 
 import { notifyPhones } from "./push.js";
+import { queueAgentJob } from "./agent-nova.js";
 import { publicUrl } from "./nova/booking.js";
 import {
   AcuityError,
@@ -42,7 +43,7 @@ import {
   ukShort,
 } from "./acuity/api.js";
 
-export const KINDS = ["create", "reschedule", "cancel", "update", "block_add", "block_remove"];
+export const KINDS = ["create", "reschedule", "cancel", "update", "extras", "block_add", "block_remove"];
 export const PROPOSERS = ["agent", "staff-chat"];
 
 // Suggestions waiting at once, at most (stops a runaway AI filling the list)
@@ -51,6 +52,9 @@ const MAX_PENDING = 50;
 const MAX_AHEAD_MS = 2 * 365 * 86400000;
 // The longest blocked-off time in one go
 const MAX_BLOCK_MS = 31 * 86400000;
+
+// An approved change still not finished after this long was cut off part-way (Nova Bot stopped)
+const STUCK_MS = 5 * 60 * 1000;
 
 const nowIso = () => new Date().toISOString();
 const fail = (status, error) => ({ status, error });
@@ -170,6 +174,35 @@ export async function checkProposal(env, kind, raw) {
     return { payload: { appointmentId, ...changes }, summary: `Change ${whose(found.appt)} on ${was ? ukShort(was) : "its day"}: ${list.join(", ")}` };
   }
 
+  // Session type, price, paid: Acuity's API can't change these, so once approved Nova Agent
+  // does it on Acuity's pages (a job, src/agent-nova.js)
+  if (kind === "extras") {
+    const appointmentId = positiveId(input.appointmentId);
+    if (!appointmentId) return fail(400, "appointmentId: which booking (its Acuity id)?");
+    const changes = {};
+    if (text(input.type, 150)) changes.type = text(input.type, 150);
+    if (input.price !== undefined && input.price !== null && input.price !== "") {
+      const price = String(input.price).replace(/[£\s,]/g, "");
+      if (!/^\d{1,5}(\.\d{1,2})?$/.test(price)) return fail(400, "price: the amount in pounds, e.g. 80.00.");
+      changes.price = Number(price).toFixed(2);
+    }
+    if (typeof input.paid === "boolean") changes.paid = input.paid;
+    if (Object.keys(changes).length === 0) return fail(400, "Nothing to change: give type, price or paid.");
+    const found = await liveAppointment(env, appointmentId);
+    if (found.problem) return fail(400, found.problem);
+    const list = [
+      changes.type ? `session type "${found.appt.type || "?"}" → "${changes.type}"` : "",
+      changes.price ? `price £${found.appt.price || "?"} → £${changes.price}` : "",
+      "paid" in changes ? `paid: ${changes.paid ? "yes" : "no"}` : "",
+    ].filter(Boolean);
+    const was = readTime(String(found.appt.datetime || ""));
+    const clientName = `${found.appt.firstName || ""} ${found.appt.lastName || ""}`.trim();
+    return {
+      payload: { appointmentId, clientName, ...changes },
+      summary: `Change ${whose(found.appt)} on ${was ? ukShort(was) : "its day"}: ${list.join(", ")} (Nova Agent does this on Acuity's pages)`,
+    };
+  }
+
   if (kind === "block_add") {
     const start = readWhen(input.start, "start");
     if (start.problem) return fail(400, start.problem);
@@ -218,10 +251,12 @@ function publicAction(env, row) {
       return null;
     }
   };
+  // Approved and started, but never finished (Nova Bot was stopped part-way): say so
+  const stuck = row.status === "approved" && row.started_at && Date.now() - Date.parse(row.started_at) > STUCK_MS;
   return {
     id: row.id,
     kind: row.kind,
-    status: row.status,
+    status: stuck ? "failed" : row.status,
     summary: row.summary,
     payload: parse(row.payload) || {},
     reason: row.reason || "",
@@ -233,7 +268,7 @@ function publicAction(env, row) {
     note: row.decision_note || null,
     executedAt: row.executed_at || null,
     result: parse(row.result),
-    error: row.error || null,
+    error: stuck ? "It didn't finish (Nova Bot stopped part-way). Check Acuity before doing it again." : row.error || null,
     portalUrl: `${publicUrl(env)}/portal/?view=approvals&action=${row.id}`,
   };
 }
@@ -422,6 +457,14 @@ async function carryOut(env, kind, p) {
     for (const key of ["firstName", "lastName", "email", "phone", "notes"]) if (key in p) changes[key] = p[key];
     const { ok, data } = await acuityRequest(env, "PUT", `/appointments/${p.appointmentId}?admin=true`, changes);
     return ok ? { ok: true, result: { appointmentId: p.appointmentId } } : said(data);
+  }
+  if (kind === "extras") {
+    if (!env.AGENT_NOVA_KEY) return { ok: false, error: "Nova Agent isn't connected (no AGENT_NOVA_KEY), so it can't change this. Change it in Acuity." };
+    const changes = {};
+    for (const key of ["type", "price", "paid"]) if (key in p) changes[key] = p[key];
+    const summary = `${p.clientName || "Booking"} #${p.appointmentId}: ${Object.entries(changes).map(([k, v]) => `${k} → ${v}`).join(", ")}`;
+    const job = await queueAgentJob(env, { appointmentId: p.appointmentId, clientName: p.clientName || "", changes, summary });
+    return { ok: true, result: { appointmentId: p.appointmentId, job, note: "Queued for Nova Agent: it makes the change on Acuity's pages within a few minutes, and staff phones get a notification when it's done." } };
   }
   if (kind === "block_add") {
     let calendarID = p.calendarId;

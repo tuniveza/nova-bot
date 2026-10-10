@@ -6,6 +6,7 @@ import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { executeApproved } from "../src/booking-actions.js";
+import { getAction } from "../src/booking-actions.js";
 import { toLondonIso, ukWallToUtc } from "../src/acuity/api.js";
 import { sha256 } from "../src/portal/auth.js";
 import { BOOKING_PAGE_HTML } from "./acuity-page.js";
@@ -523,5 +524,19 @@ describe("bookings changed", () => {
 		const woken = await agent("/nova-agent/next", { wait: 5, bookingsSeen: early.data.bookingsChanged });
 		expect(Date.now() - started).toBeLessThan(3000);
 		expect(Date.parse(woken.data.bookingsChanged)).toBeGreaterThan(Date.parse(early.data.bookingsChanged));
+	});
+});
+
+describe("a change cut off part-way", () => {
+	it("shows as failed, telling the admin to check Acuity, instead of hanging as approved", async () => {
+		const long = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+		const { meta } = await env.DB.prepare(
+			"INSERT INTO booking_actions (kind, payload, summary, status, proposed_by, created_at, updated_at, decided_by, decided_at, started_at) VALUES ('cancel', '{\"appointmentId\":1}', 'Cancel test', 'approved', 'agent', ?, ?, 'test-admin', ?, ?)"
+		)
+			.bind(long, long, long, long)
+			.run();
+		const action = await getAction(env, meta.last_row_id);
+		expect(action.status).toBe("failed");
+		expect(action.error).toContain("Check Acuity");
 	});
 });

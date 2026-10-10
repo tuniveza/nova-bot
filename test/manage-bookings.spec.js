@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { forgetSessionTypes } from "../src/booking.js";
 import { runManageBookingTool } from "../src/manage-bookings.js";
+import { approveAction } from "../src/booking-actions.js";
 import { BOOKING_PAGE_HTML } from "./acuity-page.js";
 
 const BASE = "https://novacane-worker.test";
@@ -226,17 +227,24 @@ describe("change_booking_extras (done by Nova Agent)", () => {
 
 	const jobs = async () => (await env.DB.prepare("SELECT appointment_id, client_name, changes, status FROM agent_jobs").all()).results;
 
-	it("queues a job for Nova Agent once confirmed, and only once", async () => {
+	it("only proposes it; Nova Agent gets the job once an admin approves, and only once", async () => {
+		await env.DB.prepare("DELETE FROM booking_actions").run();
 		const check = await run("change_booking_extras", { appointment_id: 1001, session_type: "Rap Package - 1 song", price: "£100", paid: true, confirmed: false });
-		expect(check.message).toContain('Session type: "Rap Package - 2 songs" → "Rap Package - 1 song"');
-		expect(check.message).toContain("Price: £? → £100.00");
+		expect(check.message).toContain('Session type → "Rap Package - 1 song"');
+		expect(check.message).toContain("Price → £100");
 		expect(check.message).toContain("Nova Agent has never checked in");
 		expect(await jobs()).toHaveLength(0);
 
 		const input = { appointment_id: 1001, session_type: "Rap Package - 1 song", price: "£100", paid: true, confirmed: true };
-		const queued = await run("change_booking_extras", input);
-		expect(queued.message).toContain("Queued for Nova Agent");
-		await run("change_booking_extras", input); // asked twice
+		const proposed = await run("change_booking_extras", input);
+		expect(proposed.message).toContain("Proposed, NOT done yet");
+		await run("change_booking_extras", input); // asked twice: the same proposal
+		const pending = (await env.DB.prepare("SELECT id, kind, status FROM booking_actions").all()).results;
+		expect(pending).toEqual([{ id: expect.any(Number), kind: "extras", status: "pending" }]);
+		expect(await jobs()).toHaveLength(0); // nothing for Nova Agent until an admin approves
+
+		const admin = { id: "test-admin", role: "admin", session_kind: "cookie" };
+		await Promise.all([approveAction(env, admin, { id: pending[0].id }), approveAction(env, admin, { id: pending[0].id })]);
 		expect(await jobs()).toEqual([
 			{ appointment_id: 1001, client_name: "Dana Hollis", changes: '{"type":"Rap Package - 1 song","price":"100.00","paid":true}', status: "waiting" },
 		]);
