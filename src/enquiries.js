@@ -1,7 +1,8 @@
 // Enquiries NovaBot sends to the Novacane team, and the chat log
 //
 // When a visitor confirms their details in the chat, Claude calls the
-// send_enquiry tool. The enquiry is saved (see /admin/enquiries) and, if the
+// send_enquiry tool. Nothing reaches the studio without the three ways to reply:
+// a name, an email address and a mobile number (checked here, whatever the chat says). The enquiry is saved (see /admin/enquiries) and, if the
 // email secrets are set, emailed to the studio too (see README-ENQUIRIES.md).
 //
 // Every chat message is also saved for 90 days (see /admin/conversations).
@@ -25,7 +26,7 @@ export const ENQUIRY_TOOL = {
     properties: {
       name: { type: "string", description: "The customer's name" },
       email: { type: "string", description: "The customer's email address, for the team's reply" },
-      phone: { type: "string", description: "The customer's phone number, if they gave one" },
+      phone: { type: "string", description: "The customer's mobile phone number (always needed)" },
       subject: { type: "string", description: "A short subject line, e.g. 'Album recording, 6 tracks'" },
       details: {
         type: "string",
@@ -33,11 +34,25 @@ export const ENQUIRY_TOOL = {
           "Everything useful for the team, written for them: type of project, service wanted, approximate duration, preferred dates, number of people, equipment needs, links, and anything else the customer said that matters.",
       },
     },
-    required: ["name", "email", "details"],
+    required: ["name", "email", "phone", "details"],
   },
 };
 
 const EMAIL_PATTERN = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]{2,}$/;
+
+// A mobile number, tidied ("07700 900123" → "07700900123"), or "" if it isn't one.
+// UK mobiles (07…, +44 7…) or any international number written with its country code (+…).
+export function mobileNumber(value) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw || /[^\d\s()+.\-]/.test(raw)) return "";
+  let n = raw.replace(/[\s().\-]/g, "");
+  if (n.startsWith("00")) n = "+" + n.slice(2);
+  if (/^07\d{9}$/.test(n)) return n;
+  if (/^\+447\d{9}$/.test(n) || /^447\d{9}$/.test(n)) return "+" + n.replace(/^\+/, "");
+  // Elsewhere: a country code that isn't the UK's, then 7 to 13 more digits
+  if (/^\+(?!44)\d{8,15}$/.test(n)) return n;
+  return "";
+}
 
 // Tidy one field: text only, trimmed and capped
 function field(value, max) {
@@ -55,7 +70,7 @@ export async function sendEnquiry(env, input, { chatId, page, ip }, waitUntil) {
   const enquiry = {
     name: field(input?.name, 100),
     email: field(input?.email, 200).toLowerCase(),
-    phone: field(input?.phone, 40),
+    phone: field(input?.phone, 40), // kept as they wrote it; checked below
     subject: field(input?.subject, 150),
     details: field(input?.details, 4000),
   };
@@ -63,6 +78,10 @@ export async function sendEnquiry(env, input, { chatId, page, ip }, waitUntil) {
   if (!enquiry.name) return { sent: false, message: "Not sent: the customer's name is missing. Ask for it." };
   if (!EMAIL_PATTERN.test(enquiry.email)) {
     return { sent: false, message: "Not sent: that email address doesn't look right. Ask the customer to check it." };
+  }
+  if (!enquiry.phone) return { sent: false, message: "Not sent: the customer's mobile number is missing. The studio needs a name, an email and a mobile number to reply. Ask for it." };
+  if (!mobileNumber(enquiry.phone)) {
+    return { sent: false, message: "Not sent: that doesn't look like a mobile number. Ask the customer to check it (a UK mobile starts 07, or give the country code, e.g. +353…)." };
   }
   if (enquiry.details.length < 10) {
     return { sent: false, message: "Not sent: there aren't enough details about the project yet. Ask what it's about." };

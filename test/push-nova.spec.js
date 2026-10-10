@@ -156,7 +156,7 @@ describe("what triggers a notification", () => {
 		const pending = [];
 		await sendEnquiry(
 			{ ...env, ...keys },
-			{ name: "Jordan Test", email: "jordan@example.com", subject: "Album recording", details: "Six tracks with a band, November weekends." },
+			{ name: "Jordan Test", email: "jordan@example.com", phone: "07700 900456", subject: "Album recording", details: "Six tracks with a band, November weekends." },
 			{ chatId: "chat-push-0001", page: "/services", ip: "203.0.113.9" },
 			(work) => pending.push(work)
 		);

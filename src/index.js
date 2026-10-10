@@ -632,14 +632,19 @@ You can send an enquiry straight to the Novacane team with the send_enquiry tool
 the customer doesn't have to fill in a form. When someone needs the enquiry route,
 offer both: you can take the details here in the chat, or they can use the enquiry
 form (${ENQUIRY_LINK}). If they'd like you to send it:
-- Ask for what's needed conversationally, a few things per message: their name, their email
-  address (the team replies by email), and what the project is: type of project,
-  service wanted, approximate duration, preferred date, number of people, special
-  equipment needs and any links. A phone number is optional. Don't ask again for
-  anything they've already told you.
+- Whenever someone wants the studio to get back to them in any way (an enquiry, a question
+  for the team, a quote, a callback, a follow-up), the studio needs three things before
+  anything can be sent: their name, their email address and their mobile phone number.
+  All three are required; nothing goes through without them. Ask for whichever are
+  missing, kindly and in one message (e.g. "So the team can get back to you, what's your
+  name, email and mobile number?"), and explain it's so the studio can reply.
+- Also ask, conversationally and a few things per message, what the project is: type of
+  project, service wanted, approximate duration, preferred date, number of people,
+  special equipment needs and any links. Don't ask again for anything they've already
+  told you.
 - Before sending, always show exactly what you'll send as a short "-" list (name,
-  email, phone if given, and the project details) and ask them to confirm it. Only
-  use send_enquiry after they clearly say yes to that summary.
+  email, mobile, and the project details) and ask them to confirm it. Only use
+  send_enquiry after they clearly say yes to that summary.
 - Put everything useful from the chat into the details, written for the team.
 - Once send_enquiry says it's sent, tell them it's with the team and they'll hear back
   by email. Don't promise a reply time, a price, availability or what the team will
@@ -648,8 +653,8 @@ form (${ENQUIRY_LINK}). If they'd like you to send it:
   still can't be sent, apologise and give them the enquiry form link.
 - Never say an enquiry has been sent unless send_enquiry said so. Send each enquiry
   once; if they add something afterwards, send a short follow-up with just that.
-If they'd rather use the form, tell them what's useful to include: name, email, phone
-(if appropriate), type of project, service wanted, approximate duration, preferred
+If they'd rather use the form, tell them what's useful to include: name, email, mobile
+number, type of project, service wanted, approximate duration, preferred
 date, number of people, special equipment needs, relevant links/files, and a short
 description.
 
@@ -1198,9 +1203,15 @@ function claimsBooking(text) {
 const CLAIM_CHECK =
   "[Automatic check, not from the customer: your last message says a session is booked or being booked, but you didn't call book_session in this reply, so NOTHING has been booked. If they've clearly said yes to the summary, call book_session now. Otherwise, rewrite your reply without saying it's booked, and ask for what's still needed.]";
 
-// NovaBot asking for a name, email, phone or a time in the chat (the booking card collects those)
+// NovaBot asking for a name, email, phone or a time in the chat (the booking card collects those).
+// Not when it's asking how the studio can reply to an enquiry: those it must ask for in the chat.
 function asksForDetails(text) {
+  if (asksForReplyDetails(text)) return false;
   return /\?/.test(text) && /\b(e-?mail|phone|number|surname|last name|first name|full name|your name|what time|which time|preferred time|time works)\b/i.test(text);
+}
+// "So the team can get back to you, what's your name, email and mobile number?" (an enquiry)
+export function asksForReplyDetails(text) {
+  return /\b(get back to you|reply to you|so the (team|studio)|enquir\w*|in touch with you|contact you|hear back)\b/i.test(text);
 }
 
 const USE_THE_CARD =
