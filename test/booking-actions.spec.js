@@ -553,3 +553,15 @@ describe("an admin's edits", () => {
 		expect(out.action.status).toBe("pending");
 	});
 });
+
+describe("when Acuity refuses (its plan doesn't include the API)", () => {
+	it("says Acuity refused, with Acuity's reason, not that it's unreachable", async () => {
+		vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ status_code: 403, message: "API access is only available on Powerhouse plans" }), { status: 403 }));
+		const { listAppointments, acuityFailure } = await import("../src/acuity/api.js");
+		const err = await listAppointments(env, { from: "2026-10-12", to: "2026-10-18" }).catch((e) => e);
+		const out = acuityFailure(err);
+		expect(out.status).toBe(502);
+		expect(out.body).toMatchObject({ refused: true });
+		expect(out.body.error).toBe("Acuity refused: API access is only available on Powerhouse plans");
+	});
+});

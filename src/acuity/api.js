@@ -29,7 +29,7 @@ const MAX_LISTED = 200;
 export class AcuityError extends Error {
   constructor(kind, message, status = 0) {
     super(message);
-    this.kind = kind; // "unreachable" | "rateLimited" | "notSetUp"
+    this.kind = kind; // "unreachable" | "refused" | "rateLimited" | "notSetUp"
     this.status = status;
   }
 }
@@ -108,6 +108,7 @@ export function acuityFailure(err) {
   if (err instanceof AcuityError) {
     if (err.kind === "rateLimited") return { status: 429, body: { error: err.message, rateLimited: true } };
     if (err.kind === "notSetUp") return { status: 409, body: { error: err.message } };
+    if (err.kind === "refused") return { status: 502, body: { error: err.message, refused: true } };
     return { status: 503, body: { error: err.message, unreachable: true } };
   }
   console.log("Acuity: something went wrong:", err?.message || err);
@@ -200,11 +201,18 @@ export function daysBetween(from, to) {
   return Math.round((Date.parse(to + "T00:00:00Z") - Date.parse(from + "T00:00:00Z")) / 86400000);
 }
 
-// ===== READS (each throws an AcuityError if Acuity is busy or down) =====
+// Acuity answered, but no: a refusal (401/403: the keys, or the plan doesn't include the API)
+// says so plainly; anything else counts as unreachable
+function answeredNo(status, data) {
+  if (status === 401 || status === 403) return new AcuityError("refused", `Acuity refused: ${acuityMessage(data)}`, status);
+  return new AcuityError("unreachable", `Acuity unreachable: it answered ${status} (${acuityMessage(data)}).`, status);
+}
+
+// ===== READS (each throws an AcuityError if Acuity is busy, down or refuses) =====
 
 async function readList(env, path) {
   const { ok, status, data } = await acuityRequest(env, "GET", path);
-  if (!ok) throw new AcuityError("unreachable", `Acuity unreachable: it answered ${status} (${acuityMessage(data)}).`, status);
+  if (!ok) throw answeredNo(status, data);
   return Array.isArray(data) ? data : [];
 }
 
@@ -244,7 +252,7 @@ export async function getAppointment(env, id) {
   const { ok, status, data } = await acuityRequest(env, "GET", `/appointments/${Number(id)}`);
   if (ok && data?.id === Number(id)) return data;
   if (status === 400 || status === 404) return null;
-  throw new AcuityError("unreachable", `Acuity unreachable: it answered ${status} (${acuityMessage(data)}).`, status);
+  throw answeredNo(status, data);
 }
 
 // Free start times for a session type on one UK day
@@ -278,7 +286,7 @@ export async function getBlock(env, id) {
   const { ok, status, data } = await acuityRequest(env, "GET", `/blocks/${Number(id)}`);
   if (ok && data?.id === Number(id)) return data;
   if (status === 400 || status === 404) return null;
-  throw new AcuityError("unreachable", `Acuity unreachable: it answered ${status} (${acuityMessage(data)}).`, status);
+  throw answeredNo(status, data);
 }
 
 export async function listTypes(env) {
