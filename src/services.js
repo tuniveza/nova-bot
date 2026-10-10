@@ -8,6 +8,8 @@ import { emailIsSetUp, emailRecipients, sendEmail } from "./enquiries.js";
 import { bookingSystem } from "./mode.js";
 import { googleReady } from "./nova/google.js";
 import { stripeReady } from "./nova/stripe.js";
+import { campaignFrom } from "./campaigns.js";
+import { publicUrl } from "./nova/booking.js";
 
 // One test email per person per this long (the button can't be used to flood an inbox)
 const TEST_EMAIL_GAP_MS = 60 * 1000;
@@ -35,8 +37,9 @@ async function pcConnected(env) {
 export async function servicesStatus(env) {
   const from = env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || "";
   const copies = emailRecipients(env);
-  const [lastEmail, phones, system, google, pc] = await Promise.all([
+  const [lastEmail, lastCampaign, phones, system, google, pc] = await Promise.all([
     latest(env, "SELECT MAX(sent_at) AS at FROM enquiry_messages WHERE channel = 'email' AND status = 'sent'"),
+    latest(env, "SELECT MAX(sent_at) AS at FROM email_campaigns WHERE status = 'sent'"),
     env.DB.prepare("SELECT COUNT(*) AS n FROM push_subscriptions")
       .first("n")
       .catch(() => 0),
@@ -60,6 +63,7 @@ export async function servicesStatus(env) {
       last: lastEmail,
       test: emailIsSetUp(env),
     },
+    newsletters(env, lastCampaign),
     {
       id: "phone",
       name: "WhatsApp, calls and texts",
@@ -124,6 +128,25 @@ export async function servicesStatus(env) {
       detail: "Nova Bot, Portal and every panel online run here, and the studio's data is kept here.",
     },
   ];
+}
+
+// Email newsletters (src/campaigns.js): ready with a full-access key and the from address. A plain
+// RESEND_API_KEY may be sending-only, so with just that it's "partly" (it works only if it has full access).
+function newsletters(env, last) {
+  const from = campaignFrom(env);
+  const fullKey = Boolean(env.RESEND_MARKETING_KEY);
+  const anyKey = fullKey || Boolean(env.RESEND_API_KEY);
+  const ready = anyKey && from ? (fullKey ? true : "partly") : false;
+  return {
+    id: "newsletters",
+    name: "Email newsletters",
+    tech: "Resend (resend.com): contacts, segments and broadcasts",
+    ready,
+    detail: !anyKey || !from
+      ? "Needs a full-access Resend key (the RESEND_MARKETING_KEY secret) and the address campaigns come from (CAMPAIGN_FROM)."
+      : `Campaigns go from ${from} only to people who opted in (confirmed fans, and clients who said yes), and only after an admin approves them in Portal → Campaigns. Fans sign up at ${publicUrl(env)}/join.${fullKey ? "" : " Using RESEND_API_KEY: it needs full access for contacts and broadcasts (or add RESEND_MARKETING_KEY)."}`,
+    last,
+  };
 }
 
 // "Send me a test email": proves Resend works by emailing the person who pressed it (only them)

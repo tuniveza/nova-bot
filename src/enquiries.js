@@ -208,8 +208,9 @@ export async function sendTestEmail(env) {
 
 // Send an email through Resend. To the studio, unless `to` says otherwise (a reply to a
 // customer goes to their address only). `idempotencyKey` makes Resend send it at most once
-// however many times it's asked; `headers` are extra email headers (e.g. List-Unsubscribe).
-export async function sendEmail(env, { subject, text, replyTo, to, from, headers, idempotencyKey }) {
+// however many times it's asked; `headers` are extra email headers (e.g. List-Unsubscribe);
+// `html` is an HTML version alongside the text (a campaign's test email).
+export async function sendEmail(env, { subject, text, html, replyTo, to, from, headers, idempotencyKey }) {
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -224,6 +225,7 @@ export async function sendEmail(env, { subject, text, replyTo, to, from, headers
         ...(replyTo ? { reply_to: replyTo } : {}),
         subject,
         text,
+        ...(html ? { html } : {}),
         ...(headers ? { headers } : {}),
       }),
     });

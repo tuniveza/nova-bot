@@ -54,6 +54,18 @@
 //                                       (a duplicate is refused with the existing one's id)
 //   POST /app/api/clients/import        { csv } -> Acuity's appointments or clients spreadsheet (admins only)
 //   POST /app/api/clients/sync          -> reads Acuity's calendar feed and the enquiries now (admins only)
+//   GET  /app/api/campaigns?status=waiting|all|<status>
+//                                       -> { campaigns, canDecide, audiences: { fans, clients, everyone }, signupUrl }
+//                                       email campaigns (opted-in counts per audience; see src/campaigns.js)
+//   GET  /app/api/campaigns/:id         -> { campaign, log, previewHtml }
+//   POST /app/api/campaigns             { subject, body, audience, sendAt? } -> { campaign } waiting for approval
+//   POST /app/api/campaigns/:id/edit    { subject?, body?, audience?, sendAt? } -> { campaign } back to waiting
+//                                       for approval (the approval is cleared; a scheduled send is cancelled)
+//   POST /app/api/campaigns/:id/approve {} -> { campaign } approves it, then Resend sends it (or schedules it)
+//   POST /app/api/campaigns/:id/reject  { note? }
+//   POST /app/api/campaigns/test-send   { id } -> emails it once to the admin who pressed it, marked [TEST]
+//     (Approve, reject and test-send need an admin with Portal open in a browser, the cookie: never an
+//      app's token, other staff, or Nova Agent's key.)
 
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { askPortal } from "./portal-ask.js";
@@ -68,6 +80,7 @@ import { servicesStatus, testEmailToMe } from "./services.js";
 import { publicUrl } from "./nova/booking.js";
 import { listBookings } from "./booking-calendar.js";
 import { handleClientsForStaff } from "./clients.js";
+import { handleCampaignsForStaff } from "./campaigns.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
 import { usesNova } from "./mode.js";
 import { handleCalendarItems } from "./calendar/items.js";
@@ -108,6 +121,11 @@ export async function handleApp(request, env, ctx, answer) {
   // The client list (src/clients.js): import and sync are for admins
   if (route === "/clients" || route.startsWith("/clients/")) {
     const answer = await handleClientsForStaff(request, env, me, route);
+    if (answer) return answer;
+  }
+  // Email campaigns (src/campaigns.js): approve, reject and test-send are for an admin in a browser
+  if (route === "/campaigns" || route.startsWith("/campaigns/")) {
+    const answer = await handleCampaignsForStaff(request, env, me, route);
     if (answer) return answer;
   }
   if (route === "/services" && request.method === "GET") return json({ services: await servicesStatus(env), admin: me.role === "admin" });

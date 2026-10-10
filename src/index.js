@@ -66,6 +66,8 @@ import { handleSharedNotes } from "./notes-shared.js";
 import { handleMusicWorld } from "./music-world.js";
 import { sendCalendarReminders } from "./calendar/reminders.js";
 import { syncClientsOnSchedule } from "./clients.js";
+import { campaignsOnSchedule } from "./campaigns.js";
+import { handleJoin } from "./fans.js";
 
 // ===== THINGS YOU CAN EDIT =====
 
@@ -720,6 +722,9 @@ export default {
         learnFromWebsiteChats(env).catch((err) => console.log("Memory from website chats failed:", err)),
         // The client list: Acuity's calendar feed and the enquiries, every 30 minutes (src/clients.js)
         syncClientsOnSchedule(env, at).catch((err) => console.log("Client list sync failed:", err?.name)),
+        // Email campaigns (src/campaigns.js): scheduled ones become 'sent' once Resend sends them; every
+        // hour, unsubscribes come back from Resend and the numbers (opened, clicked…) are refreshed
+        campaignsOnSchedule(env, at).catch((err) => console.log("Campaigns cron failed:", err?.name)),
       ])
     );
   },
@@ -785,6 +790,8 @@ export default {
     if (pathname === "/privacy") return privacyPage();
     // The "stop emailing me" link at the foot of every reply to an enquiry
     if (pathname === "/enquiry/stop" && (request.method === "GET" || request.method === "POST")) return handleStop(request, env);
+    // Fans sign up for the studio's news here, and confirm by email (src/fans.js)
+    if (pathname === "/join" || pathname === "/join/confirm") return handleJoin(request, env, ctx, pathname);
 
     const origin = request.headers.get("Origin") || "";
     // In the sandbox, any page on this computer (localhost) may use it too
@@ -1480,7 +1487,7 @@ function novaAgentPage(request, env, pathname) {
 // goes to /agent/: a panel's address (or one it had before, or /agent/<panel>) opens that panel,
 // anything else just Nova Agent. Files (scripts, icons, a CSV) aren't pages and stay as they are,
 // and so do the website chat's pages for customers (Nova Bot's own) and connecting Google.
-const CUSTOMER_PAGES = /^\/(book(\/.*)?|referral|privacy|enquiry\/stop)$/;
+const CUSTOMER_PAGES = /^\/(book(\/.*)?|referral|privacy|enquiry\/stop|join(\/confirm)?)$/;
 function panelFor(pathname) {
   if (pathname.startsWith(AGENT)) return PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")] || "";
   if (PANELS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return pathname;

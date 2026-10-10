@@ -48,6 +48,15 @@
 //   POST /nova-agent/clients/owing    {}         -> { clients } who owes money, most first
 //   POST /nova-agent/clients/lapsed   { since: "YYYY-MM-DD" } -> { clients } who hasn't booked since that day
 //                            (the client list, read-only: nothing here changes a client; see src/clients.js)
+//   POST /nova-agent/campaigns/context {}       -> { audiences, recent, today } (for suggest_campaign)
+//   POST /nova-agent/campaigns/draft  { subject, body, audience, sendAt? } -> { campaign } waiting for an admin's
+//                            approval in Portal → Campaigns (the admins' phones get a quiet ping)
+//   POST /nova-agent/campaigns/:id/edit { subject?, body?, audience?, sendAt? } -> { campaign } back to waiting
+//   POST /nova-agent/campaigns        { status? } -> { campaigns }
+//   POST /nova-agent/campaigns/:id    {}         -> { campaign, log }
+//                            (the AI can only write and edit: nothing here approves, sends, schedules or
+//                            test-sends; see src/campaigns.js)
+//
 //   POST /nova-agent/bookings-feed    { from, to } -> { appointments: [{ id, start, end, type, name }] } bookings on
 //                            those UK days (max 62) from Acuity's calendar feed, which works on every plan. Times in
 //                            UTC. Feed not set up -> 409; couldn't be read -> 503 { unreachable: true }
@@ -64,6 +73,7 @@ import { agentDraft, enquiryThread, listEnquiries } from "./enquiry-replies.js";
 import { acuityFailure, availableTimes, daysBetween, isUkDate, listAppointments, listBlocks, listTypes, searchClients, ukWallToUtc } from "./acuity/api.js";
 import { bookingsChangedAt, listActions, proposeAction } from "./booking-actions.js";
 import { handleClientsForAgent } from "./clients.js";
+import { handleCampaignsForAgent } from "./campaigns.js";
 import { feedTimeToIso, listBookings } from "./booking-calendar.js";
 
 // A job Nova Agent took but never reported on (e.g. it was restarted) is
@@ -143,6 +153,8 @@ export async function handleAgentNova(request, env, pathname) {
   // The client list (read-only) and the bookings in Acuity's calendar feed
   if (pathname.startsWith("/nova-agent/clients/")) return handleClientsForAgent(env, pathname, body);
   if (pathname === "/nova-agent/bookings-feed") return bookingsFeed(env, body);
+  // Email campaigns: read, write and edit (never approve or send: an admin approves in Portal)
+  if (pathname === "/nova-agent/campaigns" || pathname.startsWith("/nova-agent/campaigns/")) return handleCampaignsForAgent(env, pathname, body);
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
