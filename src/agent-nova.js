@@ -26,7 +26,7 @@
 // All of them need header Authorization: Bearer <AGENT_NOVA_KEY>.
 
 import { planetFacts, profile } from "./portal/routes.js";
-import { notifyPhones } from "./push.js";
+import { notifyPhones, studioOwner } from "./push.js";
 import { syncFromAgent } from "./calendar/items.js";
 
 // A job Nova Agent took but never reported on (e.g. it was restarted) is
@@ -203,7 +203,15 @@ async function sendAlert(env, body) {
   const ttl = Math.min(Math.max(Number(body.ttl) || 86400, 60), 86400);
   const style = { source, kind, tag: tag ? `${source}-${tag}` : "", ttl, urgent: body.urgent === true };
   // `keep: false` (quick repeats): ring the phone but leave it out of the Alerts list
-  const delivered = await notifyPhones(env, { title: `${ALERT_SOURCES[source]}: ${title}`, body: message, url: "/portal/#nova", style, save: body.keep !== false });
+  // Quest and mission reminders are someone's own: the phones the quest picked, or else the studio
+  // owner's. Nova Agent's own alerts (Acuity problems) still go to every phone.
+  let to = null;
+  if (source === "quest" || source === "mission") {
+    const owner = await studioOwner(env);
+    const phones = Array.isArray(body.phones) ? body.phones.filter((x) => typeof x === "string" && /^[0-9a-f]{12}$/.test(x)).slice(0, 10) : [];
+    to = { phones, staff: owner ? [owner.id] : [] };
+  }
+  const delivered = await notifyPhones(env, { title: `${ALERT_SOURCES[source]}: ${title}`, body: message, url: "/portal/#nova", style, save: body.keep !== false, to });
   return Response.json({ ok: true, phones: delivered });
 }
 

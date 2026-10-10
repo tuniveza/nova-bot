@@ -151,3 +151,35 @@ describe("edits always save", () => {
 		expect(stale.current.title).toBe("Mix review");
 	});
 });
+
+describe("Nova Quests' reminders reach their own phones too", () => {
+	async function notify(body) {
+		const ctx = createExecutionContext();
+		const res = await worker.fetch(
+			new Request(BASE + "/nova-agent/notify", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer agent-nova-test-key" }, body: JSON.stringify(body) }),
+			{ ...env, ...keys, AGENT_NOVA_KEY: "agent-nova-test-key" },
+			ctx
+		);
+		await waitOnExecutionContext(ctx);
+		return res.status;
+	}
+	beforeEach(async () => {
+		await savePhone(env, await phone("https://web.push.apple.com/owner"), { staffId: "test-admin" });
+		await savePhone(env, await phone("https://web.push.apple.com/staff"), { staffId: "test-staff" });
+	});
+
+	it("a quest's reminder goes to the owner's phones when it picked none", async () => {
+		expect(await notify({ title: "Mix the EP", message: "Starting now", source: "quest", kind: "starting" })).toBe(200);
+		expect(delivered).toEqual(["https://web.push.apple.com/owner"]);
+	});
+
+	it("a quest's reminder goes to just the phone it picked", async () => {
+		await notify({ title: "Mix the EP", message: "Starting now", source: "quest", kind: "starting", phones: [await phoneId("https://web.push.apple.com/staff")] });
+		expect(delivered).toEqual(["https://web.push.apple.com/staff"]);
+	});
+
+	it("Nova Agent's own alerts (Acuity problems) still reach every phone", async () => {
+		await notify({ title: "Can't log in", message: "Run npm run login" });
+		expect(delivered.sort()).toEqual(["https://web.push.apple.com/owner", "https://web.push.apple.com/staff"]);
+	});
+});
