@@ -13,7 +13,9 @@
 //   POST /staff                 admin: invite someone { email, display_name, role } → an invite link
 //   POST /staff/:id/invite      admin: a fresh invite link
 //   GET  /staff/:id             a profile (name, role, planet; email for admins and yourself)
-//   PATCH /staff/:id            admin: role, status, name, planet; yourself: name, planet
+//   PATCH /staff/:id            admin: role, status, name, planet, email; yourself: name, planet,
+//                               email (staff confirm it with `current`, their password)
+//   POST /staff/:id/password    admin: a new password for someone else { password } (they're signed out)
 //   GET  /staff/:id/planet.svg  the planet badge (?size=, ?animate=1)
 //   GET  /staff/:id/index       that person's Index view (yourself or an admin)
 // Changes from a browser must come from this site (the Origin header); apps
@@ -275,10 +277,39 @@ export async function handlePortal(request, env, ctx, pathname) {
     return json({ ok: true, ...(await inviteFor(env, row.id, url.origin)) });
   }
 
+  // An admin sets someone else's password (from their page in Portal); they sign in again with it
+  if (sub === "password" && method === "POST") {
+    if (!isAdmin) return json({ error: "Admins only" }, 403);
+    if (self) return json({ error: "Change your own on the You page." }, 400);
+    if (await tooMany(env, request, "password")) return json({ error: "Too many tries. Wait a minute and try again." }, 429);
+    const problem = passwordProblem(body.password);
+    if (problem) return json({ error: problem }, 400);
+    // Someone still invited has joined now: they have a password
+    await env.DB.prepare("UPDATE staff SET password_hash = ?, status = CASE WHEN status = 'invited' THEN 'active' ELSE status END WHERE id = ?")
+      .bind(await hashPassword(body.password), row.id)
+      .run();
+    await env.DB.prepare("DELETE FROM sessions WHERE staff_id = ?").bind(row.id).run();
+    return json({ ok: true, staff: profile(await env.DB.prepare("SELECT * FROM staff WHERE id = ?").bind(row.id).first(), { full: true }) });
+  }
+
   if (!sub && method === "PATCH") {
     if (!isAdmin && !self) return json({ error: "Not allowed" }, 403);
     const sets = [];
     const binds = [];
+    // A new email (the one they sign in with). Staff changing their own confirm their password.
+    if (body.email !== undefined) {
+      const email = text(body.email, 200).toLowerCase();
+      if (!validEmail(email)) return json({ error: "Enter a real email address." }, 400);
+      if (!isAdmin) {
+        if (await tooMany(env, request, "password")) return json({ error: "Too many tries. Wait a minute and try again." }, 429);
+        if (!(await verifyPassword(String(body.current || ""), row.password_hash))) return json({ error: "Your current password isn't right." }, 401);
+      }
+      if (email !== row.email && (await env.DB.prepare("SELECT 1 FROM staff WHERE email = ? AND id != ?").bind(email, row.id).first())) {
+        return json({ error: "Someone with that email is already here." }, 409);
+      }
+      sets.push("email = ?");
+      binds.push(email);
+    }
     if (body.display_name !== undefined) {
       const name = text(body.display_name, 60);
       if (!name) return json({ error: "A name is needed." }, 400);

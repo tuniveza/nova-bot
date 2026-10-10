@@ -123,6 +123,53 @@ describe("staff and invites", () => {
 	});
 });
 
+describe("changing emails and passwords (only signed in, from Portal)", () => {
+	async function withKai() {
+		const admin = await setup();
+		const made = await call("/staff", { method: "POST", cookie: admin, body: { email: "kai@novacane.co.uk", display_name: "Kai" } });
+		const joined = await call("/auth/invite/accept", { method: "POST", body: { token: new URL(made.data.invite_url).searchParams.get("invite"), password: PASS } });
+		return { admin, kai: joined.cookie };
+	}
+
+	it("nobody signed out can change an email or a password", async () => {
+		await withKai();
+		expect((await call("/staff/kai", { method: "PATCH", body: { email: "x@novacane.co.uk" } })).status).toBe(401);
+		expect((await call("/staff/kai/password", { method: "POST", body: { password: "new-one" } })).status).toBe(401);
+		expect((await call("/auth/password", { method: "POST", body: { password: "new-one" } })).status).toBe(401);
+	});
+
+	it("staff change their own email by confirming their password, and sign in with it", async () => {
+		const { kai } = await withKai();
+		expect((await call("/staff/kai", { method: "PATCH", cookie: kai, body: { email: "kai@kk.uk", current: "wrong" } })).status).toBe(401);
+		expect((await call("/staff/kai", { method: "PATCH", cookie: kai, body: { email: "dom@novacane.co.uk", current: PASS } })).status).toBe(409);
+		expect((await call("/staff/kai", { method: "PATCH", cookie: kai, body: { email: "not an email", current: PASS } })).status).toBe(400);
+		const ok = await call("/staff/kai", { method: "PATCH", cookie: kai, body: { email: "Kai@KK.uk", current: PASS } });
+		expect(ok.data.staff.email).toBe("kai@kk.uk");
+		expect((await call("/auth/login", { method: "POST", body: { email: "kai@kk.uk", password: PASS } })).status).toBe(200);
+		// Staff can't change someone else's
+		expect((await call("/staff/dominic-hughes", { method: "PATCH", cookie: kai, body: { email: "a@b.uk", current: PASS } })).status).toBe(403);
+	});
+
+	it("an admin fixes someone's email and sets them a new password; they're signed out", async () => {
+		const { admin, kai } = await withKai();
+		expect((await call("/staff/kai", { method: "PATCH", cookie: admin, body: { email: "kai@kulture.uk" } })).data.staff.email).toBe("kai@kulture.uk");
+		expect((await call("/staff/kai/password", { method: "POST", cookie: kai, body: { password: "x" } })).status).toBe(403);
+		expect((await call("/staff/kai/password", { method: "POST", cookie: admin, body: { password: "" } })).status).toBe(400);
+		expect((await call("/staff/dominic-hughes/password", { method: "POST", cookie: admin, body: { password: "short1" } })).status).toBe(400);
+		expect((await call("/staff/kai/password", { method: "POST", cookie: admin, body: { password: "kai123" } })).status).toBe(200);
+		expect((await call("/auth/me", { cookie: kai })).status).toBe(401);
+		expect((await call("/auth/login", { method: "POST", body: { email: "kai@kulture.uk", password: "kai123" } })).status).toBe(200);
+	});
+
+	it("a password set by an admin lets an invited person in", async () => {
+		const admin = await setup();
+		await call("/staff", { method: "POST", cookie: admin, body: { email: "odd@novacane.co.uk", display_name: "Odd" } });
+		const set = await call("/staff/odd/password", { method: "POST", cookie: admin, body: { password: "odd123" } });
+		expect(set.data.staff.status).toBe("active");
+		expect((await call("/auth/login", { method: "POST", body: { email: "odd@novacane.co.uk", password: "odd123" } })).status).toBe(200);
+	});
+});
+
 describe("one sign-in for the suite", () => {
 	it("opens Portal, the admin pages and each person's Index partition", async () => {
 		const admin = await setup();
