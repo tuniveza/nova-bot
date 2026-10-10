@@ -34,7 +34,7 @@
 	// on its own can be sent into Nova Agent (novaAgentPage in src/index.js)
 	"assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/", "/agent", "/agent/", "/agent/index.html", "/agent/portal", "/agent/calendar", "/agent/notes", "/agent/index", "/agent/observatory", "/agent/lossless", "/agent/visualizer", "/agent/admin", "/visualizer", "/visualizer.html", "/portal/", "/portal/index.html", "/calendar/", "/calendar/index.html", "/notes/", "/notes/index.html", "/app/memory/", "/app/memory/index.html", "/observatory/", "/observatory/index.html", "/lossless/", "/lossless/index.html", "/observatory/data/*", "/observatory/media/*"] },
 	// Lossless audio's signalling: one LosslessRoom per room code (src/lossless/room.js)
-	"durable_objects": { "bindings": [{ "name": "LOSSLESS_ROOMS", "class_name": "LosslessRoom" }, { "name": "AGENT_LINK", "class_name": "AgentLink" }] },
+	"durable_objects": { "bindings": [{ "name": "LOSSLESS_ROOMS", "class_name": "LosslessRoom" }, { "name": "AGENT_LINK", "class_name": "AgentLink" }] }, "version_metadata": { "binding": "CF_VERSION_METADATA" },
 	"migrations": [{ "tag": "lossless-v1", "new_sqlite_classes": ["LosslessRoom"] }, { "tag": "agent-link-v1", "new_sqlite_classes": ["AgentLink"] }],
 	// Referral tracking: appointments and referral codes.
 	// Create it once with `npx wrangler d1 create novabot` and paste the
@@ -55,7 +55,7 @@
 		"sandbox": {
 			"name": "novabot-sandbox",
 			"vars": { "SANDBOX": "true", "PUBLIC_URL": "http://localhost:8787" },
-			"durable_objects": { "bindings": [{ "name": "LOSSLESS_ROOMS", "class_name": "LosslessRoom" }, { "name": "AGENT_LINK", "class_name": "AgentLink" }] },
+			"durable_objects": { "bindings": [{ "name": "LOSSLESS_ROOMS", "class_name": "LosslessRoom" }, { "name": "AGENT_LINK", "class_name": "AgentLink" }] }, "version_metadata": { "binding": "CF_VERSION_METADATA" },
 			"d1_databases": [
 				{
 					"binding": "DB",

@@ -130,3 +130,12 @@ describe("/agent/ is the only address", () => {
     expect(res.status).not.toBe(302);
   });
 });
+
+describe("the apps' version check", () => {
+  it("/app-version answers with the live version, never kept by the browser", async () => {
+    const res = await get("/app-version", { headers: { "Sec-Fetch-Dest": "empty" } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(typeof (await res.json()).version).toBe("string");
+  });
+});

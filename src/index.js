@@ -716,6 +716,9 @@ export default {
     if (onlyAgent) return onlyAgent;
     // Shared notes (Notes inside Nova Agent): the team's notes, for signed-in staff (src/notes-shared.js)
     if (pathname.startsWith("/notes-api/")) return handleSharedNotes(request, env, pathname);
+    // Which version is live (changes with every deploy): Nova Agent and the Portal app check it when
+    // they're opened or come back to the front, and refresh themselves when it's new
+    if (pathname === "/app-version") return new Response(JSON.stringify({ version: (env.CF_VERSION_METADATA && env.CF_VERSION_METADATA.id) || "dev" }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     // Nova Agent's front page: the live music bits (charts, musicians' photos)
     if (pathname === "/music-world" || pathname.startsWith("/music-world/")) return handleMusicWorld(request, env, ctx, pathname);
     // Nova Agent's Portal panel online (its pages are copied into public/ from Nova Agent's
