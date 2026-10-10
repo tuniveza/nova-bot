@@ -17,6 +17,10 @@
 //   POST /app/api/enquiries/draft/discard { messageId }
 //   POST /app/api/enquiries/retry       { messageId } -> try a failed reply again
 //   POST /app/api/enquiries/contact     { id, doNotContact } -> "Don't contact" on or off
+//   POST /app/api/enquiries/logged      { id, kind: "whatsapp" | "sms" | "call", body, outcome, key }
+//                                       -> a WhatsApp, text or call the person made from their own phone
+//   GET  /app/api/services              what each part of Nova runs on, and whether it's set up
+//   POST /app/api/services/test-email   emails the person signed in, through Resend
 //     (Sending needs a browser's Portal sign-in, the cookie: never an app's token or Nova Agent's key.
 //      See src/enquiry-replies.js.)
 //   GET  /app/api/sessions              the session types, for booking links
@@ -42,6 +46,7 @@ import { handleMemoryForStaff, learnFromStaffChat } from "./memory/routes.js";
 import { clearCookie, endSession, requireStaff } from "./portal/auth.js";
 import { checkedLinks } from "./links.js";
 import * as replies from "./enquiry-replies.js";
+import { servicesStatus, testEmailToMe } from "./services.js";
 import { publicUrl } from "./nova/booking.js";
 import { listBookings } from "./booking-calendar.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
@@ -77,6 +82,8 @@ export async function handleApp(request, env, ctx, answer) {
     const reply = await enquiryReplies(request, env, me, route);
     if (reply) return reply;
   }
+  if (route === "/services" && request.method === "GET") return json({ services: await servicesStatus(env), admin: me.role === "admin" });
+  if (route === "/services/test-email" && request.method === "POST") return done(await testEmailToMe(env, me));
   if (route === "/sessions") return listSessions(env);
   if (route === "/booking-link" && request.method === "POST") return makeLink(request, env);
   if (route === "/conversations") return conversations(env, url);
@@ -169,12 +176,13 @@ async function enquiryReplies(request, env, me, route) {
   }
   if (request.method !== "POST") return null;
   const SENDS = ["/enquiries/reply", "/enquiries/draft/approve", "/enquiries/retry"];
-  const ACTIONS = [...SENDS, "/enquiries/note", "/enquiries/draft/edit", "/enquiries/draft/discard", "/enquiries/contact"];
+  const ACTIONS = [...SENDS, "/enquiries/note", "/enquiries/logged", "/enquiries/draft/edit", "/enquiries/draft/discard", "/enquiries/contact"];
   if (!ACTIONS.includes(route)) return null;
   if (SENDS.includes(route) && me.session_kind !== "cookie") return json({ error: "Sending needs Portal open in a browser, signed in (on the studio computer, open Portal online).", onlineUrl: `${publicUrl(env)}/portal/?view=enquiries` }, 403);
   const body = await readJson(request);
   if (route === "/enquiries/reply") return done(await replies.staffReply(env, me, body));
   if (route === "/enquiries/note") return done(await replies.staffNote(env, me, body));
+  if (route === "/enquiries/logged") return done(await replies.staffLogged(env, me, body));
   if (route === "/enquiries/draft/edit") return done(await replies.editDraft(env, me, body));
   if (route === "/enquiries/draft/approve") return done(await replies.approveDraft(env, me, body));
   if (route === "/enquiries/draft/discard") return done(await replies.discardDraft(env, me, body));

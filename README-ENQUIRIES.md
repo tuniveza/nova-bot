@@ -87,15 +87,35 @@ whole conversation: replies sent, internal notes, and drafts from Agent.
 3. The database change: `npx wrangler d1 migrations apply novabot --remote`
    (migrations/0022_enquiry_replies.sql).
 
-### Texts and WhatsApp (not connected yet)
+### WhatsApp, calls and texts (from your own phone)
 
-Portal shows **Call** (`tel:`) and **Text** (`sms:`) for the customer's mobile, which open
-the staff member's own phone. To send texts from Portal later, add a provider to
-`CHANNELS` in `src/enquiry-replies.js` (`sms` and `whatsapp` are already allowed in the
-database): an account with a UK sender (e.g. Twilio, Vonage or MessageBird; WhatsApp needs
-a WhatsApp Business sender and approved message templates for the first message), its API
-key as a secret, a `send()` that posts the text plus a short "Reply STOP to opt out"
-line, and a webhook for STOP replies that sets "don't contact".
+Portal shows **WhatsApp**, **Call** and **Text** for the customer's mobile, and the reply box
+has **WhatsApp** and **Text** next to Reply and Note. They use the staff member's own phone
+and WhatsApp: nothing extra to pay for or set up, and the message comes from a real person.
+
+- **WhatsApp** opens WhatsApp's own link (`api.whatsapp.com/send`) with the number and the
+  message filled in: the app on a phone, the app or WhatsApp Web on a computer.
+- **Text** opens Messages (`sms:`) with both filled in. **Call** opens the dialler (`tel:`).
+  On a computer, where those often do nothing, Portal shows the number (and message) with
+  Copy buttons, plus "Try on this computer" for a Mac with an iPhone or a PC with Phone Link.
+- Afterwards Portal asks "Did it send?" (or "How did the call go?") and writes the answer into
+  the conversation (`POST /app/api/enquiries/logged`, `staffLogged()`), so the whole team sees
+  it. A WhatsApp or text, or a call where they spoke or left a voicemail, marks a new enquiry
+  "Replied". "Don't contact" hides all three and the server refuses to record them.
+- Numbers are sent as full international numbers (`dialNumber()` in `src/enquiries.js`:
+  07… becomes +447…). A landline gets Call only.
+
+To have Nova send texts itself later, add a provider to `CHANNELS` in `src/enquiry-replies.js`:
+an account with a UK sender (e.g. Twilio or Vonage; WhatsApp needs a WhatsApp Business sender
+and approved templates), its API key as a secret, a `send()` that adds "Reply STOP to opt
+out", and a webhook for STOP replies that sets "don't contact".
+
+### How it works (Portal → You)
+
+Portal's You page lists each part of Nova and the service behind it (Resend for email,
+Anthropic Claude for the AI, Stripe, Cloudflare…) with a green dot when it's set up
+(`GET /app/api/services`, `src/services.js`; only yes/no and plain addresses, never a key).
+**Send me a test email** emails whoever pressed it through Resend, at most once a minute.
 
 ## Booking links (getting bookings into Acuity)
 

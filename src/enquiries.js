@@ -54,6 +54,13 @@ export function mobileNumber(value) {
   return "";
 }
 
+// The same number in full international form ("+447700900123"), for Call, Text and
+// WhatsApp links: they need the country code to work from anywhere. "" if it isn't a mobile.
+export function dialNumber(value) {
+  const n = mobileNumber(value);
+  return n.startsWith("07") ? "+44" + n.slice(1) : n;
+}
+
 // Tidy one field: text only, trimmed and capped
 function field(value, max) {
   return typeof value === "string" ? value.replace(/\s+\n/g, "\n").trim().slice(0, max) : "";

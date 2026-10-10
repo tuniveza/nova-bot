@@ -17,7 +17,7 @@
 // or a retried request can't send the same reply twice. Email goes only to the enquiry's own
 // address. Times are stored in UTC; emails show dates in UK time.
 
-import { emailIsSetUp, emailRecipients, mobileNumber, sendEmail } from "./enquiries.js";
+import { dialNumber, emailIsSetUp, emailRecipients, mobileNumber, sendEmail } from "./enquiries.js";
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
 
@@ -28,9 +28,10 @@ const STUCK_MS = 2 * 60 * 1000;
 // Drafts from the AI waiting on one enquiry at most (stops a runaway loop filling the thread)
 const MAX_WAITING_DRAFTS = 5;
 
-// How a reply reaches the customer. Email is the one that works today. A text-message
-// provider (SMS or WhatsApp) slots in here later: { ready(env), send(env, message, enquiry, attempt) }
-// returning { ok, id } or { ok: false, message }, plus its secrets (see README-ENQUIRIES.md).
+// How Nova itself sends a reply: email. (WhatsApp and texts go from the person's own phone,
+// and are only recorded here: see staffLogged.) A text-message provider could slot in here
+// later: { ready(env), send(env, message, enquiry, attempt) } returning { ok, id } or
+// { ok: false, message }, plus its secrets (see README-ENQUIRIES.md).
 export const CHANNELS = {
   email: { ready: (env) => emailIsSetUp(env), notReady: "Email isn't set up yet (it needs the RESEND_API_KEY and ENQUIRY_EMAIL_TO secrets).", send: sendByEmail },
 };
@@ -85,7 +86,7 @@ export async function enquiryThread(env, id) {
     .all();
   const stuckBefore = Date.now() - STUCK_MS;
   return {
-    enquiry: { ...e, state: enquiryState(e), mobile: mobileNumber(e.phone || "") || null },
+    enquiry: { ...e, state: enquiryState(e), mobile: mobileNumber(e.phone || "") || null, dial: dialNumber(e.phone || "") || null },
     // "sending" is an approved reply on its way; one stuck that way for minutes can be retried
     messages: results.map((m) => ({ ...m, stuck: m.status === "approved" && Date.parse(m.updated_at) < stuckBefore })),
   };
@@ -106,7 +107,7 @@ export async function listEnquiries(env, { show = "new", limit = 300 } = {}) {
   )
     .bind(limit)
     .all();
-  return results.map((e) => ({ ...e, state: enquiryState(e) }));
+  return results.map((e) => ({ ...e, state: enquiryState(e), dial: dialNumber(e.phone || "") || null }));
 }
 
 async function readMessage(env, messageId) {
@@ -262,6 +263,53 @@ export async function setEnquiryStatus(env, { id, status }) {
   const { meta } = await env.DB.prepare("UPDATE enquiries SET status = ? WHERE id = ?").bind(status, id).run();
   if (!meta.changes) return fail(404, "That enquiry doesn't exist.");
   return { ok: true };
+}
+
+// ===== WHATSAPP, TEXTS AND CALLS (from the person's own phone) =====
+// Portal opens WhatsApp, Messages or the phone's dialler with the customer's number (and the
+// reply) filled in, and the person sends or calls from there: Nova sends nothing itself. Once
+// they say it went, it's written into the conversation so the whole team can see it.
+
+// How a call went (what the person picked after hanging up)
+export const CALL_OUTCOMES = { spoke: "Spoke to them", voicemail: "Left a voicemail", "no-answer": "No answer" };
+// The first line of a call's entry in the conversation (Portal shows these as calls)
+export const CALL_PREFIX = "Phone call: ";
+
+// Record a WhatsApp message or text the person sent (kind "whatsapp" / "sms", body = what
+// they sent), or a call they made (kind "call", outcome from CALL_OUTCOMES, body = an
+// optional note). Contact, so it moves a new enquiry on to "replied" (a missed call doesn't).
+export async function staffLogged(env, me, { id, kind, body, outcome, key }) {
+  if (!Number.isInteger(id)) return fail(400, "Which enquiry?");
+  if (!["whatsapp", "sms", "call"].includes(kind)) return fail(400, "WhatsApp, text or call?");
+  const call = kind === "call";
+  if (call && !CALL_OUTCOMES[outcome]) return fail(400, "How did the call go?");
+  const text = cleanBody(body);
+  if (!call && !text) return fail(400, "What did you send?");
+  const e = await env.DB.prepare("SELECT id, phone, do_not_contact_at FROM enquiries WHERE id = ?").bind(id).first();
+  if (!e) return fail(404, "That enquiry doesn't exist.");
+  if (e.do_not_contact_at) return fail(409, "They've asked not to be contacted.");
+  const to = dialNumber(e.phone || "");
+  if (!to) return fail(409, "This enquiry has no mobile number.");
+  const clientKey = cleanKey(key);
+  const now = nowIso();
+  const row = call
+    ? env.DB.prepare(
+        `INSERT INTO enquiry_messages (enquiry_id, direction, channel, body, status, created_by, author_staff_id, created_at, updated_at, client_key)
+         VALUES (?, 'note', 'email', ?, NULL, 'staff', ?, ?, ?, ?)
+         ON CONFLICT (enquiry_id, client_key) DO NOTHING`
+      ).bind(id, CALL_PREFIX + CALL_OUTCOMES[outcome] + (text ? "\n" + text : ""), me.id, now, now, clientKey)
+    : env.DB.prepare(
+        `INSERT INTO enquiry_messages (enquiry_id, direction, channel, body, status, created_by, author_staff_id, created_at, updated_at, approved_by, approved_at, sent_at, sent_to, attempts, client_key)
+         VALUES (?, 'out', ?, ?, 'sent', 'staff', ?, ?, ?, ?, ?, ?, ?, 1, ?)
+         ON CONFLICT (enquiry_id, client_key) DO NOTHING`
+      ).bind(id, kind, text, me.id, now, now, me.id, now, now, to, clientKey);
+  const { meta } = await row.run();
+  if (!meta.changes) {
+    const same = await env.DB.prepare("SELECT id FROM enquiry_messages WHERE enquiry_id = ? AND client_key = ?").bind(id, clientKey).first();
+    return { message: await publicMessage(env, same.id), repeated: true };
+  }
+  if (outcome !== "no-answer") await env.DB.prepare("UPDATE enquiries SET status = 'replied' WHERE id = ? AND status = 'new'").bind(id).run();
+  return { message: await publicMessage(env, meta.last_row_id) };
 }
 
 // ===== NOVA AGENT'S AI: drafts only =====
