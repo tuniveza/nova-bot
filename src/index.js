@@ -1438,7 +1438,8 @@ function novaAgentPage(request, env, pathname) {
   const last = pathname.slice(pathname.lastIndexOf("/") + 1);
   const isPage = !last.includes(".") || last.endsWith(".html");
   if (!isPage || !PANELS.some((p) => pathname === p || pathname.startsWith(p + "/")) || NOT_PAGES.test(pathname)) return null;
-  if (request.headers.get("Sec-Fetch-Dest") === "document") return toAgent(opened(pathname, url.search));
+  // (Portal's pages decide for themselves: Portal is also its own phone app; see onlyNovaAgent)
+  if (request.headers.get("Sec-Fetch-Dest") === "document" && !pathname.startsWith("/portal/")) return toAgent(opened(pathname, url.search));
   // Inside Nova Agent: the panel's page itself. Everything else (the admin pages, Observatory's
   // files, Lossless audio's signalling) is made further on.
   if (pathname === "/admin" || pathname.startsWith("/admin/") || pathname.startsWith("/observatory/data/") || pathname.startsWith("/observatory/media/")) return null;
@@ -1465,6 +1466,10 @@ function onlyNovaAgent(request, env, pathname) {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
   if (request.headers.get("Sec-Fetch-Dest") !== "document") return null;
   if (pathname === AGENT || CUSTOMER_PAGES.test(pathname) || NOT_PAGES.test(pathname)) return null;
+  // Portal is also its own phone app: its pages decide for themselves (shared/inside.js): from the
+  // home-screen icon or the install link (/portal/?app=1) they stay Portal; anywhere else they
+  // open inside Nova Agent
+  if (pathname.startsWith("/portal/")) return null;
   if (env.SANDBOX === "true" && (pathname === "/" || pathname === "/sandbox")) return null;
   const last = pathname.slice(pathname.lastIndexOf("/") + 1);
   if (last.includes(".") && !last.endsWith(".html")) return null;

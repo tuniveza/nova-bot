@@ -17,11 +17,9 @@ async function get(path, init = {}) {
 const onItsOwn = { headers: { "Sec-Fetch-Dest": "document" } };
 const inside = { headers: { "Sec-Fetch-Dest": "iframe" } };
 
+// (Portal isn't here: it's also its own phone app, so its page decides; see "Portal's pages load as themselves")
 describe("a panel opened on its own opens inside Nova Agent", () => {
   it.each([
-    ["/portal/", "/portal/"],
-    ["/portal/?view=chats", "/portal/?view=chats"],
-    ["/portal/index.html", "/portal/index.html"],
     ["/calendar/", "/calendar/"],
     ["/notes/", "/notes/"],
     ["/app/memory/?scope=studio", "/app/memory/?scope=studio"],
@@ -46,6 +44,13 @@ describe("inside Nova Agent the panels are themselves", () => {
   it.each(["/portal/", "/calendar/", "/notes/", "/app/memory/", "/observatory/", "/lossless/", "/visualizer"])("%s isn't redirected", async (path) => {
     const res = await get(path, inside);
     expect(res.status).not.toBe(302);
+  });
+
+  it("Portal's pages load as themselves (the Portal phone app; the page itself opens Nova Agent in a browser tab)", async () => {
+    for (const path of ["/portal/", "/portal/?app=1", "/portal/?view=alerts"]) {
+      const res = await get(path, onItsOwn);
+      expect(res.status, `${path} → ${res.headers.get("Location")}`).not.toBe(302);
+    }
   });
 
   it("the admin pages can be shown inside Nova Agent (same site only)", async () => {
