@@ -102,7 +102,9 @@ export async function handleApp(request, env, ctx, answer) {
 // ===== NOVA QUESTS =====
 
 // A tap on a quest or mission in Portal, passed on to Nova Agent
-const QUEST_ACTIONS = ["done", "start", "skip", "reopen", "snooze", "finish", "pause", "resume"];
+const QUEST_ACTIONS = ["done", "start", "skip", "reopen", "snooze", "finish", "pause", "resume", "mode"];
+// How a quest is going (Nova Agent's MODES): Portal's mode chip
+const QUEST_MODES = ["waiting", "soon", "working", "nearly", "longer", "questions", "done"];
 async function questAction(request, env) {
   const body = await readJson(request);
   const id = String(body.id || "").replace(/[^\w-]/g, "").slice(0, 64);
@@ -112,7 +114,8 @@ async function questAction(request, env) {
   const minutes = Math.min(Math.max(Number(body.minutes) || 15, 1), 1440);
   // The session it was tapped on, so a late or repeated "done" can't count against the next one
   const session = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(body.session) ? body.session : undefined;
-  await queueQuestAction(env, { kind, id, action, minutes, ...(session && { session }) });
+  if (action === "mode" && !QUEST_MODES.includes(body.mode)) return json({ error: "That isn't a mode" }, 400);
+  await queueQuestAction(env, { kind, id, action, minutes, ...(session && { session }), ...(action === "mode" && { mode: body.mode }) });
   return json({ ok: true });
 }
 
