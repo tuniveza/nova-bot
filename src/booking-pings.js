@@ -12,6 +12,7 @@
 // 3 minutes, it goes out with what we have (checked every minute, see index.js).
 
 // Imports: booking details, the session names, and sending notifications
+import { findAcuityTest, noteTestAlert, TEST_NAME } from "./acuity-test-booking.js";
 import { bookingInfo, confirmBooking, describeBooking, forgetBookingTime, waitForBookingInfo } from "./booking-details.js";
 import { ACUITY_OWNER, getSessionTypes } from "./booking.js";
 import { readCalendar } from "./booking-calendar.js";
@@ -120,6 +121,16 @@ async function ping(env, event) {
   const lines = info ? describeBooking(info) : [await sessionName(event.type_id)];
   // A move we have no new time for: say where to find it
   if (event.action === "rescheduled" && !info?.when) lines.push("Tap to see the new time in Acuity.");
+  // A test booking from Portal (acuity-test-booking.js): only the admin who ran it, only if they
+  // asked, never into Alerts. (Its name gives it away too, in case its row isn't saved yet.)
+  const test = await findAcuityTest(env, event.appointment_id);
+  if (test || info?.name === TEST_NAME) {
+    const asked = Boolean(test?.alertMe);
+    const testTitle = "TEST · " + title;
+    const delivered = asked ? await notifyPhones(env, { title: testTitle, body: lines.join("\n"), url: "/portal/?view=admin&page=%2Fadmin%2Ftest-booking", save: false, to: { staff: [test.by] } }) : 0;
+    if (test) await noteTestAlert(env, test.id, event.action, { title: testTitle, body: lines.join("\n"), delivered, asked });
+    return;
+  }
   // Send it to every signed-up phone; tapping it opens Acuity
   await notifyPhones(env, { title, body: lines.join("\n"), url: "https://secure.acuityscheduling.com/", appointmentId: event.appointment_id });
   // After a move, the confirmation page's old day and time are wrong

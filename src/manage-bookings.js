@@ -335,7 +335,7 @@ async function changeExtras(env, input) {
 // ===== HELPERS =====
 
 // Call Acuity's API. Returns { ok, data }, never throws.
-async function acuity(env, method, path, body) {
+export async function acuity(env, method, path, body) {
   try {
     const res = await fetch(ACUITY_API + path, {
       method,

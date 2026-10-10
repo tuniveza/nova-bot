@@ -9,6 +9,7 @@
 // the webhook address in Acuity (…/acuity/webhook?key=…). Referral tracking
 // also needs ACUITY_USER_ID and ACUITY_API_KEY (Acuity's Powerhouse plan).
 
+import { findAcuityTest } from "./acuity-test-booking.js";
 import { bookingChanged } from "./booking-pings.js";
 import { calendarChanged } from "./club-calendar.js";
 
@@ -188,7 +189,8 @@ export async function handleAcuityWebhook(request, env, ctx) {
   await calendarChanged(env).catch((err) => console.log("Couldn't mark the Nova Club calendar as changed:", err));
 
   // Referral tracking: looks the booking up with Acuity's API, so only when signed
-  if (signed) {
+  // (never for a test booking from Portal: acuity-test-booking.js)
+  if (signed && !(await findAcuityTest(env, id))) {
     try {
       const appt = await fetchAppointment(env, id);
       if (appt) {

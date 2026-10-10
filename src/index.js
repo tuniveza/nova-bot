@@ -48,6 +48,7 @@ import { usesNova } from "./mode.js";
 import { handleBookingPages } from "./nova/book-page.js";
 import { expireHolds, sendReminders } from "./nova/bookings.js";
 import { removeOldTestBookings } from "./nova/test-booking.js";
+import { tidyAcuityTests } from "./acuity-test-booking.js";
 import { dailyHealthCheck } from "./nova/health.js";
 import { googleReady } from "./nova/google.js";
 import { handleClubBusy as handleNovaClubBusy } from "./nova/club-calendar.js";
@@ -709,6 +710,8 @@ export default {
         sendReminders(env, at).catch((err) => console.log("Nova reminders failed:", err)),
         // Test bookings (Portal → Admin → Test booking) remove themselves after 24 hours
         removeOldTestBookings(env, at).catch((err) => console.log("Removing old test bookings failed:", err)),
+        // Acuity test bookings cancel themselves within 15 minutes (src/acuity-test-booking.js)
+        tidyAcuityTests(env, at).catch((err) => console.log("Acuity test booking check failed:", err)),
         // Calendar reminders on phones (src/calendar/reminders.js)
         sendCalendarReminders(env, at).catch((err) => console.log("Calendar reminders failed:", err)),
         dailyHealthCheck(env, new Date(at)).catch((err) => console.log("Nova health check failed:", err)),
