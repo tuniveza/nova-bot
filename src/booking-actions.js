@@ -343,14 +343,23 @@ async function decidedAlready(env, id) {
   return { ...fail(409, `That booking change has already been ${action.status === "pending" ? "changed" : action.status}.`), action };
 }
 
+// The saved details with a person's edits on top (they may send only what they changed)
+function withEdits(saved, edits) {
+  let base = {};
+  try {
+    base = JSON.parse(saved) || {};
+  } catch {}
+  return edits && typeof edits === "object" && !Array.isArray(edits) ? { ...base, ...edits } : base;
+}
+
 // Change a pending one's details (it stays pending; the summary is written again)
 export async function editAction(env, me, { id, payload }) {
   id = positiveId(id);
   if (!id) return fail(400, "Which booking change?");
-  const row = await env.DB.prepare("SELECT kind, status FROM booking_actions WHERE id = ?").bind(id).first();
+  const row = await env.DB.prepare("SELECT kind, status, payload FROM booking_actions WHERE id = ?").bind(id).first();
   if (!row) return fail(404, "That booking change doesn't exist.");
   if (row.status !== "pending") return decidedAlready(env, id);
-  const checked = await checkProposal(env, row.kind, payload);
+  const checked = await checkProposal(env, row.kind, withEdits(row.payload, payload));
   if (checked.error) return checked;
   const { meta } = await env.DB.prepare("UPDATE booking_actions SET payload = ?, summary = ?, updated_at = ? WHERE id = ? AND status = 'pending'")
     .bind(JSON.stringify(checked.payload), checked.summary, nowIso(), id)
@@ -364,12 +373,12 @@ export async function editAction(env, me, { id, payload }) {
 export async function approveAction(env, me, { id, payload }) {
   id = positiveId(id);
   if (!id) return fail(400, "Which booking change?");
-  const row = await env.DB.prepare("SELECT kind, status FROM booking_actions WHERE id = ?").bind(id).first();
+  const row = await env.DB.prepare("SELECT kind, status, payload FROM booking_actions WHERE id = ?").bind(id).first();
   if (!row) return fail(404, "That booking change doesn't exist.");
   if (row.status !== "pending") return { action: await getAction(env, id), repeated: true };
   let checked = null;
   if (payload !== undefined && payload !== null) {
-    checked = await checkProposal(env, row.kind, payload);
+    checked = await checkProposal(env, row.kind, withEdits(row.payload, payload));
     if (checked.error) return checked;
   }
   const now = nowIso();

@@ -540,3 +540,16 @@ describe("a change cut off part-way", () => {
 		expect(action.error).toContain("Check Acuity");
 	});
 });
+
+describe("an admin's edits", () => {
+	it("can send just what changed: the rest of the proposal is kept", async () => {
+		const { meta } = await env.DB.prepare(
+			"INSERT INTO booking_actions (kind, payload, summary, status, proposed_by, created_at, updated_at) VALUES ('block_add', '{\"start\":\"2027-01-07T10:00:00.000Z\",\"end\":\"2027-01-07T12:00:00.000Z\",\"notes\":\"Gear service\"}', 'Block off', 'pending', 'agent', '2030-01-01T00:00:00.000Z', '2030-01-01T00:00:00.000Z')"
+		).run();
+		const { editAction } = await import("../src/booking-actions.js");
+		const out = await editAction(env, { id: "test-admin", role: "admin", session_kind: "cookie" }, { id: meta.last_row_id, payload: { end: "2027-01-07T13:00" } });
+		expect(out.error).toBeUndefined();
+		expect(out.action.payload).toMatchObject({ start: "2027-01-07T10:00:00.000Z", end: "2027-01-07T13:00:00.000Z", notes: "Gear service" });
+		expect(out.action.status).toBe("pending");
+	});
+});
