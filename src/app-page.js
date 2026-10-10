@@ -1,4 +1,4 @@
-// The staff API for Portal (the staff app, at /portal/; it was Hub, at /app/, so the API kept
+// The staff API for Portal (the staff app, at /portal/; it used to be at /app/, so the API kept
 // that address)
 //
 // The app itself (public/portal/) is plain files with no customer data in them.
@@ -26,8 +26,8 @@
 //   POST /app/api/ask                   { question, history } -> { answer } (questions about bookings, enquiries, alerts)
 
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
-import { askHub } from "./hub-ask.js";
-import { questsForHub, queueQuestAction } from "./agent-nova.js";
+import { askPortal } from "./portal-ask.js";
+import { questsForPortal, queueQuestAction } from "./agent-nova.js";
 import { handleMemoryForStaff, learnFromStaffChat } from "./memory/routes.js";
 import { clearCookie, endSession, requireStaff } from "./portal/auth.js";
 import { checkedLinks } from "./links.js";
@@ -80,7 +80,7 @@ export async function handleApp(request, env, ctx, answer) {
     return handleCalendarItems(request, env, route);
   }
   if (route === "/calendar" && request.method === "GET") return calendar(env);
-  if (route === "/quests" && request.method === "GET") return json(await questsForHub(env));
+  if (route === "/quests" && request.method === "GET") return json(await questsForPortal(env));
   // Index: the suite's memory (browse, edit, approve)
   if (route.startsWith("/memory/")) {
     if (request.method !== "GET" && request.headers.get("Origin") !== url.origin) return json({ error: "Forbidden" }, 403);
@@ -88,17 +88,17 @@ export async function handleApp(request, env, ctx, answer) {
     // memory and their own partition (Portal decides who's who)
     const who = await requireStaff(request, env);
     const member = who && who.role !== "admin" ? who.id : null;
-    return handleMemoryForStaff(request, env, ctx, route.slice("/memory".length), ["hub", "portal"].includes(request.headers.get("X-Nova-App")) ? "Portal" : "Index", member);
+    return handleMemoryForStaff(request, env, ctx, route.slice("/memory".length), request.headers.get("X-Nova-App") === "portal" ? "Portal" : "Index", member);
   }
   if (route === "/links" && request.method === "GET") return json(await checkedLinks(env));
   if (route === "/quests/action" && request.method === "POST") return questAction(request, env);
-  if (route === "/ask" && request.method === "POST") return (await allowed(env, request, "app-ask:")) ? askHub(request, env) : json({ error: "Too many questions. Wait a minute." }, 429);
+  if (route === "/ask" && request.method === "POST") return (await allowed(env, request, "app-ask:")) ? askPortal(request, env) : json({ error: "Too many questions. Wait a minute." }, 429);
   return json({ error: "Not found" }, 404);
 }
 
 // ===== NOVA QUESTS =====
 
-// A tap on a quest or mission in Hub, passed on to Nova Agent
+// A tap on a quest or mission in Portal, passed on to Nova Agent
 const QUEST_ACTIONS = ["done", "start", "skip", "reopen", "snooze", "finish", "pause", "resume"];
 async function questAction(request, env) {
   const body = await readJson(request);

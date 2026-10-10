@@ -81,7 +81,7 @@ describe("which addresses go to the PC", () => {
     expect(relayRule("GET", "/calendar-sync.js")).toBeNull();
   });
 
-  it("never Portal's, Hub's API or the staff pages", () => {
+  it("never Portal's API or the staff pages", () => {
     for (const path of ["/auth/me", "/auth/login", "/staff", "/staff/x", "/app/api/me", "/portal/", "/", "/admin"]) {
       for (const method of ["GET", "POST"]) expect(relayRule(method, path)).toBeNull();
     }

@@ -36,7 +36,7 @@ describe("a panel opened on its own opens inside Nova Agent", () => {
     expect(res.headers.get("Location")).toBe(`${BASE}/agent/?open=${encodeURIComponent(address)}`);
   });
 
-  it("Hub's old address opens Portal in Nova Agent, on the same view", async () => {
+  it("Portal's old address (/app/) opens Portal in Nova Agent, on the same view", async () => {
     const res = await get("/app/?view=alerts", onItsOwn);
     expect(res.headers.get("Location")).toBe(`${BASE}/agent/?open=${encodeURIComponent("/portal/?view=alerts")}`);
   });

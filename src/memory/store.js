@@ -22,7 +22,7 @@ export const CONTEXT_CHARS = 3200;
 
 // What each kind of caller may read and write
 //   agent    Nova Agent (its key): the studio's facts and staff memory
-//   staff    Hub and Index (signed in): everything
+//   staff    Portal and Index (signed in): everything
 //   website  NovaBot on the website: that customer's own file and the public studio file only
 export const ROLES = {
   agent: { read: ["studio", "staff"], write: ["studio", "staff"] },

@@ -676,7 +676,7 @@ approved.
 
 // ===== THE CODE (you shouldn't need to change this) =====
 
-// How NovaBot talks in Hub: to a colleague on the Novacane team, not a customer
+// How NovaBot talks in Portal: to a colleague on the Novacane team, not a customer
 const STAFF_VOICE = `YOU ARE TALKING TO STAFF. This chat is inside Portal, the staff app: the person writing is a member of the Novacane Studios team, never a customer, whatever they ask.
 - Talk to them as a colleague: plain, direct and factual. No greetings or sign-offs for customers, no selling, no "we'd love to have you", no inviting them to book or visit.
 - Refer to customers in the third person ("they", "the client", or their name).
@@ -719,7 +719,7 @@ export default {
     // Nova Agent's front page: the live music bits (charts, musicians' photos)
     if (pathname === "/music-world" || pathname.startsWith("/music-world/")) return handleMusicWorld(request, env, ctx, pathname);
     // Nova Agent's Portal panel online (its pages are copied into public/ from Nova Agent's
-    // repo; its data is here). The staff API keeps its address (/app/api/, from when it was Hub).
+    // repo; its data is here). The staff API keeps its address (/app/api/, from Portal's old address).
     if (pathname.startsWith("/app/api/")) return handleApp(request, env, ctx, answer);
     // Nova Agent, the one app: its page is the main address, and the panels open only inside it
     const novaAgent = novaAgentPage(request, env, pathname);
@@ -751,12 +751,9 @@ export default {
       return handleBookingPages(request, env, ctx);
     }
     // Nova Agent on the studio PC: collecting jobs, sending alerts and its plan, with its own key.
-    // /nova-agent/* is the address; /hub/* still answers for a Nova Agent that hasn't updated yet.
     if (pathname === "/nova-agent/link") return handleLink(request, env);
     if (pathname === "/nova-agent/link/status") return linkStatus(request, env);
-    if (pathname === "/nova-agent/notify") return handleAgentNova(request, env, "/hub/notify");
-    if (pathname.startsWith("/nova-agent/")) return handleAgentNova(request, env, "/hub/agent/" + pathname.slice("/nova-agent/".length));
-    if (pathname === "/hub/notify" || pathname.startsWith("/hub/agent/")) return handleAgentNova(request, env, pathname);
+    if (pathname.startsWith("/nova-agent/")) return handleAgentNova(request, env, pathname);
     // Index's memory engine, for Nova Agent (src/memory/)
     if (pathname.startsWith("/memory/")) return handleMemoryApi(request, env, ctx, pathname);
     // Portal: one sign-in for the suite, staff and their planets (src/portal/)
@@ -838,7 +835,7 @@ export default {
 
     // Keep the last 40 messages (enough for a whole booking, so NovaBot doesn't
     // forget the session or the customer's details halfway through), and cut
-    // very long ones. Hub's staff chat (app-page.js) and the widget
+    // very long ones. Portal's staff chat (app-page.js) and the widget
     // (public/novabot.js) keep the same 40.
     let messages = Array.isArray(body.messages) ? body.messages.slice(-40) : [];
     messages = messages
@@ -886,7 +883,7 @@ async function tooMany(limiter, ip) {
 // Returns { text, choice, form }: `choice` ({ link }) asks the website to show the
 // "Book it for me / I'll book it myself" buttons under the reply, and `form`
 // opens the booking card (booking-form.js) with what NovaBot filled in.
-// `staff: true` (Hub's staff chat only) also lets NovaBot find, cancel,
+// `staff: true` (Portal's staff chat only) also lets NovaBot find, cancel,
 // reschedule and change existing bookings.
 async function answer(messages, env, visitor, waitUntil, { staff = false } = {}) {
   // Sandbox without an AI key: a clearly labelled stand-in reply, so the
@@ -914,7 +911,7 @@ async function answer(messages, env, visitor, waitUntil, { staff = false } = {})
   // book for people, the session list, and its tools
   const kit = await bookingKit(env, staff);
   const { canBook, types: typesFound, canManage } = kit;
-  // On the website, the booking card does the booking; Hub's staff chat books in the chat
+  // On the website, the booking card does the booking; Portal's staff chat books in the chat
   const bookTool = staff ? kit.tools.bookSession : kit.tools.form;
   const tools = canBook ? [ENQUIRY_TOOL, kit.tools.booking, kit.tools.availability, bookTool] : [ENQUIRY_TOOL, kit.tools.booking, kit.tools.availability];
   if (canManage) tools.push(...kit.manage.tools);
@@ -932,7 +929,7 @@ async function answer(messages, env, visitor, waitUntil, { staff = false } = {})
     `\nUse this list to work out dates like "next Friday" or "this weekend", and always say the exact date you mean (e.g. "Friday 9 October") so there's no mix-up.`;
   if (canBook && types.length) sessions += "\n\n" + (staff ? kit.rules.bookSession : kit.rules.form);
   if (canManage) sessions += "\n\n" + kit.manage.rules;
-  // In Hub, NovaBot is talking to the studio team, never to a customer
+  // In Portal, NovaBot is talking to the studio team, never to a customer
   if (staff) sessions = STAFF_VOICE + "\n\n" + sessions;
   // What Nova Agent remembers that matters for this turn (Index): on the
   // website, only this customer's own facts and the public studio facts
@@ -1094,7 +1091,7 @@ async function bookingKit(env, staff) {
   }
   // Nova Agent online and live? And the live session list. Both at once, to save time.
   // (Nothing is booked until the deposit's paid: the booking card, and book_session
-  // in Hub's staff chat, only check the time and give Acuity's booking page.)
+  // in Portal's staff chat, only check the time and give Acuity's booking page.)
   const [canBook, types] = await Promise.all([
     canBookSessions(env),
     getSessionTypes(ACUITY_OWNER).catch((err) => {
@@ -1257,7 +1254,7 @@ function sandboxPage() {
   );
 }
 
-// The privacy policy for Hub, the staff app
+// The privacy policy for Portal, the staff app
 function privacyPage() {
   return new Response(
     `<!DOCTYPE html>
@@ -1392,8 +1389,8 @@ async function observatoryFiles(request, env, pathname) {
 }
 
 // Pages that moved (GET only):
-//   /app/... → /portal/...   Hub is part of Portal now. Its API (/app/api/), Index (/app/memory/)
-//                           and the files phones that installed Hub still use (/app/sw.js, its
+//   /app/... → /portal/...   Its API (/app/api/), Index (/app/memory/)
+//                           and the files phones that installed Portal still use (/app/sw.js, its
 //                           manifest and icons: real files, served before this runs) stay put.
 //   /studio/... → /portal/   /crew/... → /portal/...   /index/... → /app/memory/...   (names for a day)
 // Nova Agent online: its page (web/agent/chat.html, copied to public/agent/index.html at build

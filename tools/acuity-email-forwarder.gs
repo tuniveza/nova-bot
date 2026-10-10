@@ -1,4 +1,4 @@
-// Hub: passes Acuity's booking emails to the Worker, so staff
+// Portal: passes Acuity's booking emails to the Worker, so staff
 // notifications include the customer's name, phone, email and form answers.
 //
 // Runs inside the Google account that receives Acuity's "New Appointment"
@@ -69,7 +69,7 @@ function sendAcuityEmails() {
         html: emails[i].getBody(),
         // Its plain-text version
         text: emails[i].getPlainBody(),
-        // Gmail's number for it (for Hub's "Open in Gmail" button)
+        // Gmail's number for it (for Portal's "Open in Gmail" button)
         messageId: emails[i].getId(),
         // Which Gmail account it's in (so the button opens the right one)
         account: Session.getEffectiveUser().getEmail(),

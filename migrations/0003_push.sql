@@ -1,4 +1,4 @@
--- Phones signed up for Nova Hub notifications (one row per phone)
+-- Phones signed up for Portal notifications (one row per phone)
 
 CREATE TABLE push_subscriptions (
   endpoint   TEXT PRIMARY KEY,  -- the phone's delivery address, given by Apple (or Google)

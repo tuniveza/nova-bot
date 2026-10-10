@@ -1,4 +1,4 @@
-// A booking's details for Hub's Alerts tab: each booking notification is
+// A booking's details for Portal's Alerts tab: each booking notification is
 // shown with the booking as it is now (it may have moved or been paid since).
 // Bookings live in our own bookings table, so this is a simple lookup.
 

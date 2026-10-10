@@ -6,7 +6,7 @@
 //   PUT  /memory/file                               write a file ({ ..., if_version: "new" | token }; 409 + current on a clash)
 //   POST /memory/extract                            hand over a conversation chunk; learned in the background (202)
 //   GET  /memory/index?scope=                       the listing (no bodies)
-// For Hub and Index (signed in), role "staff", under /app/api/memory/:
+// For Portal and Index (signed in), role "staff", under /app/api/memory/:
 //   index, file (GET/PUT/DELETE), pending (GET), pending/:id (POST approve/reject), stats
 // The website's NovaBot reads its own customer's slice in-process (see readForWebsite).
 
@@ -91,12 +91,12 @@ async function serve(request, env, ctx, route, role, sourceApp, memberId = null)
         source_app: sourceApp,
         source_ref: body.source_ref,
         who: scope === "staff" ? "a Novacane staff member talking to Nova Agent" : "the studio team",
-        paths: PATHS[scope === "staff" ? "staff" : scope === "customer" ? "customer" : "hub"],
+        paths: PATHS[scope === "staff" ? "staff" : scope === "customer" ? "customer" : "portal"],
       }).catch((err) => console.log("Memory extraction failed:", err.message))
     );
     return json({ ok: true, queued: true }, 202);
   }
-  // Index and Hub only
+  // Index and Portal only
   if (role === "staff" && route === "/pending" && request.method === "GET") return json({ pending: await listPending(env) });
   if (role === "staff" && route.startsWith("/pending/") && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
@@ -135,7 +135,7 @@ export async function handleMemoryApi(request, env, ctx, pathname) {
   return serve(request, env, ctx, pathname.slice("/memory".length), "agent", "Nova Agent");
 }
 
-// Hub's and Index's door (already signed in when this is called)
+// Portal's and Index's door (already signed in when this is called)
 // memberId: a signed-in staff member who isn't an admin (only their own partition and the studio's facts)
 export function handleMemoryForStaff(request, env, ctx, route, sourceApp = "Index", memberId = null) {
   return memberId ? serve(request, env, ctx, route, "member", sourceApp, memberId) : serve(request, env, ctx, route, "staff", sourceApp);
@@ -159,19 +159,19 @@ export async function readForWebsite(env, chatId, q) {
   return context(env, { readers, q, publicOnly: true, budget: 2000 });
 }
 
-// What Hub's chats may know: the studio's memory (people, topics, areas)
+// What Portal's chats may know: the studio's memory (people, topics, areas)
 export function readForStaff(env, q) {
   if (!env.DB) return null;
   return context(env, { readers: [{ scope: "studio", owner_id: null }], q });
 }
 
-// Learn from Hub's staff chats (in the background; saved straight away: staff are trusted)
+// Learn from Portal's staff chats (in the background; saved straight away: staff are trusted)
 export function learnFromStaffChat(env, messages) {
   const transcript = messages
     .slice(-6)
     .map((m) => `${m.role === "user" ? "Staff" : "NovaBot"}: ${m.content}`)
     .join("\n");
-  return learn(env, { transcript, scope: "studio", owner_id: null, mode: "auto", source_app: "Portal", who: "the studio team in Portal", paths: PATHS.hub });
+  return learn(env, { transcript, scope: "studio", owner_id: null, mode: "auto", source_app: "Portal", who: "the studio team in Portal", paths: PATHS.portal });
 }
 
 // ---- Website chats, read for facts by the every-minute job ----

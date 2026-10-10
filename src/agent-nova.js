@@ -5,7 +5,7 @@
 //   - 'book':   book a session a customer asked NovaBot to book for them
 //               (book-session.js)
 //   - 'change': change a booking's session type, price or paid status, which
-//               staff asked for in Hub (manage-bookings.js)
+//               staff asked for in Portal (manage-bookings.js)
 //
 // Rather than this Worker calling it (which would need it to be reachable
 // from the internet), Nova Agent checks in here and asks for work, like a
@@ -13,14 +13,14 @@
 // open until a job comes in (up to 20 seconds), and Nova Agent calls straight
 // back, so a job is picked up within about a second:
 //
-//   POST /hub/agent/next     { dryRun, bookingsPerVisitor, wait } -> { job } the oldest waiting job, or { job: null }
-//   POST /hub/agent/result   { id, ok, message }   -> staff phones get the result
-//   POST /hub/agent/quests   { state }             -> Hub shows Nova Agent's missions and quests;
-//                            replies with { actions } tapped in Hub since (also handed over with /next)
-//   POST /hub/notify         { title, message, source?, kind?, tag?, ttl?, urgent?, keep? }
+//   POST /nova-agent/next     { dryRun, bookingsPerVisitor, wait } -> { job } the oldest waiting job, or { job: null }
+//   POST /nova-agent/result   { id, ok, message }   -> staff phones get the result
+//   POST /nova-agent/quests   { state }             -> Portal shows Nova Agent's missions and quests;
+//                            replies with { actions } tapped in Portal since (also handed over with /next)
+//   POST /nova-agent/notify         { title, message, source?, kind?, tag?, ttl?, urgent?, keep? }
 //                            -> staff phones get Nova Agent's, Quest's and Mission's alerts
 //
-//   POST /hub/agent/me       { staff_id? }         -> who Nova Agent works for (its Nova Agent badge and memory);
+//   POST /nova-agent/me       { staff_id? }         -> who Nova Agent works for (its Nova Agent badge and memory);
 //                            without an id, the studio's first admin
 //
 // All of them need header Authorization: Bearer <AGENT_NOVA_KEY>.
@@ -88,16 +88,16 @@ export async function handleAgentNova(request, env, pathname) {
     // An empty body is fine
   }
 
-  if (pathname === "/hub/agent/next") {
+  if (pathname === "/nova-agent/next") {
     const job = await nextJob(env, body);
     return Response.json({ job, questActions: await takeQuestActions(env) });
   }
-  if (pathname === "/hub/agent/quests") return saveQuests(env, body);
-  if (pathname === "/hub/agent/result") return reportResult(env, body);
-  if (pathname === "/hub/notify") return sendAlert(env, body);
-  if (pathname === "/hub/agent/me") return agentStaff(env, body);
+  if (pathname === "/nova-agent/quests") return saveQuests(env, body);
+  if (pathname === "/nova-agent/result") return reportResult(env, body);
+  if (pathname === "/nova-agent/notify") return sendAlert(env, body);
+  if (pathname === "/nova-agent/me") return agentStaff(env, body);
   // Calendar: Nova Agent's copy on the PC and this one, kept the same (src/calendar/items.js)
-  if (pathname === "/hub/agent/calendar") return syncFromAgent(env, body);
+  if (pathname === "/nova-agent/calendar") return syncFromAgent(env, body);
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
@@ -125,7 +125,7 @@ async function nextJob(env, body) {
   const waitSeconds = Math.min(Math.max(Number(body?.wait) || 0, 0), MAX_WAIT_SECONDS);
   const giveUpAt = Date.now() + waitSeconds * 1000;
   let job = await takeJob(env);
-  // Stop waiting early for a job, or for a tap in Hub's Quests tab
+  // Stop waiting early for a job, or for a tap in Portal's Quests tab
   while (!job && !(await hasQuestActions(env)) && Date.now() < giveUpAt) {
     await new Promise((resolve) => setTimeout(resolve, WAIT_CHECK_MS));
     job = await takeJob(env);
@@ -208,8 +208,8 @@ async function sendAlert(env, body) {
 }
 
 // ===== NOVA QUESTS IN STUDIO =====
-// Nova Agent keeps its plan (missions, quests, pulses) here, so Hub can
-// show it; taps in Hub (Done, Start, Not now...) wait here until Nova
+// Nova Agent keeps its plan (missions, quests, pulses) here, so Portal can
+// show it; taps in Portal (Done, Start, Not now...) wait here until Nova
 // Agent next checks in, usually within a second.
 
 const QUESTS_KEY = "nova_quests";
@@ -227,8 +227,8 @@ async function saveQuests(env, body) {
   return Response.json({ ok: true, actions: await takeQuestActions(env) });
 }
 
-// What Hub shows: the latest plan, when it came, and whether Nova Agent is online
-export async function questsForHub(env) {
+// What Portal shows: the latest plan, when it came, and whether Nova Agent is online
+export async function questsForPortal(env) {
   const { results } = await env.DB.prepare("SELECT key, value FROM settings WHERE key IN (?, 'agent_nova_seen')").bind(QUESTS_KEY).all();
   const setting = Object.fromEntries(results.map((row) => [row.key, row.value]));
   let saved = { at: null, state: null };
@@ -239,7 +239,7 @@ export async function questsForHub(env) {
   return { ...saved, online: Date.now() - seen < ONLINE_MINUTES * 60000 };
 }
 
-// A tap in Hub, for Nova Agent to carry out. Each gets an id (so Nova
+// A tap in Portal, for Nova Agent to carry out. Each gets an id (so Nova
 // Agent counts it once) and is added in one statement, so taps made at the
 // same moment are all kept.
 export async function queueQuestAction(env, action) {

@@ -1,7 +1,7 @@
 -- Jobs for Nova Agent, the browser helper that does what Acuity's API can't
 -- (change a booking's session type, price or paid status)
 
--- One row per job staff asked for in Nova Hub's chat. Nova Agent checks in
+-- One row per job staff asked for in Portal's chat. Nova Agent checks in
 -- every minute, takes the oldest waiting job, does it in Acuity, and reports
 -- back; staff phones then get a notification with the result.
 CREATE TABLE agent_jobs (

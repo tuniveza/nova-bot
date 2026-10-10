@@ -1,4 +1,4 @@
--- Nova Hub settings that staff change in the app (one row per setting).
+-- Portal settings that staff change in the app (one row per setting).
 -- First one: "alerts_auto_delete_days" (empty or 0 = keep alerts for 90 days).
 
 CREATE TABLE settings (

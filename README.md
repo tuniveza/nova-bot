@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/media/banner.jpg" alt="Portal (then called Hub) on three phones: Quests, the smart calendar with this week at a glance, and Alerts with a booking checked in Acuity" width="900">
+<img src="docs/media/banner.jpg" alt="Portal on three phones: Quests, the smart calendar with this week at a glance, and Alerts with a booking checked in Acuity" width="900">
 
 # Nova Bot
 
@@ -87,11 +87,11 @@ any accounts.
 
 The staff app (enquiries, website chats, bookings, alerts, Ask NovaBot and push to the
 staff phones, plus sign-in, everyone's planet and the team) is Nova Agent's **Portal**
-panel. Hub is part of it now. Its pages live in Nova Agent's repo (`web/portal`) and are
+panel. Portal is part of it now. Its pages live in Nova Agent's repo (`web/portal`) and are
 copied in at build time (see [The build step](#the-build-step)). Online it's at
 `/portal/`; this Worker is its back end (`/app/api/*`, `src/app-page.js`, and `src/portal/`
-for sign-in and the team). Hub's old address, `/app/`, redirects to Portal, but phones
-that installed Hub keep their push helper (`/app/sw.js`). Its guide and pictures are in
+for sign-in and the team). Portal's old address, `/app/`, redirects to Portal, but phones
+that installed Portal keep their push helper (`/app/sw.js`). Its guide and pictures are in
 Nova Agent's `docs/apps/portal`.
 
 ## The admin pages
@@ -307,8 +307,8 @@ Worker's sign-in, so before every deploy or local run, wrangler's build step
 
 | From (Nova Agent) | To | What |
 |---|---|---|
-| `web/portal/` | `public/portal/` | Portal (Hub is part of it) |
-| `web/portal/old-app-address/` | `public/app/` | What phones that installed Hub from `/app/` still use: its push helper, manifest and icons |
+| `web/portal/` | `public/portal/` | Portal |
+| `web/portal/old-app-address/` | `public/app/` | What phones that installed Portal from `/app/` still use: its push helper, manifest and icons |
 | `web/index/` | `public/app/memory/` | Index |
 | `web/calendar/`, `web/notes/` | `public/calendar/`, `public/notes/` | Calendar and Notes (online, they save in the browser) |
 | `web/shared/` | `public/shared/` | Themes, sounds, the badge and the Manual |
@@ -318,7 +318,7 @@ Nova Agent is expected at `../../na`; `NOVA_AGENT_DIR` points elsewhere. The pag
 never saved in this repo (`.gitignore`). The planet generator copy is, so the project
 still builds and tests on its own.
 
-**Addresses**: Portal at `/portal/`, Index at `/app/memory/`. Hub's old pages (`/app/`,
+**Addresses**: Portal at `/portal/`, Index at `/app/memory/`. Portal's old pages (`/app/`,
 `/app/?view=alerts` and so on) redirect to Portal (`src/index.js`, `movedPage`); its API
 (`/app/api/`) and the files in `public/app/` stay. The addresses the panels had for a day
 (`/studio/`, `/crew/`, `/index/`) redirect too.
@@ -336,7 +336,7 @@ Everything secret is a **Wrangler secret** (`npx wrangler secret put NAME`), or 
 | `ACUITY_WEBHOOK_KEY` | Accepting Acuity's webhook (`/acuity/webhook?key=…`) |
 | `ACUITY_CALENDAR_URL` | Acuity's private calendar feed: booking details, the Calendar tab and Nova Club's busy times |
 | `ACUITY_EMAIL_KEY` | The Google Apps Script that forwards Acuity's emails (`tools/acuity-email-forwarder.gs`) |
-| `AGENT_NOVA_KEY` | Nova Agent's routes (`/nova-agent/*`, and the older `/hub/agent/*` and `/hub/notify`; `/memory/*`), and its online link (`/nova-agent/link`, the AgentLink Durable Object in `src/agent-relay.js`: Nova Agent's chat, Missions, Quests, Calendar and Visualizer online, through the studio PC) |
+| `AGENT_NOVA_KEY` | Nova Agent's routes (`/nova-agent/*`; `/memory/*`), and its online link (`/nova-agent/link`, the AgentLink Durable Object in `src/agent-relay.js`: Nova Agent's chat, Missions, Quests, Calendar and Visualizer online, through the studio PC) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Phone notifications (Web Push) |
 | `RESEND_API_KEY`, `ENQUIRY_EMAIL_TO`, `ENQUIRY_EMAIL_FROM` | Emailing enquiries (optional) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional: Admin → Google keeps the same key without them (Notes' Google Docs, Calendar and Gmail for bookings; Google is never a way to sign in, Portal is) |
@@ -363,7 +363,7 @@ Paste this into Acuity → Integrations → Custom conversion tracking, under an
 there, replacing `YOUR-WORKER` with your Worker's address:
 
 ```html
-<!-- Hub: sends this booking's details to the staff notification -->
+<!-- Portal: sends this booking's details to the staff notification -->
 <div id="nv-booked" hidden><i>%type%</i><i>%id%</i><i>%appointmentType%</i><i>%clientDate%</i><i>%clientTime%</i><i>%price%</i><i>%email%</i><i>%calendar%</i></div>
 <script>
 (function () {
@@ -471,8 +471,8 @@ public/app, portal, calendar, … Nova Agent's panels, copied in at build time (
   memory/                          Index (copied in at build time, not in git)
 public/portal/                   Portal's pages (copied in at build time, not in git)
 src/index.js                     the Worker: chat, voice, routes, NovaBot's instructions
-src/app-page.js                  Portal's staff API (/app/api/*, from when it was Hub)
-src/hub-ask.js                Ask Nova: questions about bookings, enquiries and alerts
+src/app-page.js                  Portal's staff API (/app/api/*, from Portal's old address)
+src/portal-ask.js                Ask Nova: questions about bookings, enquiries and alerts
 src/admin.js                     the admin pages
 src/links.js                     the master list: links, features, changelog
 src/memory/                      the memory engine (store, extract, routes)

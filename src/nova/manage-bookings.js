@@ -1,6 +1,6 @@
-// Staff managing bookings from Hub's chat
+// Staff managing bookings from Portal's chat
 //
-// In Hub, staff can ask NovaBot to find, cancel, move or change a booking
+// In Portal, staff can ask NovaBot to find, cancel, move or change a booking
 // ("cancel Dana's session on Saturday", "move Kai to 4pm", "send Ola the
 // balance link", "refund booking 12"). These tools are only given to NovaBot in
 // the staff chat, never on the website.

@@ -124,13 +124,13 @@ describe("staff and invites", () => {
 });
 
 describe("one sign-in for the suite", () => {
-	it("opens Hub, the admin pages and each person's Index partition", async () => {
+	it("opens Portal, the admin pages and each person's Index partition", async () => {
 		const admin = await setup();
-		// Hub
+		// Portal
 		expect((await call("/app/api/me", { cookie: admin })).status).toBe(200);
 		// The admin pages (no separate password)
 		expect((await call("/admin/links", { cookie: admin })).status).toBe(200);
-		// A staff member who isn't an admin: Hub yes, admin pages no
+		// A staff member who isn't an admin: Portal yes, admin pages no
 		const made = await call("/staff", { method: "POST", cookie: admin, body: { email: "kai@novacane.co.uk", display_name: "Kai" } });
 		const kai = (await call("/auth/invite/accept", { method: "POST", body: { token: new URL(made.data.invite_url).searchParams.get("invite"), password: PASS } })).cookie;
 		expect((await call("/app/api/me", { cookie: kai })).status).toBe(200);

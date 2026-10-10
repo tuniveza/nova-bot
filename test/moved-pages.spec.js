@@ -1,4 +1,4 @@
-// Nova Agent's panels online: Portal at /portal/ (Hub is part of it now, so Hub's old
+// Nova Agent's panels online: Portal at /portal/ (so its old
 // pages at /app/ go there), Index at /app/memory/. The addresses they had for a day go back too.
 // Run: npm test
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
@@ -30,7 +30,7 @@ describe("addresses the panels had for a day", () => {
   });
 });
 
-describe("Hub's old address goes to Portal", () => {
+describe("Portal's old address (/app/) goes to Portal", () => {
   it.each([
     ["/app", "/portal/"],
     ["/app/", "/portal/"],
@@ -53,10 +53,8 @@ describe("Hub's old address goes to Portal", () => {
 });
 
 describe("Nova Agent's own address", () => {
-  it("/nova-agent/* answers like /hub/agent/* (with Nova Agent's key)", async () => {
+  it("/nova-agent/* answers (with Nova Agent's key)", async () => {
     const res = await get("/nova-agent/me", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     expect(res.status).toBe(401); // no key: refused, but routed
-    const old = await get("/hub/agent/me", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-    expect(old.status).toBe(401);
   });
 });

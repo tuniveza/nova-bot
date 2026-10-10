@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { dailyAcuityCheck } from "../src/health.js";
 import { savePhone } from "../src/push.js";
-import { questsForHub, queueQuestAction } from "../src/agent-nova.js";
+import { questsForPortal, queueQuestAction } from "../src/agent-nova.js";
 
 const BASE = "https://novacane-worker.test";
 
@@ -87,7 +87,7 @@ describe("alerts from Nova Agent", () => {
 		const headers = { "Content-Type": "application/json" };
 		if (key !== undefined) headers.Authorization = `Bearer ${key}`;
 		const res = await worker.fetch(
-			new Request(BASE + "/hub/notify", { method: "POST", headers, body: JSON.stringify(body) }),
+			new Request(BASE + "/nova-agent/notify", { method: "POST", headers, body: JSON.stringify(body) }),
 			{ ...env, ...keys, AGENT_NOVA_KEY: "agent-nova-test-key" },
 			ctx
 		);
@@ -117,7 +117,7 @@ describe("alerts from Nova Agent", () => {
 		expect(await alerts()).toEqual([]);
 	});
 
-	it("keeps Nova Agent's plan for Hub, and hands taps back to Nova Agent once", async () => {
+	it("keeps Nova Agent's plan for Portal, and hands taps back to Nova Agent once", async () => {
 		const call = async (path, body) => {
 			const ctx = createExecutionContext();
 			const res = await worker.fetch(
@@ -128,12 +128,12 @@ describe("alerts from Nova Agent", () => {
 			await waitOnExecutionContext(ctx);
 			return res.json();
 		};
-		expect((await call("/hub/agent/quests", { state: { quests: [{ id: "q1", title: "Vocals" }] } })).actions).toEqual([]);
-		expect((await questsForHub(env)).state.quests[0].title).toBe("Vocals");
+		expect((await call("/nova-agent/quests", { state: { quests: [{ id: "q1", title: "Vocals" }] } })).actions).toEqual([]);
+		expect((await questsForPortal(env)).state.quests[0].title).toBe("Vocals");
 		await queueQuestAction(env, { kind: "quest", id: "q1", action: "done", minutes: 15 });
-		const next = await call("/hub/agent/next", { wait: 0 });
+		const next = await call("/nova-agent/next", { wait: 0 });
 		expect(next.questActions.map((a) => [a.id, a.action])).toEqual([["q1", "done"]]);
-		expect((await call("/hub/agent/next", { wait: 0 })).questActions).toEqual([]);
+		expect((await call("/nova-agent/next", { wait: 0 })).questActions).toEqual([]);
 	});
 
 	it("turns away a wrong or missing key", async () => {

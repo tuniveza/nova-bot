@@ -1,4 +1,4 @@
--- Notifications that reached at least one phone, listed in Nova Hub's Alerts tab
+-- Notifications that reached at least one phone, listed in Portal's Alerts tab
 
 CREATE TABLE notifications (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,  -- a number for each notification

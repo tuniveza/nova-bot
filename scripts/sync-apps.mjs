@@ -7,8 +7,8 @@
 //                                                 go to the top (public/manifest.webmanifest, public/sw.js)
 //   na/web/agent/page.html → public/visualizer.html   the Visualizer panel
 //   na/web/portal    → public/portal/     Portal: sign-in, enquiries, chats, bookings, alerts,
-//                                         push, your planet, the crew (Hub is part of it now)
-//   na/web/portal/old-app-address → public/app/   what phones that installed Hub from /app/
+//                                         push, your planet, the crew
+//   na/web/portal/old-app-address → public/app/   what phones that installed Portal from its old address, /app/
 //                                         still use: its push helper (sw.js), manifest and icons
 //   na/web/index     → public/app/memory/ Index
 //   na/web/calendar  → public/calendar/   Calendar (online, it saves in the browser)
@@ -36,7 +36,7 @@ const copies = [
   ["web/agent/assets/sw.js", "../public/sw.js", "Nova Agent's service worker"],
   ["web/agent/page.html", "../public/visualizer.html", "Visualizer"],
   ["web/agent/calendar-sync.js", "../public/calendar-sync.js", "Calendar's link to Nova Agent's calendar"],
-  ["web/portal/old-app-address/", "../public/app/", "Hub's old address (push helper, manifest, icons)"],
+  ["web/portal/old-app-address/", "../public/app/", "Portal's old address (push helper, manifest, icons)"],
   // after that, which replaces public/app/ whole
   ["web/index/", "../public/app/memory/", "Index"],
   ["web/portal/", "../public/portal/", "Portal"],

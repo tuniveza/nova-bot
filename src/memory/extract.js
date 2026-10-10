@@ -8,7 +8,7 @@
 //   2. Merge, don't pile up: each file is rewritten with the new facts folded in (a line
 //      on the same subject is replaced, not joined by a contradicting one), written with
 //      its version token, and retried once if someone else wrote first.
-//   3. Customers: facts about clients wait in the approval queue (Index / Hub)
+//   3. Customers: facts about clients wait in the approval queue (Index / Portal)
 //      instead of being saved straight away.
 // Files that grow past MAX_FILE_BYTES are condensed in the same pass.
 
@@ -173,7 +173,7 @@ export const PATHS = {
 - "topics/<subject>": a subject (pricing, gear, processes)
 - "areas/<name>": an ongoing piece of work (e.g. areas/ep-release)
 - "studio": a durable fact about how the studio runs`,
-  hub: `- "people/<name>": a client or collaborator the team talks about (preferences, how they work)
+  portal: `- "people/<name>": a client or collaborator the team talks about (preferences, how they work)
 - "topics/<subject>": a subject (pricing, gear, processes)
 - "areas/<name>": an ongoing piece of work
 - "studio": a durable fact about how the studio runs

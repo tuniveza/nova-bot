@@ -1,5 +1,5 @@
 // "Nova, what time is Eric ShortSaw's session?": questions about the studio's
-// own bookings, enquiries and alerts, answered in Hub (staff only).
+// own bookings, enquiries and alerts, answered in Portal (staff only).
 //
 //   POST /app/api/ask   { question, history }  ->  { answer }
 //
@@ -31,7 +31,7 @@ Staff ask you about the studio's own bookings, enquiries and alerts. Answer usin
 - BOOKINGS are the current Acuity diary (cancelled bookings aren't in it; recent cancellations and moves are in ALERTS).`;
 
 // Answer one question
-export async function askHub(request, env) {
+export async function askPortal(request, env) {
   // The question, and the conversation so far (for follow-ups like "and his phone number?")
   let body = {};
   try {
@@ -71,7 +71,7 @@ export async function askHub(request, env) {
   // Claude didn't answer
   if (!res.ok) {
     // Note why in the logs
-    console.log("Hub question failed:", res.status, await res.text());
+    console.log("Portal question failed:", res.status, await res.text());
     // Tell the app
     return Response.json({ error: "Nova couldn't answer just now. Try again." }, { status: 502 });
   }
@@ -112,7 +112,7 @@ async function snapshot(env) {
     }
   } catch (err) {
     // The feed couldn't be read
-    console.log("Hub question: couldn't read bookings:", err);
+    console.log("Portal question: couldn't read bookings:", err);
     parts.push("BOOKINGS: couldn't be read just now.");
   }
 

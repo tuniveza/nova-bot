@@ -1,4 +1,4 @@
-// Hub notifications: sending a message to every signed-up phone.
+// Portal notifications: sending a message to every signed-up phone.
 //
 // Think of it like the post: each phone gave us a delivery address (from Apple),
 // and we seal each message so only that phone can open it, then hand it to
@@ -48,7 +48,7 @@ const KEEP_ALERTS_DAYS = 90;
 
 // Send one notification to every signed-up phone. Returns how many it reached.
 // `url` is what opens when the notification is tapped. `save: false` keeps it
-// out of Hub's Alerts tab (used for test notifications). `appointmentId`
+// out of Portal's Alerts tab (used for test notifications). `appointmentId`
 // or `enquiryId` says which booking or enquiry it's about. `style` (optional)
 // says how the phone should show it: which Nova app it's from (`source`), what
 // kind it is, a `tag` (a newer one replaces an older one with the same tag), how
@@ -59,7 +59,7 @@ export async function notifyPhones(env, { title, body, url = "/portal/", save = 
   body = String(body).slice(0, 1500);
   // Send it to every phone and count how many Apple accepted it for
   const delivered = await sendToPhones(env, { title, body, url, style });
-  // Only list it in Hub if it actually went through to a phone
+  // Only list it in Portal if it actually went through to a phone
   if (save && delivered > 0) await saveAlert(env, { title, body, url, phones: delivered, appointmentId, enquiryId });
   // Report how many phones it reached
   return delivered;
@@ -167,7 +167,7 @@ export function alertKind(n) {
 
 // One alert, with the latest booking or enquiry details
 async function shapeAlert(env, n) {
-  // A Nova Bot booking (its alerts link to Google Calendar or Hub, never Acuity): shown as it is now
+  // A Nova Bot booking (its alerts link to Google Calendar or Portal, never Acuity): shown as it is now
   if (n.appointment_id && !/acuityscheduling\.com/.test(n.url)) return novaAlert(env, n);
   // Booking details, if the confirmation page sent them after the notification went out
   const info = n.appointment_id ? await bookingInfo(env, n.appointment_id) : null;

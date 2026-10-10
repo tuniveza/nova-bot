@@ -80,7 +80,7 @@ describe("alerts from Nova Agent", () => {
 		const headers = { "Content-Type": "application/json" };
 		if (key !== undefined) headers.Authorization = `Bearer ${key}`;
 		const res = await worker.fetch(
-			new Request(BASE + "/hub/notify", { method: "POST", headers, body: JSON.stringify(body) }),
+			new Request(BASE + "/nova-agent/notify", { method: "POST", headers, body: JSON.stringify(body) }),
 			{ ...env, ...keys, AGENT_NOVA_KEY: "agent-nova-test-key" },
 			ctx
 		);

@@ -10,7 +10,7 @@
 	// Fetches go out over the public internet, so the Links page can check the
 	// other Nova apps on this account (workers.dev) as anyone else would see them
 	"compatibility_flags": ["global_fetch_strictly_public"],
-	// Nova Agent's panels (Hub, Portal, Index, Calendar, Notes, Observatory, Lossless audio) are copied in from its repo before every deploy and local run
+	// Nova Agent's panels (Portal, Index, Calendar, Notes, Observatory, Lossless audio) are copied in from its repo before every deploy and local run
 	"build": { "command": "node scripts/sync-apps.mjs" },
 	"observability": {
 			"logs": {

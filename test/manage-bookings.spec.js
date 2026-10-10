@@ -257,7 +257,7 @@ describe("who gets these tools", () => {
 		expect(claudeCalls[0].system.map((s) => s.text).join("\n")).not.toContain("YOU ARE TALKING TO STAFF");
 	});
 
-	it("offers them in Hub's staff chat, and runs them", async () => {
+	it("offers them in Portal's staff chat, and runs them", async () => {
 		const cookie = STAFF_COOKIE; // signed in with Portal (test/sign-in.js)
 
 		claudeReplies = [

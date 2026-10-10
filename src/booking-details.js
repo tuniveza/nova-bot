@@ -1,5 +1,5 @@
 // The details of each Acuity booking (session, day, time, price, email), for
-// staff notifications and Hub's Alerts tab.
+// staff notifications and Portal's Alerts tab.
 //
 // Acuity's webhook only says "booking #123 happened" (on the Emerging plan).
 // The details come from a small piece of code on Acuity's confirmation page

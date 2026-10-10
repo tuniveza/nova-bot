@@ -4,7 +4,7 @@
 //   GET    /app/api/calendar/items?since=N   what changed since rev N (everything for 0)
 //   PUT    /app/api/calendar/items/:id       { item } save an event or day card
 //   DELETE /app/api/calendar/items/:id?updated=ISO   delete one
-//   POST   /hub/agent/calendar               Nova Agent's copy on the PC: { since, upserts, deletes }
+//   POST   /nova-agent/calendar               Nova Agent's copy on the PC: { since, upserts, deletes }
 //
 // Two copies can change the same thing: the change made last wins (each change carries
 // the time it was made, `updated`), and the loser is told what's there now. Nova Agent's

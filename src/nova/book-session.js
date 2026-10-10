@@ -1,7 +1,7 @@
 // NovaBot booking a session for the customer, straight into the studio's calendar
 //
 // The customer chooses how to book: NovaBot books it for them in the chat (Nova
-// Hub's staff chat with book_session, the website with the booking card,
+// Portal's staff chat with book_session, the website with the booking card,
 // booking-form.js), or they book it themselves on the booking page.
 //
 // Booking it here checks the time is still free, puts it in Google Calendar

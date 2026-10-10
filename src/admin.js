@@ -763,7 +763,7 @@ const ADMIN_STYLE = `
   nav.tabs a { padding: 7px 14px; border-radius: 999px; text-decoration: none; color: var(--muted); font-family: var(--f-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
   nav.tabs a:hover { color: var(--bright); }
   nav.tabs a.current { background: var(--grad); color: var(--on-accent); box-shadow: 0 6px 18px -8px var(--glow-accent); }
-  .open-hub { margin-left: auto; font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; text-decoration: none; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--text); }
+  .open-portal { margin-left: auto; font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; text-decoration: none; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--text); }
   main { max-width: 1200px; margin: 0 auto; padding: 28px max(16px, 3vw) 60px; }
   h1, h2 { font-family: var(--f-display); font-stretch: 125%; font-weight: 900; text-transform: uppercase; letter-spacing: 0.01em;
     background: var(--title-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -862,13 +862,13 @@ const ADMIN_STYLE = `
   @media (max-width: 760px) {
     .add { grid-template-columns: 1fr; }
     .enquiry header { flex-direction: column; }
-    .open-hub { margin-left: 0; }
+    .open-portal { margin-left: 0; }
     nav.tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
   }
   /* Centred (the default, as in Portal's Options; "left" brings back the classic layout) */
   html[data-align="center"] header.top { justify-content: center; text-align: center; }
   html[data-align="center"] .brand { flex-direction: column; gap: 6px; }
-  html[data-align="center"] .open-hub { margin-left: 0; }
+  html[data-align="center"] .open-portal { margin-left: 0; }
   html[data-align="center"] main, html[data-align="center"] .card, html[data-align="center"] th, html[data-align="center"] td { text-align: center; }
   html[data-align="center"] .stats, html[data-align="center"] .email-status, html[data-align="center"] .booklink form, html[data-align="center"] .link-made { justify-content: center; }
   html[data-align="center"] .enquiry header { flex-direction: column; align-items: center; }
@@ -879,7 +879,7 @@ const ADMIN_STYLE = `
   /* Inside Nova Agent (the Admin panel): Nova Agent's header has the planet and the Manual already */
   html.embed header.top { position: static; gap: 10px; padding: 8px 12px; }
   html.embed .brand img { width: 30px; height: 30px; }
-  html.embed .brand .kicker, html.embed .open-hub, html.embed header.top nova-portal-badge, html.embed header.top nova-manual { display: none; }
+  html.embed .brand .kicker, html.embed .open-portal, html.embed header.top nova-portal-badge, html.embed header.top nova-manual { display: none; }
   html.embed[data-align="center"] .brand { flex-direction: row; }
   html.embed main { padding: 16px 12px 40px; }
   html.embed h1 { font-size: 24px; }
@@ -961,7 +961,7 @@ async function page(env, title, url, body) {
     <span><span class="kicker">Nova Agent · Novacane</span><span class="wordmark">Admin</span></span>
   </a>
   <nav class="tabs">${tabs}</nav>
-  <a class="open-hub" href="/portal/">Portal</a>
+  <a class="open-portal" href="/portal/">Portal</a>
   <nova-manual compact></nova-manual>
   <nova-portal-badge></nova-portal-badge>
 </header>
