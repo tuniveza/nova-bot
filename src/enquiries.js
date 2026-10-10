@@ -110,8 +110,8 @@ export async function sendEnquiry(env, input, { chatId, page, ip }, waitUntil) {
   }
 
   const { meta } = await env.DB.prepare(
-    `INSERT INTO enquiries (created_at, name, email, phone, subject, details, page, chat_id, sender)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO enquiries (created_at, name, email, phone, subject, details, page, chat_id, sender, consent_at, consent_source)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       now.toISOString(),
@@ -122,7 +122,10 @@ export async function sendEnquiry(env, input, { chatId, page, ip }, waitUntil) {
       enquiry.details,
       page || null,
       chatId || null,
-      sender
+      sender,
+      // They asked the studio to get back to them: when, and where (UK GDPR: why we may email them)
+      now.toISOString(),
+      consentSource(page)
     )
     .run();
 
@@ -141,6 +144,11 @@ export async function sendEnquiry(env, input, { chatId, page, ip }, waitUntil) {
     })
   );
   return { sent: true, message: "Sent: the enquiry is with the Novacane team, who will reply by email." };
+}
+
+// Where a customer's consent to be contacted came from: "NovaBot chat on /bookings-contact"
+export function consentSource(page) {
+  return "NovaBot chat" + (page ? " on " + String(page).slice(0, 200) : "");
 }
 
 // Email a copy of the enquiry to the studio, if it's set up (Resend)
@@ -191,21 +199,34 @@ export async function sendTestEmail(env) {
   return result.ok ? { ok: true, message: `Test email sent to ${emailRecipients(env).join(", ")}. Check the inbox (and spam folder).` } : result;
 }
 
-// Send an email through Resend
-async function sendEmail(env, { subject, text, replyTo }) {
+// Send an email through Resend. To the studio, unless `to` says otherwise (a reply to a
+// customer goes to their address only). `idempotencyKey` makes Resend send it at most once
+// however many times it's asked; `headers` are extra email headers (e.g. List-Unsubscribe).
+export async function sendEmail(env, { subject, text, replyTo, to, from, headers, idempotencyKey }) {
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { Authorization: `Bearer ${env.RESEND_API_KEY.trim()}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY.trim()}`,
+        "Content-Type": "application/json",
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      },
       body: JSON.stringify({
-        from: env.ENQUIRY_EMAIL_FROM || "NovaBot <onboarding@resend.dev>",
-        to: emailRecipients(env),
+        from: from || env.ENQUIRY_EMAIL_FROM || "NovaBot <onboarding@resend.dev>",
+        to: to || emailRecipients(env),
         ...(replyTo ? { reply_to: replyTo } : {}),
         subject,
         text,
+        ...(headers ? { headers } : {}),
       }),
     });
-    if (res.ok) return { ok: true };
+    if (res.ok) {
+      let id = null;
+      try {
+        id = (await res.json()).id || null;
+      } catch {}
+      return { ok: true, id };
+    }
     // Resend explains what's wrong (e.g. sending to an address it doesn't allow yet)
     let reason = `error ${res.status}`;
     try {

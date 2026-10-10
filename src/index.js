@@ -21,6 +21,7 @@ import { handleAcuityEmail } from "./booking-emails.js";
 import { sendOverduePings } from "./booking-pings.js";
 import { deleteOldAlerts } from "./push.js";
 import { handleAdmin } from "./admin.js";
+import { handleStop } from "./enquiry-replies.js";
 import { handleApp } from "./app-page.js";
 import { ENQUIRY_TOOL, logChat, sendEnquiry } from "./enquiries.js";
 import {
@@ -776,6 +777,8 @@ export default {
     if (pathname === "/referral") return handleReferral(request, env);
     if (pathname === "/admin" || pathname.startsWith("/admin/")) return handleAdmin(request, env);
     if (pathname === "/privacy") return privacyPage();
+    // The "stop emailing me" link at the foot of every reply to an enquiry
+    if (pathname === "/enquiry/stop" && (request.method === "GET" || request.method === "POST")) return handleStop(request, env);
 
     const origin = request.headers.get("Origin") || "";
     // In the sandbox, any page on this computer (localhost) may use it too
@@ -1471,7 +1474,7 @@ function novaAgentPage(request, env, pathname) {
 // goes to /agent/: a panel's address (or one it had before, or /agent/<panel>) opens that panel,
 // anything else just Nova Agent. Files (scripts, icons, a CSV) aren't pages and stay as they are,
 // and so do the website chat's pages for customers (Nova Bot's own) and connecting Google.
-const CUSTOMER_PAGES = /^\/(book(\/.*)?|referral|privacy)$/;
+const CUSTOMER_PAGES = /^\/(book(\/.*)?|referral|privacy|enquiry\/stop)$/;
 function panelFor(pathname) {
   if (pathname.startsWith(AGENT)) return PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")] || "";
   if (PANELS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return pathname;

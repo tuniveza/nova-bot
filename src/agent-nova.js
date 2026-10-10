@@ -20,6 +20,11 @@
 //   POST /nova-agent/notify         { title, message, source?, kind?, tag?, ttl?, urgent?, keep? }
 //                            -> staff phones get Nova Agent's, Quest's and Mission's alerts
 //
+//   POST /nova-agent/enquiries          { show? }  -> the enquiries ("new", "open" or "all")
+//   POST /nova-agent/enquiries/:id      {}         -> one enquiry and its conversation
+//   POST /nova-agent/enquiries/:id/drafts { body } -> a DRAFT reply, for a person to approve in Portal
+//                            (the AI can only draft: nothing here approves or sends; see src/enquiry-replies.js)
+//
 //   POST /nova-agent/me       { staff_id? }         -> who Nova Agent works for (its Nova Agent badge and memory);
 //                            without an id, the studio's first admin
 //
@@ -28,6 +33,7 @@
 import { planetFacts, profile } from "./portal/routes.js";
 import { notifyPhones, studioOwner } from "./push.js";
 import { syncFromAgent } from "./calendar/items.js";
+import { agentDraft, enquiryThread, listEnquiries } from "./enquiry-replies.js";
 
 // A job Nova Agent took but never reported on (e.g. it was restarted) is
 // offered again after this long
@@ -98,6 +104,36 @@ export async function handleAgentNova(request, env, pathname) {
   if (pathname === "/nova-agent/me") return agentStaff(env, body);
   // Calendar: Nova Agent's copy on the PC and this one, kept the same (src/calendar/items.js)
   if (pathname === "/nova-agent/calendar") return syncFromAgent(env, body);
+  // Enquiries: read them, and draft replies (never send: a person approves in Portal)
+  if (pathname === "/nova-agent/enquiries" || pathname.startsWith("/nova-agent/enquiries/")) return agentEnquiries(env, pathname, body);
+  return Response.json({ error: "Not found" }, { status: 404 });
+}
+
+// ===== ENQUIRIES (read, and draft only) =====
+
+async function agentEnquiries(env, pathname, body) {
+  if (pathname === "/nova-agent/enquiries") {
+    const show = ["new", "open", "all"].includes(body?.show) ? body.show : "open";
+    const enquiries = await listEnquiries(env, { show, limit: 50 });
+    // Short: the AI reads one in full with /nova-agent/enquiries/:id
+    return Response.json({
+      enquiries: enquiries.map((e) => ({
+        id: e.id, created_at: e.created_at, name: e.name, email: e.email, subject: e.subject, state: e.state,
+        details: String(e.details || "").slice(0, 300), drafts_waiting: e.drafts, replies_sent: e.replies,
+      })),
+    });
+  }
+  const read = pathname.match(/^\/nova-agent\/enquiries\/(\d+)$/);
+  if (read) {
+    const thread = await enquiryThread(env, Number(read[1]));
+    return thread ? Response.json(thread) : Response.json({ error: "That enquiry doesn't exist." }, { status: 404 });
+  }
+  const drafts = pathname.match(/^\/nova-agent\/enquiries\/(\d+)\/drafts$/);
+  if (drafts) {
+    const result = await agentDraft(env, { id: Number(drafts[1]), body: body?.body });
+    return result.error ? Response.json({ error: result.error }, { status: result.status || 400 }) : Response.json({ ok: true, ...result });
+  }
+  // Nothing else: there is no approve or send for the agent's key
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 

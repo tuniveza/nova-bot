@@ -8,7 +8,17 @@
 //   POST /app/api/logout                signs out of Portal (everything)
 //   GET  /app/api/me                    is this browser signed in?
 //   GET  /app/api/enquiries?show=all    enquiries (new ones only, unless show=all)
-//   POST /app/api/enquiries/status      { id, status: "new" | "done" }
+//   POST /app/api/enquiries/status      { id, status: "new" | "replied" | "done" } ("closed" = "done")
+//   GET  /app/api/enquiries/thread?id=N an enquiry and its conversation (replies, notes, drafts)
+//   POST /app/api/enquiries/reply       { id, body, key } -> emails the customer (a person pressed Send)
+//   POST /app/api/enquiries/note        { id, body, key } -> an internal note (never sent)
+//   POST /app/api/enquiries/draft/edit  { messageId, body } -> change a draft from Agent
+//   POST /app/api/enquiries/draft/approve { messageId, body } -> Approve & send (a person's press)
+//   POST /app/api/enquiries/draft/discard { messageId }
+//   POST /app/api/enquiries/retry       { messageId } -> try a failed reply again
+//   POST /app/api/enquiries/contact     { id, doNotContact } -> "Don't contact" on or off
+//     (Sending needs a browser's Portal sign-in, the cookie: never an app's token or Nova Agent's key.
+//      See src/enquiry-replies.js.)
 //   GET  /app/api/sessions              the session types, for booking links
 //   POST /app/api/booking-link          { enquiryId, typeId } -> link with their details
 //   GET  /app/api/conversations         recent customer chats (?chat=ID for one)
@@ -31,6 +41,8 @@ import { questsForPortal, queueQuestAction } from "./agent-nova.js";
 import { handleMemoryForStaff, learnFromStaffChat } from "./memory/routes.js";
 import { clearCookie, endSession, requireStaff } from "./portal/auth.js";
 import { checkedLinks } from "./links.js";
+import * as replies from "./enquiry-replies.js";
+import { publicUrl } from "./nova/booking.js";
 import { listBookings } from "./booking-calendar.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
 import { usesNova } from "./mode.js";
@@ -60,7 +72,11 @@ export async function handleApp(request, env, ctx, answer) {
 
   if (route === "/me") return json({ ok: true });
   if (route === "/enquiries" && request.method === "GET") return listEnquiries(env, url);
-  if (route === "/enquiries/status" && request.method === "POST") return setEnquiryStatus(request, env);
+  if (route === "/enquiries/status" && request.method === "POST") return done(await replies.setEnquiryStatus(env, await readJson(request)));
+  if (route.startsWith("/enquiries/")) {
+    const reply = await enquiryReplies(request, env, me, route);
+    if (reply) return reply;
+  }
   if (route === "/sessions") return listSessions(env);
   if (route === "/booking-link" && request.method === "POST") return makeLink(request, env);
   if (route === "/conversations") return conversations(env, url);
@@ -135,20 +151,42 @@ async function logout(request, env) {
 
 async function listEnquiries(env, url) {
   const all = url.searchParams.get("show") === "all";
-  const { results } = await env.DB.prepare(
-    `SELECT id, created_at, name, email, phone, subject, details, page, chat_id, emailed, status
-     FROM enquiries ${all ? "" : "WHERE status = 'new'"} ORDER BY created_at DESC LIMIT 300`
-  ).all();
+  const enquiries = await replies.listEnquiries(env, { show: all ? "all" : "new" });
   const { count } = await env.DB.prepare("SELECT COUNT(*) AS count FROM enquiries WHERE status = 'new'").first();
-  return json({ enquiries: results, newCount: count });
+  return json({ enquiries, newCount: count });
 }
 
-async function setEnquiryStatus(request, env) {
-  const { id, status } = await readJson(request);
-  if (!Number.isInteger(id) || !["new", "done"].includes(status)) return json({ error: "Bad request" }, 400);
-  const { meta } = await env.DB.prepare("UPDATE enquiries SET status = ? WHERE id = ?").bind(status, id).run();
-  if (!meta.changes) return json({ error: "That enquiry doesn't exist." }, 404);
-  return json({ ok: true });
+// The conversation on each enquiry (src/enquiry-replies.js). Reading and notes need a Portal
+// sign-in; anything that emails the customer needs a person in a browser: the Portal cookie
+// (the Origin check above already stops other websites). An app's token can't send.
+async function enquiryReplies(request, env, me, route) {
+  if (route === "/enquiries/thread" && request.method === "GET") {
+    const id = Number(new URL(request.url).searchParams.get("id"));
+    const thread = Number.isInteger(id) ? await replies.enquiryThread(env, id) : null;
+    if (!thread) return json({ error: "That enquiry doesn't exist." }, 404);
+    // Whether this sign-in can send (a browser's), and where Portal is online for one that can't
+    return json({ ...thread, canSend: me.session_kind === "cookie", onlineUrl: `${publicUrl(env)}/portal/?view=enquiries&enquiry=${id}` });
+  }
+  if (request.method !== "POST") return null;
+  const SENDS = ["/enquiries/reply", "/enquiries/draft/approve", "/enquiries/retry"];
+  const ACTIONS = [...SENDS, "/enquiries/note", "/enquiries/draft/edit", "/enquiries/draft/discard", "/enquiries/contact"];
+  if (!ACTIONS.includes(route)) return null;
+  if (SENDS.includes(route) && me.session_kind !== "cookie") return json({ error: "Sending needs Portal open in a browser, signed in (on the studio computer, open Portal online).", onlineUrl: `${publicUrl(env)}/portal/?view=enquiries` }, 403);
+  const body = await readJson(request);
+  if (route === "/enquiries/reply") return done(await replies.staffReply(env, me, body));
+  if (route === "/enquiries/note") return done(await replies.staffNote(env, me, body));
+  if (route === "/enquiries/draft/edit") return done(await replies.editDraft(env, me, body));
+  if (route === "/enquiries/draft/approve") return done(await replies.approveDraft(env, me, body));
+  if (route === "/enquiries/draft/discard") return done(await replies.discardDraft(env, me, body));
+  if (route === "/enquiries/retry") return done(await replies.retrySend(env, me, body));
+  if (route === "/enquiries/contact") return done(await replies.setDoNotContact(env, { id: body.id, on: body.doNotContact === true, by: me.id }));
+  return null;
+}
+
+// A result from src/enquiry-replies.js as a response: { status, error } is a refusal
+function done(result) {
+  if (result && result.error) return json({ error: result.error }, result.status || 400);
+  return json({ ok: true, ...result });
 }
 
 // ===== BOOKING LINKS =====

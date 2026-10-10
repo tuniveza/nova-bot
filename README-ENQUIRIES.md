@@ -57,6 +57,46 @@ addresses separated by commas.
 
 Enquiries are always saved on the admin page, even if the email fails.
 
+## Replying to enquiries (Portal and Agent)
+
+Open an enquiry in Portal → Enquiries (**Open & reply**) to see their message and the
+whole conversation: replies sent, internal notes, and drafts from Agent.
+
+- **Send** emails the customer from the studio address, to their address only, with
+  reply-to set to the studio inbox (their answers land there). Each reply shows
+  Sending… / Sent ✓ / Didn't send (with Resend's reason and **Retry**).
+- **Note** is for the team only, never sent.
+- **Agent** (Nova Agent's AI) can only **draft**. A draft waits in the conversation (and on
+  a card under Agent's reply) until a signed-in person presses **Approve & send**. Staff
+  phones get a quiet ping when a draft is waiting. Sending needs Portal open in a browser,
+  signed in; on the studio PC's own page, approve in Portal online.
+- **Don't contact** (Portal toggle, or the stop link in every email) blocks every send. A
+  customer's own stop can't be switched off in Portal.
+- Every email ends: "You're getting this because you sent Novacane Studios an enquiry on
+  <date> …" plus the stop link (also the email's one-click unsubscribe header). These are
+  replies to people who asked to be contacted, not marketing.
+
+### What it needs
+
+1. **A verified domain in Resend** (see above). Until then Resend only delivers to the
+   account owner's own address, so replies to customers fail with Resend's reason.
+2. `npx wrangler secret put ENQUIRY_EMAIL_FROM`, e.g. `Novacane Studios <hello@novacane.co.uk>`
+   (optional: `ENQUIRY_REPLY_FROM` for a different sender on replies, and
+   `ENQUIRY_REPLY_TO` for the inbox replies go to; it defaults to the first
+   `ENQUIRY_EMAIL_TO` address).
+3. The database change: `npx wrangler d1 migrations apply novabot --remote`
+   (migrations/0022_enquiry_replies.sql).
+
+### Texts and WhatsApp (not connected yet)
+
+Portal shows **Call** (`tel:`) and **Text** (`sms:`) for the customer's mobile, which open
+the staff member's own phone. To send texts from Portal later, add a provider to
+`CHANNELS` in `src/enquiry-replies.js` (`sms` and `whatsapp` are already allowed in the
+database): an account with a UK sender (e.g. Twilio, Vonage or MessageBird; WhatsApp needs
+a WhatsApp Business sender and approved message templates for the first message), its API
+key as a secret, a `send()` that posts the text plus a short "Reply STOP to opt out"
+line, and a webhook for STOP replies that sets "don't contact".
+
 ## Booking links (getting bookings into Acuity)
 
 Acuity's API needs its Powerhouse plan, so NovaBot can't write to the calendar
