@@ -37,7 +37,7 @@ import { usesNova } from "./mode.js";
 import { handleCalendarItems } from "./calendar/items.js";
 import { bookingLink as novaBookingLink, getSessionTypes as novaSessionTypes } from "./nova/booking.js";
 import { listBookings as novaListBookings } from "./nova/booking-calendar.js";
-import { AUTO_DELETE_CHOICES, autoDeleteDays, deleteAlerts, forgetPhone, listAlerts, notifyPhones, savePhone, setAutoDelete, verifyBooking } from "./push.js";
+import { AUTO_DELETE_CHOICES, autoDeleteDays, deleteAlerts, forgetPhone, listAlerts, listPhones, notifyPhones, phoneName, savePhone, setAutoDelete, verifyBooking } from "./push.js";
 
 // The old shared-password cookie: only ever cleared now (Portal is the one sign-in)
 const OLD_COOKIE = "nvadmin";
@@ -55,7 +55,8 @@ export async function handleApp(request, env, ctx, answer) {
   if (route === "/login" && request.method === "POST") return json({ error: "Sign in with Portal", signIn: "/portal/" }, 410);
   if (route === "/logout" && request.method === "POST") return logout(request, env);
 
-  if (!(await requireStaff(request, env))) return json({ error: "Please sign in", signIn: "/portal/" }, 401);
+  const me = await requireStaff(request, env);
+  if (!me) return json({ error: "Please sign in", signIn: "/portal/" }, 401);
 
   if (route === "/me") return json({ ok: true });
   if (route === "/enquiries" && request.method === "GET") return listEnquiries(env, url);
@@ -65,7 +66,9 @@ export async function handleApp(request, env, ctx, answer) {
   if (route === "/conversations") return conversations(env, url);
   if (route === "/chat" && request.method === "POST") return staffChat(request, env, ctx, answer);
   if (route === "/push/key") return json({ publicKey: env.VAPID_PUBLIC_KEY || null });
-  if (route === "/push/subscribe" && request.method === "POST") return subscribe(request, env);
+  if (route === "/push/subscribe" && request.method === "POST") return subscribe(request, env, me);
+  // The signed-up phones, for choosing which ones get a Calendar reminder
+  if (route === "/push/phones" && request.method === "GET") return json({ phones: await listPhones(env), me: me.id });
   if (route === "/push/unsubscribe" && request.method === "POST") return unsubscribe(request, env);
   if (route === "/push/test" && request.method === "POST") return testNotification(env);
   if (route === "/notifications" && request.method === "GET") return alerts(env);
@@ -221,12 +224,14 @@ async function staffChat(request, env, ctx, answer) {
 // ===== NOTIFICATIONS =====
 // Only signed-in staff get this far, so only their phones can sign up.
 
-// A phone hands over its delivery address
-async function subscribe(request, env) {
+// A phone hands over its delivery address (it's theirs: whoever is signed in on it)
+async function subscribe(request, env, me) {
   // Read the address the phone sent
   const { subscription } = await readJson(request);
+  // What the phone is ("iPhone"), so it can be picked out in Calendar
+  const owner = { staffId: me.id, name: phoneName(request.headers.get("User-Agent") || "") };
   // Save it, or say it wasn't a proper address
-  return (await savePhone(env, subscription)) ? json({ ok: true }) : json({ error: "That isn't a valid notification address." }, 400);
+  return (await savePhone(env, subscription, owner)) ? json({ ok: true }) : json({ error: "That isn't a valid notification address." }, 400);
 }
 
 // A phone turns notifications off

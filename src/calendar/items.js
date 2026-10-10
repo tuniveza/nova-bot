@@ -63,6 +63,8 @@ export function cleanItem(raw) {
     reminders: Array.isArray(raw.reminders)
       ? [...new Set(raw.reminders.map(Number).filter((m) => Number.isInteger(m) && m >= 0 && m <= 40320))].slice(0, 5).sort((a, b) => a - b)
       : [],
+    // Which phones get the reminders (phone ids; none = the studio owner's phones)
+    phones: Array.isArray(raw.phones) ? [...new Set(raw.phones.filter((x) => typeof x === "string" && /^[0-9a-f]{12}$/.test(x)))].slice(0, 10) : [],
     art: raw.art && typeof raw.art === "object" ? { seed: Number(raw.art.seed) >>> 0, subject: text(raw.art.subject, 30) || "auto" } : undefined,
     created,
     updated,
@@ -103,10 +105,28 @@ async function stored(env, id) {
 
 // Save one: kept if it's the latest change (or new). Returns { ok, item } or
 // { ok: false, current } when a later change is already here.
+// `raw.base` (optional) is the version the change was made to (its `updated`). A change made
+// to the latest version is kept even if the device's clock is behind (its `updated` looks
+// older): it's stamped just after the version it replaces.
 export async function saveItem(env, raw) {
-  const item = cleanItem(raw);
+  let item = cleanItem(raw);
   if (!item) return { ok: false, error: "That isn't a calendar item." };
-  const res = await env.DB.prepare(
+  const first = await write(env, item);
+  if (first.meta.changes) return { ok: true, item };
+  let current = await stored(env, item.id);
+  if (current && !current.deleted && isStamp(raw.base) && raw.base === current.updated && item.updated < current.updated) {
+    const after = new Date(Math.max(Date.parse(current.updated) + 1, Date.now())).toISOString();
+    item = { ...item, updated: after };
+    if ((await write(env, item)).meta.changes) return { ok: true, item };
+    current = await stored(env, item.id);
+  }
+  // Sent again exactly as it is (a copy catching up): nothing to do
+  if (current && !current.deleted && current.updated === item.updated) return { ok: true, item: current, unchanged: true };
+  return { ok: false, current };
+}
+
+function write(env, item) {
+  return env.DB.prepare(
     `INSERT INTO calendar_items (id, kind, data, start, updated, deleted, rev)
      VALUES (?1, ?2, ?3, ?4, ?5, 0, (SELECT COALESCE(MAX(rev), 0) + 1 FROM calendar_items))
      ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, data = excluded.data, start = excluded.start,
@@ -115,11 +135,6 @@ export async function saveItem(env, raw) {
   )
     .bind(item.id, item.kind, JSON.stringify(item), item.kind === "day" ? item.date : item.start, item.updated)
     .run();
-  if (res.meta.changes) return { ok: true, item };
-  const current = await stored(env, item.id);
-  // Sent again exactly as it is (a copy catching up): nothing to do
-  if (current && !current.deleted && current.updated === item.updated) return { ok: true, item: current, unchanged: true };
-  return { ok: false, current };
 }
 
 // Delete one (kept as a marker so other copies drop it too), unless it changed after

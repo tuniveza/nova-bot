@@ -14,8 +14,9 @@ import { bookingInfo, describeBooking } from "./booking-details.js";
 // Bookings made with Nova Bot's own booking system (src/nova/, behind the switch in mode.js)
 import { bookingInfo as novaBookingInfo, describeBooking as novaDescribeBooking } from "./nova/booking-details.js";
 
-// Save a phone's delivery address (or update it if it's already saved)
-export async function savePhone(env, subscription) {
+// Save a phone's delivery address (or update it if it's already saved). `owner` says who
+// turned it on (`staffId`) and what it is (`name`, from phoneName), so reminders can pick it.
+export async function savePhone(env, subscription, owner = {}) {
   // The three parts of the address the phone gave us
   const endpoint = String(subscription?.endpoint || "");
   // The phone's public key, used to seal messages for it
@@ -25,16 +26,64 @@ export async function savePhone(env, subscription) {
   // Only accept real push addresses (https, and every part present)
   if (!endpoint.startsWith("https://") || !p256dh || !auth || endpoint.length > 1000) return false;
   // Write it into the database, replacing an older copy of the same address
+  // (a phone keeps its owner and name unless new ones are given)
   await env.DB.prepare(
-    "INSERT INTO push_subscriptions (endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?) " +
-      "ON CONFLICT (endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth"
+    "INSERT INTO push_subscriptions (endpoint, p256dh, auth, created_at, staff_id, name) VALUES (?, ?, ?, ?, ?, ?) " +
+      "ON CONFLICT (endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, " +
+      "staff_id = COALESCE(excluded.staff_id, staff_id), name = COALESCE(excluded.name, name)"
   )
-    // Fill in the four values
-    .bind(endpoint, p256dh, auth, new Date().toISOString())
+    // Fill in the values
+    .bind(endpoint, p256dh, auth, new Date().toISOString(), owner.staffId || null, owner.name ? String(owner.name).slice(0, 60) : null)
     // Run it
     .run();
   // Tell the caller it worked
   return true;
+}
+
+// A phone's short id: the same every time, and its delivery address stays private
+export async function phoneId(endpoint) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(endpoint || "")));
+  return [...new Uint8Array(digest).slice(0, 6)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// What a phone is, in plain words, from its browser's description ("iPhone", "Android · Pixel 7")
+export function phoneName(userAgent = "") {
+  const ua = String(userAgent);
+  if (/iPad/.test(ua)) return "iPad";
+  if (/iPhone/.test(ua)) return "iPhone";
+  if (/Android/.test(ua)) {
+    // Android names the model after its version: "Android 14; Pixel 7 Build/..." or "...; K)"
+    const model = (ua.match(/Android [\d.]+; ([^;)]+?)(?: Build\/[^;)]*)?[;)]/) || [])[1];
+    return model && model !== "K" ? `Android · ${model.trim()}` : "Android";
+  }
+  if (/CrOS/.test(ua)) return "Chromebook";
+  if (/Macintosh/.test(ua)) return "Mac";
+  if (/Windows/.test(ua)) return "Windows PC";
+  if (/Linux/.test(ua)) return "Linux computer";
+  return "A phone";
+}
+
+// The studio owner: the first admin (phones without an owner count as theirs)
+export async function studioOwner(env) {
+  return (
+    (await env.DB.prepare("SELECT id, display_name FROM staff WHERE role = 'admin' AND status = 'active' ORDER BY created_at LIMIT 1")
+      .first()
+      .catch(() => null)) || null
+  );
+}
+
+// Every signed-up phone, for choosing who gets a reminder: [{ id, name, staffId, who }]
+export async function listPhones(env) {
+  const owner = await studioOwner(env);
+  const { results } = await env.DB.prepare(
+    "SELECT p.endpoint, p.name, p.staff_id, p.created_at, s.display_name FROM push_subscriptions p LEFT JOIN staff s ON s.id = p.staff_id ORDER BY p.created_at"
+  ).all();
+  const phones = [];
+  for (const p of results) {
+    const staffId = p.staff_id || owner?.id || "";
+    phones.push({ id: await phoneId(p.endpoint), name: p.name || "A phone", staffId, who: p.display_name || owner?.display_name || "", since: p.created_at });
+  }
+  return phones;
 }
 
 // Forget a phone (when it turns notifications off)
@@ -46,7 +95,8 @@ export async function forgetPhone(env, endpoint) {
 // How long the Alerts tab keeps notifications
 const KEEP_ALERTS_DAYS = 90;
 
-// Send one notification to every signed-up phone. Returns how many it reached.
+// Send one notification to every signed-up phone (or the ones `to` picks: see pickPhones).
+// Returns how many it reached.
 // `url` is what opens when the notification is tapped. `save: false` keeps it
 // out of Portal's Alerts tab (used for test notifications). `appointmentId`
 // or `enquiryId` says which booking or enquiry it's about. `style` (optional)
@@ -54,19 +104,20 @@ const KEEP_ALERTS_DAYS = 90;
 // kind it is, a `tag` (a newer one replaces an older one with the same tag), how
 // long it's worth delivering (`ttl`, in seconds) and whether it's `urgent` (it
 // stays on screen until it's answered, with a stronger buzz).
-export async function notifyPhones(env, { title, body, url = "/portal/", save = true, appointmentId = null, enquiryId = null, style = null }) {
+export async function notifyPhones(env, { title, body, url = "/portal/", save = true, appointmentId = null, enquiryId = null, style = null, to = null }) {
   // Keep the text short enough for Apple (it allows about 4,000 characters in all)
   body = String(body).slice(0, 1500);
   // Send it to every phone and count how many Apple accepted it for
-  const delivered = await sendToPhones(env, { title, body, url, style });
+  const delivered = await sendToPhones(env, { title, body, url, style, to });
   // Only list it in Portal if it actually went through to a phone
   if (save && delivered > 0) await saveAlert(env, { title, body, url, phones: delivered, appointmentId, enquiryId });
   // Report how many phones it reached
   return delivered;
 }
 
-// Write a notification into the Alerts list (a copy of what the phone got)
-async function saveAlert(env, { title, body, url, phones, appointmentId, enquiryId }) {
+// Write a notification into the Alerts list (a copy of what the phone got, or, with
+// phones: 0, something that couldn't reach any phone)
+export async function saveAlert(env, { title, body, url, phones, appointmentId = null, enquiryId = null }) {
   // Try it, but never let a list problem stop anything else
   try {
     // Add it to the list
@@ -251,7 +302,22 @@ async function novaAlert(env, n) {
 }
 
 // Seal and post one notification to every signed-up phone
-async function sendToPhones(env, { title, body, url, style }) {
+// Which of the saved phones a message is for. `to` (optional): { phones: [phone ids],
+// staff: [staff ids] }. The chosen phones if any of them are still signed up, otherwise
+// every phone belonging to those people (a phone with no owner is the studio owner's).
+// No `to`: every phone.
+async function pickPhones(env, results, to) {
+  if (!to) return results;
+  const ids = new Set(Array.isArray(to.phones) ? to.phones : []);
+  const withIds = await Promise.all(results.map(async (p) => ({ ...p, id: await phoneId(p.endpoint) })));
+  const chosen = withIds.filter((p) => ids.has(p.id));
+  if (chosen.length) return chosen;
+  const people = new Set(Array.isArray(to.staff) ? to.staff : []);
+  const owner = (await studioOwner(env))?.id;
+  return withIds.filter((p) => people.has(p.staff_id || owner));
+}
+
+async function sendToPhones(env, { title, body, url, style, to }) {
   // No seal set up yet: nothing can be sent, so stop quietly
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return 0;
   // Our seal: the contact address Apple sees, plus the two halves of our key
@@ -264,7 +330,9 @@ async function sendToPhones(env, { title, body, url, style }) {
     privateKey: env.VAPID_PRIVATE_KEY,
   };
   // Get every saved phone from the database
-  const { results } = await env.DB.prepare("SELECT endpoint, p256dh, auth FROM push_subscriptions").all();
+  const { results: saved } = await env.DB.prepare("SELECT endpoint, p256dh, auth, staff_id FROM push_subscriptions").all();
+  // Just the phones it's for (all of them, unless `to` says otherwise)
+  const results = await pickPhones(env, saved, to);
   // Count the phones the message reached
   let delivered = 0;
   // Go through the phones one by one
