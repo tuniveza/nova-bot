@@ -24,6 +24,7 @@ function booking(id, extra) {
 		date: "October 31, 2026",
 		endTime: "9:00pm",
 		type: "Rap Package - 2 songs",
+		appointmentTypeID: 555,
 		paid: "no",
 		amountPaid: "0.00",
 		notes: "",
@@ -37,8 +38,10 @@ let changes = []; // every PUT the Worker sent to Acuity: { url, body }
 let acuityAnswer = null; // override the answer to the next PUT: { status, body }
 let claudeReplies = [];
 let claudeCalls = [];
+let freeTimes = []; // the start times Acuity's availability says are free
 
-beforeEach(() => {
+beforeEach(async () => {
+	await env.DB.prepare("DELETE FROM booking_actions").run();
 	bookings = [
 		booking(1001, {}),
 		booking(1002, { firstName: "Kai", lastName: "Fenwick", email: "kai@example.com", phone: "07700 900321", datetime: "2026-11-02T16:30:00+0000" }),
@@ -48,7 +51,11 @@ beforeEach(() => {
 	acuityAnswer = null;
 	claudeReplies = [];
 	claudeCalls = [];
+	freeTimes = ["2026-11-04T14:00:00+0000"];
 	forgetSessionTypes();
+	// "Now" is the morning of TODAY, so the fixed dates below stay in the future
+	vi.useFakeTimers({ toFake: ["Date"] });
+	vi.setSystemTime(new Date(TODAY + "T09:00:00Z"));
 	vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init = {}) => {
 		const u = new URL(String(url));
 		if (u.pathname === "/schedule.php") return new Response(BOOKING_PAGE_HTML);
@@ -56,6 +63,10 @@ beforeEach(() => {
 			claudeCalls.push(JSON.parse(init.body));
 			const reply = claudeReplies.shift() || { stop_reason: "end_turn", content: [{ type: "text", text: "Done." }] };
 			return new Response(JSON.stringify(reply));
+		}
+		if (String(url).startsWith(API + "/availability/times")) {
+			expect(u.searchParams.get("appointmentTypeID")).toBe("555");
+			return new Response(JSON.stringify(freeTimes.filter((t) => t.startsWith(u.searchParams.get("date"))).map((time) => ({ time, slotsAvailable: 1 }))));
 		}
 		if (String(url).startsWith(API + "/appointments")) {
 			const method = init.method || "GET";
@@ -79,8 +90,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	vi.useRealTimers();
 	vi.restoreAllMocks();
 });
+
+// The booking changes proposed for an admin to approve (src/booking-actions.js)
+const proposals = async () =>
+	(await env.DB.prepare("SELECT kind, payload, status, proposed_by FROM booking_actions ORDER BY id").all()).results.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
 
 const run = (name, input, extraEnv = {}) => runManageBookingTool({ ...env, AGENT_NOVA_KEY: "agent-nova-test-key", ...extraEnv }, name, input, TODAY);
 
@@ -121,11 +137,17 @@ describe("cancel_booking", () => {
 		expect(changes).toHaveLength(0);
 	});
 
-	it("cancels as staff once confirmed, with the note and email choice", async () => {
+	it("once confirmed, only PROPOSES it (with the note and email choice) for an admin to approve in Portal", async () => {
 		const result = await run("cancel_booking", { appointment_id: 1001, notify_client: false, note: "Studio closed", confirmed: true });
 		expect(result.ok).toBe(true);
-		expect(result.message).toContain("Cancelled");
-		expect(changes).toEqual([{ url: `${API}/appointments/1001/cancel?admin=true&noEmail=true`, body: { cancelNote: "Studio closed" } }]);
+		expect(result.message).toContain("NOT done yet");
+		expect(result.message).toContain("Portal → Approvals");
+		expect(result.message).toMatch(/\/portal\/\?view=approvals&action=\d+/);
+		expect(result.message).not.toMatch(/^Cancelled/);
+		expect(await proposals()).toEqual([
+			{ kind: "cancel", payload: { appointmentId: 1001, notifyClient: false, note: "Studio closed" }, status: "pending", proposed_by: "staff-chat" },
+		]);
+		expect(changes).toHaveLength(0); // nothing sent to Acuity
 	});
 
 	it("won't cancel a booking that's already cancelled, or one that doesn't exist", async () => {
@@ -133,11 +155,12 @@ describe("cancel_booking", () => {
 		expect((await run("cancel_booking", { appointment_id: 9999, notify_client: true, confirmed: true })).ok).toBe(false);
 		expect((await run("cancel_booking", { appointment_id: "1001", notify_client: true, confirmed: true })).ok).toBe(false);
 		expect(changes).toHaveLength(0);
+		expect(await proposals()).toHaveLength(0);
 	});
 });
 
 describe("reschedule_booking", () => {
-	it("moves it once confirmed, checking the time is free (not as admin)", async () => {
+	it("once confirmed, checks the time is free and only PROPOSES the move", async () => {
 		expect((await run("reschedule_booking", { appointment_id: 1001, date: "2026-11-04", time: "2pm", notify_client: true, confirmed: false })).message).toContain(
 			"Not moved yet"
 		);
@@ -145,17 +168,24 @@ describe("reschedule_booking", () => {
 
 		const result = await run("reschedule_booking", { appointment_id: 1001, date: "2026-11-04", time: "2pm", notify_client: true, confirmed: true });
 		expect(result.ok).toBe(true);
-		expect(result.message).toContain("Wednesday 4 November at 14:00");
-		expect(changes).toEqual([{ url: `${API}/appointments/1001/reschedule`, body: { datetime: "2026-11-04T14:00:00" } }]);
+		expect(result.message).toContain("NOT done yet");
+		expect(result.message).toContain("to Wed 4 Nov 14:00");
+		expect(await proposals()).toEqual([
+			{ kind: "reschedule", payload: { appointmentId: 1001, start: "2026-11-04T14:00:00.000Z", notifyClient: true }, status: "pending", proposed_by: "staff-chat" },
+		]);
+		expect(changes).toHaveLength(0);
 	});
 
 	it("only overrides the calendar when asked", async () => {
-		await run("reschedule_booking", { appointment_id: 1001, date: "2026-11-04", time: "14:00", notify_client: false, ignore_availability: true, confirmed: true });
-		expect(changes[0].url).toBe(`${API}/appointments/1001/reschedule?admin=true&noEmail=true`);
+		freeTimes = [];
+		const result = await run("reschedule_booking", { appointment_id: 1001, date: "2026-11-04", time: "14:00", notify_client: false, ignore_availability: true, confirmed: true });
+		expect(result.ok).toBe(true);
+		expect((await proposals())[0].payload).toEqual({ appointmentId: 1001, start: "2026-11-04T14:00:00.000Z", notifyClient: false });
+		expect(changes).toHaveLength(0);
 	});
 
 	it("explains when the new time isn't free, and refuses past days", async () => {
-		acuityAnswer = { status: 400, body: { status_code: 400, error: "not_available", message: "The time is not available" } };
+		freeTimes = ["2026-11-04T15:00:00+0000"];
 		const taken = await run("reschedule_booking", { appointment_id: 1001, date: "2026-11-04", time: "14:00", notify_client: true, confirmed: true });
 		expect(taken.ok).toBe(false);
 		expect(taken.message).toContain("isn't free");
@@ -163,18 +193,24 @@ describe("reschedule_booking", () => {
 		const past = await run("reschedule_booking", { appointment_id: 1001, date: "2026-10-01", time: "14:00", notify_client: true, confirmed: true });
 		expect(past.ok).toBe(false);
 		expect(past.message).toContain("in the past");
+		expect(await proposals()).toHaveLength(0);
+		expect(changes).toHaveLength(0);
 	});
 });
 
 describe("update_booking", () => {
-	it("sends only the fields that change, once confirmed", async () => {
+	it("proposes only the fields that change, once confirmed", async () => {
 		const check = await run("update_booking", { appointment_id: 1001, phone: "07700 900789", notes: "Bringing a guitarist", confirmed: false });
 		expect(check.message).toContain('phone: "+447700900123" → "07700 900789"');
 		expect(changes).toHaveLength(0);
 
 		const result = await run("update_booking", { appointment_id: 1001, phone: "07700 900789", notes: "Bringing a guitarist", confirmed: true });
 		expect(result.ok).toBe(true);
-		expect(changes).toEqual([{ url: `${API}/appointments/1001?admin=true`, body: { phone: "07700 900789", notes: "Bringing a guitarist" } }]);
+		expect(result.message).toContain("NOT done yet");
+		expect(await proposals()).toEqual([
+			{ kind: "update", payload: { appointmentId: 1001, phone: "07700 900789", notes: "Bringing a guitarist" }, status: "pending", proposed_by: "staff-chat" },
+		]);
+		expect(changes).toHaveLength(0);
 	});
 
 	it("says when there's nothing to change", async () => {

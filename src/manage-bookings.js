@@ -4,7 +4,7 @@
 // booking ("cancel Dana's session on Saturday", "move Kai to 4pm"). These
 // tools are only given to NovaBot in the staff chat, never on the website.
 //
-// Everything goes through Acuity's official API, like book_session (needs
+// Everything goes through Acuity's official API (src/acuity/api.js; needs
 // ACUITY_USER_ID and ACUITY_API_KEY). Acuity sends the client its usual
 // emails unless staff say not to.
 //
@@ -12,8 +12,10 @@
 // - Changes always name the booking by its Acuity ID, which NovaBot gets from
 //   find_bookings, so it can't mix up two people with similar names.
 // - Every change takes two calls. The first (confirmed false) changes nothing
-//   and gives NovaBot a summary to show staff. Only a second call with
-//   confirmed true makes the change, after staff have clearly said yes.
+//   and gives NovaBot a summary to show staff. A second call with confirmed
+//   true, after staff have clearly said yes, still changes nothing in Acuity:
+//   it PROPOSES the change (src/booking-actions.js, proposedBy "staff-chat"),
+//   and an admin approves it in Portal → Approvals, which makes it.
 // - Acuity's API can't change a booking's session type, price or paid
 //   status. Those go to Nova Agent (the browser helper, agent-nova.js) as a
 //   job; it does them in Acuity's admin pages within a few minutes, and staff
@@ -21,8 +23,8 @@
 
 import { agentNovaProblem, queueAgentJob } from "./agent-nova.js";
 import { dayInWords, normaliseTime, ukToday } from "./booking.js";
-
-const ACUITY_API = "https://acuityscheduling.com/api/v1";
+import { acuityFailure, acuityRequest, availableTimes, ukWallToUtc } from "./acuity/api.js";
+import { proposeAction } from "./booking-actions.js";
 
 // The most bookings find_bookings lists in one go (keeps replies readable)
 const MAX_LISTED = 15;
@@ -31,6 +33,12 @@ const ID = { type: "integer", description: "The booking's Acuity ID, from find_b
 const CONFIRMED = {
   type: "boolean",
   description: "false: just check it and get a summary to show staff (nothing changes). true: do it, only after staff have seen that summary and clearly said yes.",
+};
+// For cancel, reschedule and update, which an admin approves in Portal
+const PROPOSE = {
+  type: "boolean",
+  description:
+    "false: just check it and get a summary to show staff (nothing changes). true: propose it, only after staff have seen that summary and clearly said yes. Nothing changes in Acuity until an admin approves it in Portal → Approvals.",
 };
 
 export const FIND_BOOKINGS_TOOL = {
@@ -51,14 +59,14 @@ export const FIND_BOOKINGS_TOOL = {
 
 export const CANCEL_BOOKING_TOOL = {
   name: "cancel_booking",
-  description: "Cancel a booking. Find it with find_bookings first.",
+  description: "Propose cancelling a booking (an admin approves it in Portal before it happens). Find it with find_bookings first.",
   input_schema: {
     type: "object",
     properties: {
       appointment_id: ID,
       notify_client: { type: "boolean", description: "Send the client Acuity's cancellation email (usually yes)" },
       note: { type: "string", description: "Optional message included in the client's cancellation email" },
-      confirmed: CONFIRMED,
+      confirmed: PROPOSE,
     },
     required: ["appointment_id", "notify_client", "confirmed"],
   },
@@ -66,7 +74,7 @@ export const CANCEL_BOOKING_TOOL = {
 
 export const RESCHEDULE_BOOKING_TOOL = {
   name: "reschedule_booking",
-  description: "Move a booking to a new day and/or start time. Find it with find_bookings first.",
+  description: "Propose moving a booking to a new day and/or start time (an admin approves it in Portal before it happens). Find it with find_bookings first.",
   input_schema: {
     type: "object",
     properties: {
@@ -78,7 +86,7 @@ export const RESCHEDULE_BOOKING_TOOL = {
         type: "boolean",
         description: "Book it even if the calendar shows that time as not free. Only if staff explicitly ask to override.",
       },
-      confirmed: CONFIRMED,
+      confirmed: PROPOSE,
     },
     required: ["appointment_id", "date", "time", "notify_client", "confirmed"],
   },
@@ -87,7 +95,7 @@ export const RESCHEDULE_BOOKING_TOOL = {
 export const UPDATE_BOOKING_TOOL = {
   name: "update_booking",
   description:
-    "Change a booking's client details or notes: first name, last name, email, phone, notes. Only give the fields that change. (Session type, price and paid status: use change_booking_extras.) Find it with find_bookings first.",
+    "Propose changing a booking's client details or notes: first name, last name, email, phone, notes (an admin approves it in Portal before it happens). Only give the fields that change. (Session type, price and paid status: use change_booking_extras.) Find it with find_bookings first.",
   input_schema: {
     type: "object",
     properties: {
@@ -97,7 +105,7 @@ export const UPDATE_BOOKING_TOOL = {
       email: { type: "string" },
       phone: { type: "string" },
       notes: { type: "string", description: "Replaces the booking's notes" },
-      confirmed: CONFIRMED,
+      confirmed: PROPOSE,
     },
     required: ["appointment_id", "confirmed"],
   },
@@ -128,17 +136,22 @@ You're talking to Novacane staff in Portal, not a customer. Besides everything
 above, you can look up and change existing bookings:
 - find_bookings lists bookings with their IDs. Use it to answer questions ("what's
   on Saturday?", "when is Kai in next?") and before any change.
-- cancel_booking, reschedule_booking and update_booking change a booking by its ID.
+- cancel_booking, reschedule_booking and update_booking PROPOSE a change to a
+  booking by its ID. You can't make these changes yourself: an admin approves
+  each one in Portal → Approvals, and only then does it happen in Acuity.
 - Every change takes two steps: first call the tool with confirmed false. That
-  changes nothing and tells you exactly what will happen: show staff that summary
-  and ask them to confirm. Only after they clearly say yes, call it again with
-  confirmed true. If more than one booking could be the one they mean, ask which.
+  changes nothing and tells you exactly what will be proposed: show staff that
+  summary and ask them to confirm. Only after they clearly say yes, call it again
+  with confirmed true, which proposes it. Then tell staff it's waiting for an
+  admin to approve it in Portal → Approvals (give the link). If more than one
+  booking could be the one they mean, ask which.
 - Ask whether to email the client if staff haven't said (Acuity's emails are
   usually wanted).
 - Session type, price and paid status: use change_booking_extras. Nova Agent does
   those in Acuity a few minutes later and staff get a phone notification; say
   that, and never say they're already done.
-- Never say something is cancelled, moved or changed unless the tool said it was done.`;
+- Never say something is cancelled, moved or changed: proposed changes happen only
+  once an admin approves them.`;
 
 // Is this one of these tools?
 export function isManageBookingTool(name) {
@@ -188,6 +201,32 @@ async function findBookings(env, input, today) {
   return { ok: true, message: `${found.length} booking(s) (${range}${filtersInWords(input)}):\n${lines.join("\n")}${more}` };
 }
 
+// ===== CANCEL, RESCHEDULE, UPDATE: proposed, and an admin approves in Portal =====
+
+// Why staff-chat proposals are made (the admin sees it next to Nova Bot's own summary)
+const STAFF_CHAT_REASON = "Asked for in Portal's staff chat, and confirmed there.";
+
+// Save a proposal (src/booking-actions.js: nothing changes in Acuity until an admin approves)
+// and tell NovaBot what to say
+async function propose(env, kind, payload) {
+  let result;
+  try {
+    result = await proposeAction(env, { kind, payload, reason: STAFF_CHAT_REASON, proposedBy: "staff-chat" });
+  } catch (err) {
+    return { ok: false, message: `Not proposed: ${acuityFailure(err).body.error} Tell staff to try again in a minute.` };
+  }
+  if (result.error) return { ok: false, message: `Not proposed: ${result.error} Tell staff.` };
+  const action = result.action;
+  return {
+    ok: true,
+    message:
+      `Proposed, NOT done yet (#${action.id}): ${action.summary}.` +
+      (result.repeated ? " (This was already proposed and is still waiting.)" : "") +
+      ` It's waiting for an admin to approve it in Portal → Approvals: ${action.portalUrl}\n` +
+      "Tell staff that. Nothing has changed in Acuity yet; never say it's done.",
+  };
+}
+
 // ===== CANCEL =====
 
 async function cancelBooking(env, input) {
@@ -202,14 +241,12 @@ async function cancelBooking(env, input) {
       message:
         `Not cancelled yet. Show staff this and ask them to confirm:\n- Cancel: ${describe(booking)}\n- Email the client: ${notify ? "yes" : "no"}` +
         (note ? `\n- Note to the client: "${note}"` : "") +
-        "\nOnly after they clearly say yes, call cancel_booking again with confirmed true.",
+        "\nOnly after they clearly say yes, call cancel_booking again with confirmed true. That proposes it: an admin then approves it in Portal → Approvals.",
     };
   }
 
-  // As staff (admin=true), so the client's cancellation rules don't apply
-  const { ok, data } = await acuity(env, "PUT", `/appointments/${booking.id}/cancel?admin=true${notify ? "" : "&noEmail=true"}`, note ? { cancelNote: note } : {});
-  if (!ok) return { ok: false, message: `Not cancelled: Acuity said "${acuityError(data)}". Tell staff, and suggest doing it in Acuity.` };
-  return { ok: true, message: `Cancelled: ${describe(booking)}.${notify ? " Acuity is emailing the client." : " The client wasn't emailed."}` };
+  // As staff (admin=true) once approved, so the client's cancellation rules don't apply
+  return propose(env, "cancel", { appointmentId: booking.id, notifyClient: notify, ...(note && { note }) });
 }
 
 // ===== RESCHEDULE =====
@@ -222,6 +259,8 @@ async function rescheduleBooking(env, input, today) {
   const time = normaliseTime(input?.time);
   if (!date || !time) return { ok: false, message: "Not moved: I need the new day (YYYY-MM-DD) and start time (HH:MM). Ask staff." };
   if (date < today) return { ok: false, message: `Not moved: ${dayInWords(date)} is in the past. Check the date with staff.` };
+  const start = ukWallToUtc(`${date}T${time}`);
+  if (!start) return { ok: false, message: `Not moved: ${time} on ${dayInWords(date)} isn't a real UK time (the clocks change). Ask staff for another time.` };
 
   const notify = input?.notify_client !== false;
   const override = input?.ignore_availability === true;
@@ -233,22 +272,22 @@ async function rescheduleBooking(env, input, today) {
       message:
         `Not moved yet. Show staff this and ask them to confirm:\n- Move: ${describe(booking)}\n- To: ${newWhen} (UK time)\n- Email the client: ${notify ? "yes" : "no"}` +
         (override ? "\n- Even if the calendar shows that time as not free" : "") +
-        "\nOnly after they clearly say yes, call reschedule_booking again with confirmed true.",
+        "\nOnly after they clearly say yes, call reschedule_booking again with confirmed true. That proposes it: an admin then approves it in Portal → Approvals.",
     };
   }
 
-  // Acuity reads the time in the studio's timezone (UK). Without admin=true it
-  // checks the new time is free, like a client rescheduling would.
-  const query = [override ? "admin=true" : "", notify ? "" : "noEmail=true"].filter(Boolean).join("&");
-  const { ok, data } = await acuity(env, "PUT", `/appointments/${booking.id}/reschedule${query ? "?" + query : ""}`, { datetime: `${date}T${time}:00` });
-  if (!ok) {
-    const error = acuityError(data);
-    if (/not_available|not available/i.test(error)) {
-      return { ok: false, message: `Not moved: ${newWhen} isn't free in the calendar. Tell staff; they can pick another time, or ask you to override it.` };
+  // Acuity makes the change as staff once approved (admin=true), so the time is checked here
+  // first, like a client rescheduling would be, unless staff asked to override
+  if (!override && booking.appointmentTypeID) {
+    let free;
+    try {
+      free = (await availableTimes(env, { typeId: booking.appointmentTypeID, date })).some((t) => t.start === start.toISOString());
+    } catch (err) {
+      return { ok: false, message: `Not proposed: ${acuityFailure(err).body.error} Tell staff to try again in a minute.` };
     }
-    return { ok: false, message: `Not moved: Acuity said "${error}". Tell staff, and suggest doing it in Acuity.` };
+    if (!free) return { ok: false, message: `Not moved: ${newWhen} isn't free in the calendar. Tell staff; they can pick another time, or ask you to override it.` };
   }
-  return { ok: true, message: `Moved: ${booking.firstName} ${booking.lastName}'s ${booking.type} is now ${newWhen}.${notify ? " Acuity is emailing the client." : ""}` };
+  return propose(env, "reschedule", { appointmentId: booking.id, start: start.toISOString(), notifyClient: notify });
 }
 
 // ===== UPDATE DETAILS =====
@@ -273,13 +312,11 @@ async function updateBooking(env, input) {
   if (input?.confirmed !== true) {
     return {
       ok: true,
-      message: `Not changed yet. Show staff this and ask them to confirm:\n- Booking: ${describe(booking)}\n${list}\nOnly after they clearly say yes, call update_booking again with confirmed true.`,
+      message: `Not changed yet. Show staff this and ask them to confirm:\n- Booking: ${describe(booking)}\n${list}\nOnly after they clearly say yes, call update_booking again with confirmed true. That proposes it: an admin then approves it in Portal → Approvals.`,
     };
   }
 
-  const { ok, data } = await acuity(env, "PUT", `/appointments/${booking.id}?admin=true`, changes);
-  if (!ok) return { ok: false, message: `Not changed: Acuity said "${acuityError(data)}". Tell staff, and suggest doing it in Acuity.` };
-  return { ok: true, message: `Changed ${booking.firstName} ${booking.lastName}'s booking:\n${list}` };
+  return propose(env, "update", { appointmentId: booking.id, ...changes });
 }
 
 // ===== SESSION TYPE, PRICE, PAID (via Nova Agent) =====
@@ -334,24 +371,14 @@ async function changeExtras(env, input) {
 
 // ===== HELPERS =====
 
-// Call Acuity's API. Returns { ok, data }, never throws.
+// Call Acuity's API (through src/acuity/api.js: retries when it's busy or briefly down).
+// Returns { ok, status, data }, never throws: Acuity down, busy or not set up is
+// { ok: false, status: 0, data: {}, error }.
 export async function acuity(env, method, path, body) {
   try {
-    const res = await fetch(ACUITY_API + path, {
-      method,
-      headers: {
-        Authorization: "Basic " + btoa(`${env.ACUITY_USER_ID.trim()}:${env.ACUITY_API_KEY.trim()}`),
-        ...(body ? { "Content-Type": "application/json" } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(10000),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) console.log(`Acuity ${method} ${path.split("?")[0]} answered ${res.status}:`, JSON.stringify(data).slice(0, 300));
-    return { ok: res.ok, data };
+    return await acuityRequest(env, method, path, body);
   } catch (err) {
-    console.log(`Couldn't reach Acuity (${method} ${path.split("?")[0]}):`, err);
-    return { ok: false, data: {} };
+    return { ok: false, status: 0, data: {}, error: acuityFailure(err).body.error };
   }
 }
 
@@ -389,10 +416,6 @@ function to24Hour(value) {
 function filtersInWords(input) {
   const bits = [input?.name && `name "${input.name}"`, input?.email && `email "${input.email}"`, input?.phone && `phone ${input.phone}`].filter(Boolean);
   return bits.length ? `, ${bits.join(", ")}` : "";
-}
-
-function acuityError(data) {
-  return String(data?.message || data?.error || "no reason given").slice(0, 200);
 }
 
 function field(value, max) {

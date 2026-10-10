@@ -12,6 +12,7 @@
 import { findAcuityTest } from "./acuity-test-booking.js";
 import { bookingChanged } from "./booking-pings.js";
 import { calendarChanged } from "./club-calendar.js";
+import { markBookingsChanged } from "./booking-actions.js";
 
 const ACUITY_API = "https://acuityscheduling.com/api/v1";
 const APPOINTMENT_ACTIONS = ["scheduled", "rescheduled", "canceled", "changed"];
@@ -187,6 +188,8 @@ export async function handleAcuityWebhook(request, env, ctx) {
 
   // Nova Club shows the change next time it checks (within a second or two)
   await calendarChanged(env).catch((err) => console.log("Couldn't mark the Nova Club calendar as changed:", err));
+  // Nova Agent re-reads the bookings next time it checks in (/nova-agent/next's bookingsChanged)
+  await markBookingsChanged(env).catch((err) => console.log("Couldn't note that the bookings changed:", err.message));
 
   // Referral tracking: looks the booking up with Acuity's API, so only when signed
   // (never for a test booking from Portal: acuity-test-booking.js)

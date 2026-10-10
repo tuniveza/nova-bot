@@ -38,6 +38,12 @@
 //   GET  /app/api/calendar              every booking in Acuity's diary (the Calendar tab)
 //   GET|PUT|DELETE /app/api/calendar/items[/:id]  the studio's events and day cards (src/calendar/items.js)
 //   POST /app/api/ask                   { question, history } -> { answer } (questions about bookings, enquiries, alerts)
+//   GET  /app/api/booking-actions?status=pending|all -> { actions, canDecide } booking changes the AIs proposed
+//   POST /app/api/booking-actions/approve { id, payload? } -> approves it and makes the change in Acuity
+//   POST /app/api/booking-actions/edit    { id, payload }  -> changes a pending one's details (still pending)
+//   POST /app/api/booking-actions/reject  { id, note? }
+//     (Approve, edit and reject need an admin with Portal open in a browser, the cookie: never an
+//      app's token, other staff, or Nova Agent's key. See src/booking-actions.js.)
 
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { askPortal } from "./portal-ask.js";
@@ -46,6 +52,8 @@ import { handleMemoryForStaff, learnFromStaffChat } from "./memory/routes.js";
 import { clearCookie, endSession, requireStaff } from "./portal/auth.js";
 import { checkedLinks } from "./links.js";
 import * as replies from "./enquiry-replies.js";
+import * as bookingActions from "./booking-actions.js";
+import { acuityFailure } from "./acuity/api.js";
 import { servicesStatus, testEmailToMe } from "./services.js";
 import { publicUrl } from "./nova/booking.js";
 import { listBookings } from "./booking-calendar.js";
@@ -81,6 +89,10 @@ export async function handleApp(request, env, ctx, answer) {
   if (route.startsWith("/enquiries/")) {
     const reply = await enquiryReplies(request, env, me, route);
     if (reply) return reply;
+  }
+  if (route === "/booking-actions" || route.startsWith("/booking-actions/")) {
+    const answer = await approvals(request, env, me, route);
+    if (answer) return answer;
   }
   if (route === "/services" && request.method === "GET") return json({ services: await servicesStatus(env), admin: me.role === "admin" });
   if (route === "/services/test-email" && request.method === "POST") return done(await testEmailToMe(env, me));
@@ -189,6 +201,31 @@ async function enquiryReplies(request, env, me, route) {
   if (route === "/enquiries/retry") return done(await replies.retrySend(env, me, body));
   if (route === "/enquiries/contact") return done(await replies.setDoNotContact(env, { id: body.id, on: body.doNotContact === true, by: me.id }));
   return null;
+}
+
+// ===== APPROVALS: booking changes the AIs proposed =====
+// Any signed-in staff can see them. Only an admin, in a browser (the Portal cookie; the Origin
+// check above already stops other websites), can edit, approve or reject: never an app's token.
+
+const canDecide = (me) => me.role === "admin" && me.session_kind === "cookie";
+
+async function approvals(request, env, me, route) {
+  if (route === "/booking-actions" && request.method === "GET") {
+    const status = new URL(request.url).searchParams.get("status") === "all" ? "all" : "pending";
+    return json({ actions: await bookingActions.listActions(env, { status }), canDecide: canDecide(me) });
+  }
+  const ACTIONS = { "/booking-actions/approve": bookingActions.approveAction, "/booking-actions/edit": bookingActions.editAction, "/booking-actions/reject": bookingActions.rejectAction };
+  if (request.method !== "POST" || !ACTIONS[route]) return null;
+  if (!canDecide(me)) {
+    return json({ error: "Only an admin, with Portal open in a browser and signed in, can approve booking changes.", onlineUrl: `${publicUrl(env)}/portal/?view=approvals` }, 403);
+  }
+  const body = await readJson(request);
+  try {
+    return done(await ACTIONS[route](env, me, body));
+  } catch (err) {
+    const { status, body: answer } = acuityFailure(err);
+    return json(answer, status);
+  }
 }
 
 // A result from src/enquiry-replies.js as a response: { status, error } is a refusal
