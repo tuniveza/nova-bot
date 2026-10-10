@@ -12,6 +12,11 @@
 // Money goes through Stripe (stripe.js); every payment, refund and "marked paid"
 // is in the payments table. Emails go through Gmail (emails.js). Staff phones hear
 // about everything that matters (push.js).
+//
+// TEST bookings (test = 1, made by an admin in Portal → Admin → Test booking, see
+// test-booking.js) go through the same engine, with safe edges: no staff alerts, no
+// emails (but the one the admin asks for, to themselves), never a real payment or
+// refund, no referral, and they don't block customers' times unless the admin chose to.
 
 import { calendarTouched, dayInWords, freeSlot, publicUrl, ukToday } from "./booking.js";
 import { calendarChanged } from "./club-calendar.js";
@@ -88,6 +93,8 @@ export function bookingLines(b) {
 }
 
 async function tellStaff(env, b, title, extraLines = []) {
+  // A test booking never reaches staff phones (the test page sends its own, to the admin only)
+  if (b.test) return;
   try {
     await notifyPhones(env, {
       title,
@@ -102,13 +109,15 @@ async function tellStaff(env, b, title, extraLines = []) {
 
 // ===== THE CALENDAR EVENT =====
 
-function eventFor(env, b) {
+export function eventFor(env, b) {
   const hold = b.status === "hold";
+  const test = Boolean(b.test);
   const { net, balanceDue } = moneyState(b);
   const paid = net <= 0 ? "Not paid" : balanceDue > 0 ? `${money(net)} paid, ${money(balanceDue)} due` : "Paid in full";
   return {
-    summary: `${hold ? "HOLD (paying deposit) · " : ""}${fullName(b)} · ${b.session}`,
+    summary: `${test ? "TEST · " : ""}${hold ? "HOLD (paying deposit) · " : ""}${fullName(b)} · ${b.session}`,
     description: [
+      ...(test ? [`TEST BOOKING: not a real client. Made in Portal → Admin → Test booking; it removes itself within 24 hours.${b.test_blocks ? "" : " It doesn't block this time for customers."}`, ""] : []),
       `Booking #${b.id} (${b.source})`,
       `Phone: ${b.phone || "-"}`,
       `Email: ${b.email}`,
@@ -125,9 +134,10 @@ function eventFor(env, b) {
     end: { dateTime: b.ends_at, timeZone: TIME_ZONE },
     location: STUDIO.address,
     status: hold ? "tentative" : "confirmed",
-    colorId: hold ? "8" : b.source === "website" ? "3" : "9",
-    transparency: "opaque",
-    extendedProperties: { private: { novaBooking: String(b.id) } },
+    colorId: test || hold ? "8" : b.source === "website" ? "3" : "9",
+    // A test booking is marked "free" in the calendar, so it never blocks a customer (unless the admin chose to)
+    transparency: test && !b.test_blocks ? "transparent" : "opaque",
+    extendedProperties: { private: { novaBooking: String(b.id), ...(test ? { novaTest: "1" } : {}) } },
     reminders: { useDefault: true },
   };
 }
@@ -148,8 +158,9 @@ async function syncEvent(env, b) {
 // Make a booking. `status`: "hold" (website checkout) or "booked" (chat or staff).
 // The time must already have been checked with freeSlot(); it's checked once more
 // here, just before the calendar event goes in.
+// `test` ({ by: staff id, blocks }) makes a TEST booking (test-booking.js): flagged, no referral.
 // Returns { booking } or { problem, taken? }.
-export async function createBooking(env, { type, date, time, person, source, status = "booked", notes = "", referralCode = "", chatId = null, sender = null, pricePence = null, skipCheck = false }) {
+export async function createBooking(env, { type, date, time, person, source, status = "booked", notes = "", referralCode = "", chatId = null, sender = null, pricePence = null, skipCheck = false, test = null }) {
   if (!skipCheck) {
     const slot = await freeSlot(env, { date, time }, ukToday(), { type });
     if (slot.problem) return { problem: slot.problem, taken: Boolean(slot.taken) };
@@ -163,13 +174,14 @@ export async function createBooking(env, { type, date, time, person, source, sta
 
   const { meta } = await env.DB.prepare(
     `INSERT INTO bookings (token, status, source, type_id, session, duration, changeover, starts_at, ends_at, first_name, last_name, email, phone, notes,
-       price_pence, deposit_pence, hold_until, referral_code, chat_id, sender, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       price_pence, deposit_pence, hold_until, referral_code, chat_id, sender, created_at, updated_at, test, test_by, test_blocks)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       token, status, source, type.id, type.name, type.duration, type.changeover || 0, startsAt, endsAt,
       person.firstName, person.lastName, person.email.toLowerCase(), person.phone || null, notes || null,
-      price, depositFor(price), holdUntil, referralCode || null, chatId, sender, now, now
+      price, depositFor(price), holdUntil, test ? null : referralCode || null, chatId, sender, now, now,
+      test ? 1 : 0, test ? String(test.by) : null, test && test.blocks ? 1 : 0
     )
     .run();
   let b = await getBooking(env, meta.last_row_id);
@@ -187,9 +199,10 @@ export async function createBooking(env, { type, date, time, person, source, sta
   await touched(env);
 
   // Another booking may have landed in the same moment: keep the first, let this one go
+  // (test bookings that don't block times don't count)
   const mine = [Date.parse(startsAt), Date.parse(endsAt) + (type.changeover || 0) * 60_000];
   const { results: near } = await env.DB.prepare(
-    "SELECT starts_at, ends_at, changeover FROM bookings WHERE id < ? AND status IN ('hold', 'booked') AND starts_at < ? AND ends_at > ?"
+    "SELECT starts_at, ends_at, changeover FROM bookings WHERE id < ? AND status IN ('hold', 'booked') AND (test = 0 OR test_blocks = 1) AND starts_at < ? AND ends_at > ?"
   )
     .bind(b.id, new Date(mine[1]).toISOString(), new Date(mine[0] - 86_400_000).toISOString())
     .all();
@@ -228,6 +241,8 @@ export async function startCheckout(env, b, purpose = "auto", { hold = false } =
   if (purpose === "auto") purpose = depositDue > 0 ? "deposit" : "balance";
   const amount = purpose === "deposit" ? depositDue : balanceDue;
   if (amount <= 0) return { problem: "Nothing to pay: this booking is already paid." };
+  // Never a real checkout for a test booking (no real money, ever)
+  if (b.test) return { problem: "This is a TEST booking, so it can't be paid for. Test payments are made in Portal → Admin → Test booking." };
   if (!stripeReady(env)) return { problem: "Online payment isn't set up yet. Please contact the studio." };
   const back = manageLink(env, b);
   if (stripeOffline(env)) {
@@ -317,7 +332,7 @@ export async function expireHolds(env, now = Date.now()) {
 // Every minute: the day-before reminders
 export async function sendReminders(env, now = Date.now()) {
   const { results } = await env.DB.prepare(
-    "SELECT * FROM bookings WHERE status = 'booked' AND reminded_at IS NULL AND starts_at > ? AND starts_at <= ? LIMIT 20"
+    "SELECT * FROM bookings WHERE status = 'booked' AND test = 0 AND reminded_at IS NULL AND starts_at > ? AND starts_at <= ? LIMIT 20"
   )
     .bind(new Date(now).toISOString(), new Date(now + REMINDER_HOURS * 3_600_000).toISOString())
     .all();
@@ -470,7 +485,8 @@ export async function refundBooking(env, b, amountPence, reason) {
     alreadyBack = Math.max(0, alreadyBack - p.amount_pence);
     const take = Math.min(room, left);
     if (take <= 0) continue;
-    const id = stripeOffline(env) || String(p.stripe_id).startsWith("sandbox_") ? `sandbox_refund_${crypto.randomUUID()}` : await refund(env, { paymentIntent: p.stripe_id, amountPence: take, bookingId: b.id, reason });
+    // A test booking's "refund" never reaches Stripe (its payment was never real)
+    const id = b.test ? `test_refund_${crypto.randomUUID()}` : stripeOffline(env) || String(p.stripe_id).startsWith("sandbox_") ? `sandbox_refund_${crypto.randomUUID()}` : await refund(env, { paymentIntent: p.stripe_id, amountPence: take, bookingId: b.id, reason });
     await env.DB.prepare("INSERT INTO payments (booking_id, kind, amount_pence, stripe_id, note, created_at) VALUES (?, 'refund', ?, ?, ?, ?)")
       .bind(b.id, take, id, String(reason || "").slice(0, 200), new Date().toISOString())
       .run();
@@ -502,6 +518,8 @@ export async function customerCancel(env, b) {
 // ===== REFERRALS (the referral report on /admin) =====
 
 async function saveReferral(env, b) {
+  // Test bookings stay out of the referral report and its counts
+  if (b.test) return;
   try {
     const now = new Date().toISOString();
     await env.DB.prepare(
@@ -529,10 +547,11 @@ async function markReferralCancelled(env, id) {
 
 // ===== FOR STUDIO =====
 
-// Bookings in a time range (the Calendar tab, staff questions), soonest first
-export async function bookingsBetween(env, fromIso, untilIso, statuses = ["booked"]) {
+// Bookings in a time range (the Calendar tab, staff questions), soonest first.
+// `tests: false` leaves test bookings out (anything that counts or reports).
+export async function bookingsBetween(env, fromIso, untilIso, statuses = ["booked"], { tests = true } = {}) {
   const { results } = await env.DB.prepare(
-    `SELECT * FROM bookings WHERE status IN (${statuses.map(() => "?").join(", ")}) AND starts_at < ? AND ends_at > ? ORDER BY starts_at LIMIT 1000`
+    `SELECT * FROM bookings WHERE status IN (${statuses.map(() => "?").join(", ")})${tests ? "" : " AND test = 0"} AND starts_at < ? AND ends_at > ? ORDER BY starts_at LIMIT 1000`
   )
     .bind(...statuses, untilIso, fromIso)
     .all();

@@ -123,6 +123,45 @@ export async function refund(env, { paymentIntent, amountPence, bookingId, reaso
   return data.id;
 }
 
+// ===== TEST BOOKINGS (Portal → Admin → Test booking) =====
+
+// A Stripe TEST-mode key, or "" if there isn't one. STRIPE_TEST_SECRET_KEY first; the main
+// STRIPE_SECRET_KEY only counts if it's itself a test key. A live key is never returned.
+export function stripeTestKey(env) {
+  const isTest = (k) => /^(sk|rk)_test_/.test(String(k || ""));
+  if (isTest(env.STRIPE_TEST_SECRET_KEY)) return env.STRIPE_TEST_SECRET_KEY;
+  if (isTest(env.STRIPE_SECRET_KEY)) return env.STRIPE_SECRET_KEY;
+  return "";
+}
+
+// A pretend card payment in Stripe's TEST mode (Stripe's test card, no real money), for a
+// test booking. Refuses anything but a test key, and anything Stripe says is live.
+// Returns { id, amount }, or throws StripeError.
+export async function testModePayment(env, { booking, amountPence }) {
+  const key = stripeTestKey(env);
+  if (!key || !/^(sk|rk)_test_/.test(key)) throw new StripeError("No Stripe test key (sk_test_…), so Stripe wasn't used.", 0);
+  if (!booking || !booking.test) throw new StripeError("Test payments are only for test bookings.", 0);
+  const res = await fetch(API + "/payment_intents", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded", "Idempotency-Key": `test-booking-${booking.id}-${amountPence}` },
+    body: formEncode({
+      amount: amountPence,
+      currency: "gbp",
+      confirm: "true",
+      payment_method: "pm_card_visa",
+      payment_method_types: ["card"],
+      description: `TEST booking #${booking.id} (Portal test, not a real payment)`,
+      metadata: { booking_id: booking.id, test: "1" },
+    }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new StripeError(`Stripe (test mode): ${String(data?.error?.message || res.status).slice(0, 200)}`, res.status);
+  if (data.livemode === true) throw new StripeError("Stripe said this was live mode, so it isn't counted. Check STRIPE_TEST_SECRET_KEY.", 0);
+  if (data.status !== "succeeded") throw new StripeError(`Stripe (test mode) says the payment is "${data.status || "unknown"}", not succeeded.`, 0);
+  return { id: data.id, amount: Number(data.amount) || amountPence };
+}
+
 // Can Stripe's API be used with the saved key? "" if so.
 export async function stripeProblem(env) {
   if (stripeOffline(env)) return "";

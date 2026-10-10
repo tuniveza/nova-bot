@@ -207,6 +207,8 @@ async function bookingFor(env, id) {
   if (!Number.isInteger(id) || id <= 0) return { problem: "That isn't a booking number. Use find_bookings to find the booking first." };
   const b = await getBooking(env, id);
   if (!b) return { problem: `There's no booking #${id}. Use find_bookings to find it again.` };
+  // Test bookings are only ever handled by an admin, in Portal → Admin → Test booking
+  if (b.test) return { problem: `Booking #${id} is a TEST booking, not a real one. Leave it: an admin removes it in Portal → Admin → Test booking (it also removes itself within 24 hours).` };
   return b;
 }
 
@@ -224,7 +226,7 @@ async function findBookings(env, input, today) {
 
   const statuses = input?.include_cancelled ? ["booked", "hold", "cancelled"] : ["booked", "hold"];
   const { results } = await env.DB.prepare(
-    `SELECT * FROM bookings WHERE status IN (${statuses.map(() => "?").join(", ")}) AND starts_at < ? AND ends_at > ? ORDER BY starts_at LIMIT 500`
+    `SELECT * FROM bookings WHERE status IN (${statuses.map(() => "?").join(", ")}) AND test = 0 AND starts_at < ? AND ends_at > ? ORDER BY starts_at LIMIT 500`
   )
     .bind(...statuses, untilIso, fromIso)
     .all();

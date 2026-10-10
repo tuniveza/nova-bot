@@ -109,12 +109,20 @@ function decodeB64(b64) {
 // ----- Stripe -----
 
 export function makeStripe() {
-  const s = { sessions: [], refunds: [], expired: [], fail: false, n: 0 };
+  // intents: test bookings' "Fake a payment" (Stripe test mode); keys: every key Stripe was called with
+  const s = { sessions: [], refunds: [], expired: [], intents: [], keys: [], fail: false, n: 0 };
   s.handle = async (url, init = {}) => {
     const u = new URL(url);
     if (u.hostname !== "api.stripe.com") return null;
+    const auth = (init.headers && (init.headers.Authorization || init.headers.authorization)) || "";
+    s.keys.push(String(auth).replace(/^Bearer /, ""));
     if (s.fail) return Response.json({ error: { message: "Invalid API Key provided" } }, { status: 401 });
     const form = init.body ? Object.fromEntries(new URLSearchParams(init.body)) : {};
+    if (u.pathname === "/v1/payment_intents" && init.method === "POST") {
+      const id = `pi_test_${++s.n}`;
+      s.intents.push({ id, form });
+      return Response.json({ id, object: "payment_intent", amount: Number(form.amount), currency: form.currency, status: "succeeded", livemode: false });
+    }
     if (u.pathname === "/v1/checkout/sessions" && init.method === "POST") {
       const id = `cs_test_${++s.n}`;
       const session = { id, url: `https://checkout.stripe.com/c/pay/${id}`, form };

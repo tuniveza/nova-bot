@@ -338,11 +338,12 @@ export async function freeStarts(env, type, fromDate, toDate, { fresh = false, i
 // Everything busy between two instants, as [[startMs, endMs], ...]:
 // - every Google Calendar event that isn't marked "free" (bookings, holds, staff's own events)
 // - each of our bookings with its changeover added after it
+//   (not test bookings, unless the admin chose to let one block the time: test-booking.js)
 async function busyBetween(env, fromMs, untilMs, { fresh, ignoreBookingId }) {
   const busy = [];
   // Our bookings (a day either side, for changeovers running over midnight)
   const { results } = await env.DB.prepare(
-    "SELECT id, starts_at, ends_at, changeover, event_id FROM bookings WHERE status IN ('hold', 'booked') AND starts_at < ? AND ends_at > ?"
+    "SELECT id, starts_at, ends_at, changeover, event_id FROM bookings WHERE status IN ('hold', 'booked') AND (test = 0 OR test_blocks = 1) AND starts_at < ? AND ends_at > ?"
   )
     .bind(new Date(untilMs).toISOString(), new Date(fromMs - 86_400_000).toISOString())
     .all();

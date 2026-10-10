@@ -100,9 +100,10 @@ async function readCalendar(env, from, until) {
   const last = ukToMs(until);
   try {
     const times = [];
-    // Our bookings, each with its changeover (which a calendar event doesn't show)
+    // Our bookings, each with its changeover (which a calendar event doesn't show);
+    // test bookings only if the admin chose to let them block the time
     const { results } = await env.DB.prepare(
-      "SELECT starts_at, ends_at, changeover, event_id FROM bookings WHERE status IN ('hold', 'booked') AND starts_at < ? AND ends_at > ?"
+      "SELECT starts_at, ends_at, changeover, event_id FROM bookings WHERE status IN ('hold', 'booked') AND (test = 0 OR test_blocks = 1) AND starts_at < ? AND ends_at > ?"
     )
       .bind(new Date(last).toISOString(), new Date(first - 86_400_000).toISOString())
       .all();

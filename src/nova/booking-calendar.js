@@ -14,27 +14,32 @@ const AHEAD_DAYS = 366;
 
 // Every booking and calendar event, soonest first, or null if the calendar isn't connected.
 // Each: { id, name, phone, email, session, price, when, start, end, extra, link, kind }
-// (start/end as "20261022T131500Z", the format the app has always read)
-export async function listBookings(env, now = Date.now()) {
+// (start/end as "20261022T131500Z", the format the app has always read).
+// Test bookings (test-booking.js) are in it, marked TEST, unless `tests: false`
+// (staff questions: they count bookings, so tests stay out).
+export async function listBookings(env, now = Date.now(), { tests = true } = {}) {
   if (!(await googleReady(env))) return null;
   const from = new Date(now - PAST_DAYS * 86_400_000).toISOString();
   const until = new Date(now + AHEAD_DAYS * 86_400_000).toISOString();
-  const bookings = await bookingsBetween(env, from, until, ["booked"]);
+  const bookings = await bookingsBetween(env, from, until, ["booked"], { tests });
   const items = bookings.map((b) => {
     const { net, balanceDue } = moneyState(b);
+    const test = Boolean(b.test);
     return {
       id: b.id,
       kind: "booking",
-      name: fullName(b),
+      ...(test ? { test: true } : {}),
+      name: `${test ? "TEST · " : ""}${fullName(b)}`,
       phone: b.phone,
       email: b.email,
-      session: b.session,
+      session: `${test ? "TEST · " : ""}${b.session}`,
       price: money(b.price_pence),
       when: whenInWords(b.starts_at, b.ends_at),
       start: feedTime(b.starts_at),
       end: feedTime(b.ends_at),
       link: b.event_link || null,
       extra: [
+        ...(test ? [["TEST", "A test booking made in Portal → Admin → Test booking. Not a real client; it removes itself within 24 hours."]] : []),
         ["Booking", `#${b.id}`],
         ["Paid", net <= 0 ? "nothing yet" : balanceDue > 0 ? `${money(net)} (${money(balanceDue)} to pay)` : "in full"],
         ...(b.notes ? [["Notes", b.notes]] : []),

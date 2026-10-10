@@ -16,6 +16,8 @@
 //   GET  /admin/google/callback    Google sends the browser back here with access
 //   POST /admin/google/disconnect  forget the Google connection
 //   POST /admin/connections/test-email  send a test email from the connected Gmail
+//   GET  /admin/test-booking       run a TEST booking (no real money, no client emails) and
+//                                  remove test bookings (admin-test-booking.js)
 //
 // For Portal admins: anyone else is sent to Portal to sign in (the one sign-in).
 
@@ -32,10 +34,12 @@ import { calendarId, connectedAccount, consentUrl, disconnect, finishConnecting,
 import { stripeOffline, stripeProblem, stripeReady } from "./nova/stripe.js";
 import { googleClient } from "./nova/google-keys.js";
 import { googleSetupPage, removeClient, saveGoogleSetup } from "./admin-google.js";
+import { handleTestBooking } from "./admin-test-booking.js";
 
 export async function handleAdmin(request, env) {
   // Portal is the one sign-in: admins only; signed out, go and sign in, then come back
-  if (!(await requireStaff(request, env, { admin: true }))) {
+  const admin = await requireStaff(request, env, { admin: true });
+  if (!admin) {
     const signedIn = await requireStaff(request, env);
     const here = new URL(request.url);
     if (!signedIn && request.method === "GET") {
@@ -50,6 +54,8 @@ export async function handleAdmin(request, env) {
     // Only accept forms sent from this admin page (stops other sites
     // submitting forms using the browser's saved password)
     if (request.headers.get("Origin") !== url.origin) return text("Forbidden", 403);
+    // Test bookings (JSON, from their page)
+    if (url.pathname.startsWith("/admin/test-booking/")) return handleTestBooking(request, env, url, admin, page);
     const form = await request.formData();
     if (url.pathname === "/admin/codes") return addCode(env, form);
     if (url.pathname === "/admin/codes/toggle") return toggleCode(env, form);
@@ -84,6 +90,7 @@ export async function handleAdmin(request, env) {
   if (url.pathname === "/admin/connections") return connectionsPage(env, url);
   if (url.pathname === "/admin/links") return linksPage(env, url);
   if (url.pathname === "/admin/google/setup") return googleSetupPage(env, url, page);
+  if (url.pathname === "/admin/test-booking" || url.pathname.startsWith("/admin/test-booking/")) return handleTestBooking(request, env, url, admin, page);
   if (url.pathname === "/admin/google") return connectGoogle(env, url);
   if (url.pathname === "/admin/google/callback") return googleCallback(request, env, url);
   if (url.pathname === "/admin" || url.pathname === "/admin/") return adminPage(env, url);
@@ -573,7 +580,7 @@ async function connectionsPage(env, url) {
   </div>`;
   const [account, gProblem, sProblem] = await Promise.all([connectedAccount(env), googleProblem(env), stripeProblem(env)]);
   const connectedAt = await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_connected_at'").first("value");
-  const { results: emails } = await env.DB.prepare("SELECT * FROM outbox ORDER BY id DESC LIMIT 25").all();
+  const { results: emails } = await env.DB.prepare("SELECT o.*, b.test FROM outbox o LEFT JOIN bookings b ON b.id = o.booking_id ORDER BY o.id DESC LIMIT 25").all();
   const mode = stripeOffline(env) ? "sandbox stand-in" : String(env.STRIPE_SECRET_KEY || "").startsWith("sk_live_") ? "live" : env.STRIPE_SECRET_KEY ? "test mode" : "not set";
   const ok = (problem) => (problem ? `<span class="warn">✗ ${e(problem)}</span>` : `<span>✓ Working</span>`);
   const base = publicUrl(env);
@@ -615,7 +622,7 @@ async function connectionsPage(env, url) {
       <tbody>${
         emails.length
           ? emails
-              .map((m) => `<tr><td>${when(m.created_at)}</td><td>${e(m.to_email)}</td><td>${e(m.subject)}</td><td>${m.booking_id ? "#" + m.booking_id : ""}</td><td>${m.sent ? "✓" : `<span class="warn">✗ ${e(m.error || "")}</span>`}</td></tr>`)
+              .map((m) => `<tr><td>${when(m.created_at)}</td><td>${e(m.to_email)}</td><td>${e(m.subject)}</td><td>${m.booking_id ? "#" + m.booking_id : ""}${m.test ? ' <b class="warn">TEST</b>' : ""}</td><td>${m.sent ? "✓" : `<span class="warn">✗ ${e(m.error || "")}</span>`}</td></tr>`)
               .join("")
           : '<tr><td colspan="5" class="dim">None yet.</td></tr>'
       }</tbody>
@@ -929,6 +936,7 @@ async function page(env, title, url, body) {
     ["Booking system", "/admin/connections"],
     ["Google", "/admin/google/setup"],
     ["Links", "/admin/links"],
+    ["Test booking", "/admin/test-booking"],
   ]
     .map(([label, href]) => `<a href="${href}" class="${label.startsWith(title) ? "current" : ""}">${e(label)}</a>`)
     .join("");

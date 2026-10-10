@@ -96,7 +96,8 @@ async function snapshot(env) {
   try {
     // Read the diary (Acuity's, or the studio's Google Calendar with the switch on Nova)
     const nova = await usesNova(env);
-    const bookings = nova ? await novaListBookings(env) : await listBookings(env);
+    // (test bookings left out: they aren't real and mustn't be counted)
+    const bookings = nova ? await novaListBookings(env, Date.now(), { tests: false }) : await listBookings(env);
     // Not set up
     if (!bookings) parts.push(nova ? "BOOKINGS: not available (Google Calendar isn't connected yet)." : "BOOKINGS: not available (the Acuity calendar feed isn't set up).");
     // One line per booking

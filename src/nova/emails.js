@@ -98,6 +98,8 @@ export function buildEmail(env, kind, b, extra = {}) {
     default:
       throw new Error("Unknown email: " + kind);
   }
+  // A test booking's email says so at the top (and in the subject, see sendBookingEmail)
+  if (b.test) intro.unshift("TEST: this is a test booking made in Portal → Admin → Test booking. It isn't real and nothing was charged.");
 
   const policy = kind === "cancelled" || kind === "receipt"
     ? ""
@@ -131,13 +133,31 @@ export function buildEmail(env, kind, b, extra = {}) {
   return { subject, text, html, attachments: ics ? [{ filename: "novacane-session.ics", type: `text/calendar; charset=UTF-8; method=${ics.method}`, content: ics.content }] : [] };
 }
 
+// Who a TEST booking's email may go to: only the admin who made it, and only when the test
+// page asks (extra.testSendTo is their email). Anything else about a test booking (receipts,
+// cancellations, reminders) is never sent. Returns the address, or "" (not sent).
+export async function testRecipient(env, b, extra = {}) {
+  if (!b.test || !b.test_by || !extra.testSendTo) return "";
+  const admin = await env.DB.prepare("SELECT email FROM staff WHERE id = ? AND role = 'admin' AND status = 'active'").bind(b.test_by).first().catch(() => null);
+  return admin && admin.email && admin.email === String(extra.testSendTo).toLowerCase() ? admin.email : "";
+}
+
 // Send one, keep a note of it in the outbox, never throw. Returns true if Gmail took it.
 export async function sendBookingEmail(env, kind, b, extra = {}) {
-  let sent = false, error = null, gmailId = null, subject = kind;
+  let sent = false, error = null, gmailId = null, subject = kind, to = b.email;
   try {
     const email = buildEmail(env, kind, b, extra);
     subject = email.subject;
-    gmailId = await sendEmail(env, { to: b.email, subject: email.subject, text: email.text, html: email.html, attachments: email.attachments, replyTo: extra.replyTo });
+    if (b.test) {
+      // A test booking: to the admin who made it (when they asked), or to no one
+      subject = `[TEST] ${email.subject}`;
+      to = await testRecipient(env, b, extra);
+      if (!to) {
+        to = b.email;
+        throw new Error("TEST booking: not sent (test emails only go to the admin who asked)");
+      }
+    }
+    gmailId = await sendEmail(env, { to, subject, text: email.text, html: email.html, attachments: email.attachments, replyTo: extra.replyTo });
     sent = true;
   } catch (err) {
     error = String(err?.message || err).slice(0, 300);
@@ -145,7 +165,7 @@ export async function sendBookingEmail(env, kind, b, extra = {}) {
   }
   try {
     await env.DB.prepare("INSERT INTO outbox (booking_id, kind, to_email, subject, sent, error, gmail_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(b.id, kind, b.email, subject, sent ? 1 : 0, error, gmailId, new Date().toISOString())
+      .bind(b.id, kind, to, subject, sent ? 1 : 0, error, gmailId, new Date().toISOString())
       .run();
   } catch (err) {
     console.log("Couldn't note the email in the outbox:", err);

@@ -46,6 +46,7 @@ import { MANAGE_BOOKINGS_RULES, MANAGE_BOOKING_TOOLS, isManageBookingTool, runMa
 import { usesNova } from "./mode.js";
 import { handleBookingPages } from "./nova/book-page.js";
 import { expireHolds, sendReminders } from "./nova/bookings.js";
+import { removeOldTestBookings } from "./nova/test-booking.js";
 import { dailyHealthCheck } from "./nova/health.js";
 import { googleReady } from "./nova/google.js";
 import { handleClubBusy as handleNovaClubBusy } from "./nova/club-calendar.js";
@@ -688,7 +689,8 @@ export default {
   // that have waited long enough for Acuity's email
   // (and delete alerts the auto-delete switch says are too old).
   // Nova Bot's own booking system has timers too (let go of unpaid holds,
-  // day-before reminders, a 06:00 Google/Stripe check); they run whichever
+  // day-before reminders, a 06:00 Google/Stripe check, removing day-old test
+  // bookings); they run whichever
   // system is switched on, and do nothing until it has bookings or keys.
   async scheduled(controller, env, ctx) {
     const at = controller?.scheduledTime || Date.now();
@@ -699,6 +701,8 @@ export default {
         dailyAcuityCheck(env, new Date(at)),
         expireHolds(env, at).catch((err) => console.log("Nova hold check failed:", err)),
         sendReminders(env, at).catch((err) => console.log("Nova reminders failed:", err)),
+        // Test bookings (Portal → Admin → Test booking) remove themselves after 24 hours
+        removeOldTestBookings(env, at).catch((err) => console.log("Removing old test bookings failed:", err)),
         // Calendar reminders on phones (src/calendar/reminders.js)
         sendCalendarReminders(env, at).catch((err) => console.log("Calendar reminders failed:", err)),
         dailyHealthCheck(env, new Date(at)).catch((err) => console.log("Nova health check failed:", err)),
