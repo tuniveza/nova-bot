@@ -43,6 +43,15 @@
 //                            (the AI can only propose: nothing here approves, edits or carries anything
 //                            out; see src/booking-actions.js)
 //
+//   POST /nova-agent/clients/find     { search } -> { clients } (20 at most)
+//   POST /nova-agent/clients/history  { id }     -> { client, sessions }
+//   POST /nova-agent/clients/owing    {}         -> { clients } who owes money, most first
+//   POST /nova-agent/clients/lapsed   { since: "YYYY-MM-DD" } -> { clients } who hasn't booked since that day
+//                            (the client list, read-only: nothing here changes a client; see src/clients.js)
+//   POST /nova-agent/bookings-feed    { from, to } -> { appointments: [{ id, start, end, type, name }] } bookings on
+//                            those UK days (max 62) from Acuity's calendar feed, which works on every plan. Times in
+//                            UTC. Feed not set up -> 409; couldn't be read -> 503 { unreachable: true }
+//
 //   POST /nova-agent/me       { staff_id? }         -> who Nova Agent works for (its Nova Agent badge and memory);
 //                            without an id, the studio's first admin
 //
@@ -52,8 +61,10 @@ import { planetFacts, profile } from "./portal/routes.js";
 import { notifyPhones, studioOwner } from "./push.js";
 import { syncFromAgent } from "./calendar/items.js";
 import { agentDraft, enquiryThread, listEnquiries } from "./enquiry-replies.js";
-import { acuityFailure, availableTimes, daysBetween, isUkDate, listAppointments, listBlocks, listTypes, searchClients } from "./acuity/api.js";
+import { acuityFailure, availableTimes, daysBetween, isUkDate, listAppointments, listBlocks, listTypes, searchClients, ukWallToUtc } from "./acuity/api.js";
 import { bookingsChangedAt, listActions, proposeAction } from "./booking-actions.js";
+import { handleClientsForAgent } from "./clients.js";
+import { feedTimeToIso, listBookings } from "./booking-calendar.js";
 
 // A job Nova Agent took but never reported on (e.g. it was restarted) is
 // offered again after this long
@@ -129,6 +140,9 @@ export async function handleAgentNova(request, env, pathname) {
   // Acuity: read the diary, and PROPOSE changes (never make them: an admin approves in Portal)
   if (pathname.startsWith("/nova-agent/acuity/")) return agentAcuity(env, pathname, body);
   if (pathname === "/nova-agent/booking-actions" || pathname.startsWith("/nova-agent/booking-actions/")) return agentBookingActions(env, pathname, body);
+  // The client list (read-only) and the bookings in Acuity's calendar feed
+  if (pathname.startsWith("/nova-agent/clients/")) return handleClientsForAgent(env, pathname, body);
+  if (pathname === "/nova-agent/bookings-feed") return bookingsFeed(env, body);
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
@@ -175,6 +189,32 @@ async function agentAcuity(env, pathname, body) {
     return Response.json(answer, { status });
   }
   return Response.json({ error: "Not found" }, { status: 404 });
+}
+
+// ===== BOOKINGS FROM ACUITY'S CALENDAR FEED (read only) =====
+// For Acuity plans without the API: the same diary Acuity gives Google Calendar.
+
+async function bookingsFeed(env, body) {
+  if (!isUkDate(body?.from) || !isUkDate(body?.to)) return Response.json({ error: "from and to must be UK dates, YYYY-MM-DD." }, { status: 400 });
+  const days = daysBetween(body.from, body.to);
+  if (days < 0) return Response.json({ error: "to is before from." }, { status: 400 });
+  if (days + 1 > MAX_ACUITY_DAYS) return Response.json({ error: `That's more than ${MAX_ACUITY_DAYS} days: ask for less at a time.` }, { status: 400 });
+  if (!env.ACUITY_CALENDAR_URL) return Response.json({ error: "Acuity's calendar feed isn't set up (the ACUITY_CALENDAR_URL secret)." }, { status: 409 });
+  let bookings;
+  try {
+    bookings = await listBookings(env);
+  } catch (err) {
+    return Response.json({ error: "Acuity's calendar feed couldn't be read: " + String(err?.message || err).slice(0, 120), unreachable: true }, { status: 503 });
+  }
+  // From the start of the first UK day to the start of the day after the last
+  const from = ukWallToUtc(body.from + "T00:00").toISOString();
+  const after = new Date(Date.parse(body.to + "T00:00:00Z") + 86400000).toISOString().slice(0, 10);
+  const to = ukWallToUtc(after + "T00:00").toISOString();
+  const appointments = bookings
+    .map((b) => ({ id: b.id, start: feedTimeToIso(b.start), end: feedTimeToIso(b.end), type: b.session, name: b.name }))
+    .filter((a) => a.start && a.start >= from && a.start < to)
+    .sort((a, b) => a.start.localeCompare(b.start));
+  return Response.json({ appointments });
 }
 
 // ===== BOOKING CHANGES (propose and list only) =====

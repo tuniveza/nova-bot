@@ -65,6 +65,7 @@ import { calendarPage, handleLink, handleRelay, isRelayed, linkStatus } from "./
 import { handleSharedNotes } from "./notes-shared.js";
 import { handleMusicWorld } from "./music-world.js";
 import { sendCalendarReminders } from "./calendar/reminders.js";
+import { syncClientsOnSchedule } from "./clients.js";
 
 // ===== THINGS YOU CAN EDIT =====
 
@@ -717,6 +718,8 @@ export default {
         dailyHealthCheck(env, new Date(at)).catch((err) => console.log("Nova health check failed:", err)),
         // Read quiet website chats for facts worth remembering (they wait for approval in Index)
         learnFromWebsiteChats(env).catch((err) => console.log("Memory from website chats failed:", err)),
+        // The client list: Acuity's calendar feed and the enquiries, every 30 minutes (src/clients.js)
+        syncClientsOnSchedule(env, at).catch((err) => console.log("Client list sync failed:", err?.name)),
       ])
     );
   },

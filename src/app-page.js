@@ -44,6 +44,16 @@
 //   POST /app/api/booking-actions/reject  { id, note? }
 //     (Approve, edit and reject need an admin with Portal open in a browser, the cookie: never an
 //      app's token, other staff, or Nova Agent's key. See src/booking-actions.js.)
+//   GET  /app/api/clients?search=&filter=all|owing|lapsed|enquiry&since=YYYY-MM-DD
+//                                       -> { clients, total } the client list (500 at most; see src/clients.js)
+//   GET  /app/api/clients/:id           -> { client, sessions, consentLog }
+//   POST /app/api/clients/:id           { name?, email?, phone?, notes?, depositsPaid?, invoiced?, outstanding?,
+//                                         consent?: { yes, source, at? } } -> { client } (consent yes needs a source;
+//                                       every consent change is logged with who)
+//   POST /app/api/clients               { name, email?, phone?, notes? } -> { client } added by hand
+//                                       (a duplicate is refused with the existing one's id)
+//   POST /app/api/clients/import        { csv } -> Acuity's appointments or clients spreadsheet (admins only)
+//   POST /app/api/clients/sync          -> reads Acuity's calendar feed and the enquiries now (admins only)
 
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { askPortal } from "./portal-ask.js";
@@ -57,6 +67,7 @@ import { acuityFailure } from "./acuity/api.js";
 import { servicesStatus, testEmailToMe } from "./services.js";
 import { publicUrl } from "./nova/booking.js";
 import { listBookings } from "./booking-calendar.js";
+import { handleClientsForStaff } from "./clients.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
 import { usesNova } from "./mode.js";
 import { handleCalendarItems } from "./calendar/items.js";
@@ -92,6 +103,11 @@ export async function handleApp(request, env, ctx, answer) {
   }
   if (route === "/booking-actions" || route.startsWith("/booking-actions/")) {
     const answer = await approvals(request, env, me, route);
+    if (answer) return answer;
+  }
+  // The client list (src/clients.js): import and sync are for admins
+  if (route === "/clients" || route.startsWith("/clients/")) {
+    const answer = await handleClientsForStaff(request, env, me, route);
     if (answer) return answer;
   }
   if (route === "/services" && request.method === "GET") return json({ services: await servicesStatus(env), admin: me.role === "admin" });

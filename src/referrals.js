@@ -11,6 +11,7 @@
 
 import { findAcuityTest } from "./acuity-test-booking.js";
 import { bookingChanged } from "./booking-pings.js";
+import { clientsAfterWebhook } from "./clients.js";
 import { calendarChanged } from "./club-calendar.js";
 import { markBookingsChanged } from "./booking-actions.js";
 
@@ -208,7 +209,8 @@ export async function handleAcuityWebhook(request, env, ctx) {
   }
 
   // Ping staff phones about the booking (see booking-pings.js; it may wait for the details)
-  const ping = bookingChanged(env, action, id, form.get("appointmentTypeID"));
+  // then the client list notes the booking (src/clients.js; it never throws, so it can't break this)
+  const ping = bookingChanged(env, action, id, form.get("appointmentTypeID")).then(() => clientsAfterWebhook(env, action, id));
   // Tell Acuity straight away and finish the ping afterwards, or (in tests) wait for it
   if (ctx) ctx.waitUntil(ping);
   else await ping;

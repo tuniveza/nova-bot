@@ -9,6 +9,9 @@
 // keeps up to date: when the webhook says "booking #123 changed", we look #123
 // up in the diary.
 
+// UK wall clocks to UTC (for a feed time without its Z)
+import { ukWallToUtc } from "./acuity/api.js";
+
 // How many times to look, and how long to wait between, if a new booking isn't in the diary yet
 const TRIES = 3;
 const WAIT_MS = 2000;
@@ -150,4 +153,14 @@ function timeRange(start, end) {
   const clock = (d) => d.toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" });
   // Put them together
   return day + ", " + clock(from) + (to ? "–" + clock(to) : "");
+}
+
+// The feed's time ("20261022T131500Z", UTC) -> "2026-10-22T13:15:00.000Z", or null. A time without
+// the Z is a UK wall clock; a day on its own isn't a booking time.
+export function feedTimeToIso(value) {
+  const m = String(value || "").match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z?)$/);
+  if (!m) return null;
+  if (!m[7]) return ukWallToUtc(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}`)?.toISOString() || null;
+  const date = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
