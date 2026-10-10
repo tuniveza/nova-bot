@@ -896,6 +896,22 @@ export async function handleCampaignsForStaff(request, env, me, route) {
       ready: campaignsReady(env),
     });
   }
+  // The email as its own little page, for Portal's preview frame: Portal's own rules block the
+  // email's inline styles, so the preview gets rules of its own (styles only: no scripts, nothing else)
+  const preview = route.match(/^\/campaigns\/(\d{1,12})\/preview$/);
+  if (preview && request.method === "GET") {
+    const row = await readRow(env, Number(preview[1]));
+    if (!row) return json({ error: "That campaign doesn't exist." }, 404);
+    return new Response(previewHtml(row), {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; frame-ancestors 'self'; sandbox",
+        "X-Frame-Options": "SAMEORIGIN",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  }
   const one = route.match(/^\/campaigns\/(\d{1,12})$/);
   if (one && request.method === "GET") {
     const row = await readRow(env, Number(one[1]));

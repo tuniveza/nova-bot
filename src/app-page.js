@@ -58,6 +58,7 @@
 //                                       -> { campaigns, canDecide, audiences: { fans, clients, everyone }, signupUrl }
 //                                       email campaigns (opted-in counts per audience; see src/campaigns.js)
 //   GET  /app/api/campaigns/:id         -> { campaign, log, previewHtml }
+//   GET  /app/api/campaigns/:id/preview -> the email as a page (for Portal's preview frame)
 //   POST /app/api/campaigns             { subject, body, audience, sendAt? } -> { campaign } waiting for approval
 //   POST /app/api/campaigns/:id/edit    { subject?, body?, audience?, sendAt? } -> { campaign } back to waiting
 //                                       for approval (the approval is cleared; a scheduled send is cancelled)

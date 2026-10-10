@@ -56,7 +56,10 @@ async function underLimit(env, hash) {
 }
 
 export async function handleJoin(request, env, ctx, pathname) {
-  if (pathname === "/join/confirm" && (request.method === "GET" || request.method === "HEAD")) return confirm(request, env);
+  // The link in the email shows a Confirm button (GET changes nothing, so an email scanner
+  // opening the link can't sign anyone up); pressing it confirms (POST)
+  if (pathname === "/join/confirm" && (request.method === "GET" || request.method === "HEAD")) return confirm(request, env, { press: false });
+  if (pathname === "/join/confirm" && request.method === "POST") return confirm(request, env, { press: true });
   if (pathname === "/join" && (request.method === "GET" || request.method === "HEAD")) return formPage();
   if (pathname === "/join" && request.method === "POST") return signUp(request, env, ctx);
   return new Response("Method not allowed", { status: 405, headers: { Allow: pathname === "/join" ? "GET, POST" : "GET" } });
@@ -129,8 +132,15 @@ async function signUp(request, env, ctx) {
   return checkInbox();
 }
 
-async function confirm(request, env) {
-  const token = new URL(request.url).searchParams.get("t") || "";
+async function confirm(request, env, { press }) {
+  let token = new URL(request.url).searchParams.get("t") || "";
+  if (press) {
+    try {
+      token = String((await request.formData()).get("t") || "");
+    } catch {
+      token = "";
+    }
+  }
   const used = () =>
     page(
       "That link doesn't work",
@@ -143,6 +153,11 @@ async function confirm(request, env) {
   if (!fan) return used();
   if (Date.now() - tokenMadeAt(token) > LINK_DAYS * 86400000) {
     return page("That link has expired", `Confirmation links work for ${LINK_DAYS} days. Sign up again and we'll send a new one.`, { link: true }, 410);
+  }
+  if (!press) {
+    return page("One last step", "Press Confirm to join Novacane Studios' mailing list. You can unsubscribe any time.", {
+      form: `<form method="post" action="/join/confirm"><input type="hidden" name="t" value="${esc(token)}"><button type="submit">Confirm</button></form>`,
+    });
   }
   const now = nowIso();
   // pending -> confirmed, once: the token is cleared in the same step

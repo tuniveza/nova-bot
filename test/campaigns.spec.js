@@ -512,12 +512,19 @@ describe("fan sign-up (/join)", () => {
 		const link = emails[0].text.match(/https:\/\/novacane-worker\.test\/join\/confirm\?t=\S+/)[0];
 		expect(link).toContain(pending.confirm_token);
 
-		const confirmed = await call(new Request(link));
+		// Opening the link (or an email scanner opening it) changes nothing: it shows a Confirm button
+		const opened = await call(new Request(link));
+		expect(opened.status).toBe(200);
+		expect(opened.text).toContain('action="/join/confirm"');
+		expect(await fan("ava@example.com")).toMatchObject({ status: "pending" });
+		const press = () => call(new Request(`${BASE}/join/confirm`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ t: pending.confirm_token }).toString() }));
+		const confirmed = await press();
 		expect(confirmed.status).toBe(200);
 		expect(confirmed.text).toContain("You&#39;re on the list");
 		expect(await fan("ava@example.com")).toMatchObject({ status: "confirmed", confirm_token: null, consent_source: "Fan sign-up form, confirmed by email" });
 		expect((await fan("ava@example.com")).consent_at).toBeTruthy();
 		// Twice: doesn't work again
+		expect((await press()).status).toBe(404);
 		expect((await call(new Request(link))).status).toBe(404);
 		expect((await call(new Request(`${BASE}/join/confirm?t=nonsense`))).status).toBe(404);
 	});
@@ -639,5 +646,23 @@ describe("Portal's list", () => {
 		expect((await portal("campaigns", { body: { subject: "", body: "x", audience: "fans" } })).status).toBe(400);
 		expect((await portal("campaigns", { body: { subject: "Hi", body: "Long enough body.", audience: "nobody" } })).status).toBe(400);
 		expect((await agent("/nova-agent/campaigns", {})).data.campaigns).toHaveLength(1);
+	});
+});
+
+describe("Portal's preview of a campaign", () => {
+	it("is its own page whose rules allow the email's styles and nothing else", async () => {
+		const { meta } = await env.DB.prepare(
+			"INSERT INTO email_campaigns (subject, body, audience, status, created_by, created_at, updated_at) VALUES ('Hello', 'Hi there', 'fans', 'pending_approval', 'agent', '2026-10-10T10:00:00.000Z', '2026-10-10T10:00:00.000Z')"
+		).run();
+		const res = await worker.fetch(new Request(`${BASE}/app/api/campaigns/${meta.last_row_id}/preview`, { headers: { Cookie: STAFF_COOKIE } }), env);
+		expect(res.status).toBe(200);
+		expect(res.headers.get("Content-Type")).toContain("text/html");
+		const csp = res.headers.get("Content-Security-Policy");
+		expect(csp).toContain("style-src 'unsafe-inline'");
+		expect(csp).toContain("default-src 'none'");
+		expect(csp).toContain("sandbox");
+		expect(await res.text()).toContain("Hi there");
+		const anon = await worker.fetch(new Request(`${BASE}/app/api/campaigns/${meta.last_row_id}/preview`), env);
+		expect(anon.status).toBe(401);
 	});
 });
