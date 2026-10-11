@@ -32,6 +32,9 @@ import { requireStaff } from "./portal/auth.js";
 export const RELAYED = [
   { methods: ["GET"], path: /^\/status$/ },
   { methods: ["GET"], path: /^\/quests\/(state|events)$/ },
+  // Each person's own Agent conversation, kept on the PC (who's asking goes with every request)
+  { methods: ["GET"], path: /^\/chat\/history$/ },
+  { methods: ["POST"], path: /^\/actions\/chat\/(clear|adopt)$/ },
   { methods: ["POST"], path: /^\/actions\/(chat|missions|quests|blocks|rhythm|replan)$/ },
   { methods: ["POST"], path: /^\/actions\/(missions|quests)\/[\w-]+(\/(refine|export))?$/ },
   { methods: ["POST"], path: /^\/actions\/files\/[\w-]+\/remove$/ },

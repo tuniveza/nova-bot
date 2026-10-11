@@ -386,13 +386,14 @@ async function sendAlert(env, body) {
   const ttl = Math.min(Math.max(Number(body.ttl) || 86400, 60), 86400);
   const style = { source, kind, tag: tag ? `${source}-${tag}` : "", ttl, urgent: body.urgent === true };
   // `keep: false` (quick repeats): ring the phone but leave it out of the Alerts list
-  // Quest and mission reminders are someone's own: the phones the quest picked, or else the studio
-  // owner's. Nova Agent's own alerts (Acuity problems) still go to every phone.
+  // Quest and mission reminders are someone's own: the phones the quest picked, or else its
+  // owner's (`owner`, the staff id Nova Agent sends), never anyone else's. Without an owner (a Nova
+  // Agent from before, or one that doesn't know who it works for yet): the studio owner's.
+  // Nova Agent's own alerts (Acuity problems) still go to every phone.
   let to = null;
   if (source === "quest" || source === "mission") {
-    const owner = await studioOwner(env);
     const phones = Array.isArray(body.phones) ? body.phones.filter((x) => typeof x === "string" && /^[0-9a-f]{12}$/.test(x)).slice(0, 10) : [];
-    to = { phones, staff: owner ? [owner.id] : [] };
+    to = { phones, staff: await reminderOwner(env, body.owner) };
   }
   // The Fixer's pings (a new serious problem, a fix ready to approve) are for the admins: only
   // they can approve. Tapping one opens the Fixer.
@@ -404,6 +405,14 @@ async function sendAlert(env, body) {
   const url = source === "fixer" ? "/agent/?open=%2Ffixer%2F" : "/portal/#nova";
   const delivered = await notifyPhones(env, { title: `${ALERT_SOURCES[source]}: ${title}`, body: message, url, style, save: body.keep !== false, to });
   return Response.json({ ok: true, phones: delivered });
+}
+
+// Whose phones a quest or mission reminder goes to: its owner, or (none given) the studio owner
+export async function reminderOwner(env, owner) {
+  const id = typeof owner === "string" ? owner.toLowerCase().trim() : "";
+  if (/^[a-z0-9_-]{1,64}$/.test(id) && id !== "owner") return [id];
+  const studio = await studioOwner(env);
+  return studio ? [studio.id] : [];
 }
 
 // ===== NOVA QUESTS IN STUDIO =====
@@ -426,8 +435,11 @@ async function saveQuests(env, body) {
   return Response.json({ ok: true, actions: await takeQuestActions(env) });
 }
 
-// What Portal shows: the latest plan, when it came, and whether Nova Agent is online
-export async function questsForPortal(env) {
+// What Portal shows: the latest plan, when it came, and whether Nova Agent is online.
+// With `me` (the signed-in person): their own missions and quests; `who: "everyone"` shows an
+// admin everyone's (each says whose it is). Quests and missions with no owner (from a Nova Agent
+// before owners) are the studio owner's.
+export async function questsForPortal(env, me = null, who = "mine") {
   const { results } = await env.DB.prepare("SELECT key, value FROM settings WHERE key IN (?, 'agent_nova_seen')").bind(QUESTS_KEY).all();
   const setting = Object.fromEntries(results.map((row) => [row.key, row.value]));
   let saved = { at: null, state: null };
@@ -435,7 +447,29 @@ export async function questsForPortal(env) {
     saved = JSON.parse(setting[QUESTS_KEY] || "null") || saved;
   } catch {}
   const seen = setting.agent_nova_seen ? Date.parse(setting.agent_nova_seen) : 0;
-  return { ...saved, online: Date.now() - seen < ONLINE_MINUTES * 60000 };
+  const online = Date.now() - seen < ONLINE_MINUTES * 60000;
+  if (!me) return { ...saved, online };
+  const canSeeEveryone = me.role === "admin";
+  const everyone = who === "everyone" && canSeeEveryone;
+  const out = { ...saved, online, me: me.id, scope: everyone ? "everyone" : "mine", canSeeEveryone };
+  const st = saved.state;
+  if (!st || typeof st !== "object") return out;
+  const fallback = (await studioOwner(env))?.id || "";
+  const ownerOf = (x) => (x && typeof x.owner === "string" && x.owner) || fallback;
+  const mine = (x) => ownerOf(x) === me.id;
+  const shown = (x) => everyone || mine(x);
+  const list = (v) => (Array.isArray(v) ? v : []);
+  // "Now" and "next" are always your own
+  const own = st.people && st.people[me.id];
+  out.state = {
+    ...st,
+    missions: list(st.missions).filter(shown),
+    quests: list(st.quests).filter(shown),
+    pulses: list(st.pulses).filter(shown),
+    current: own ? own.current || null : st.current && mine(st.current) ? st.current : null,
+    next: own ? list(own.next) : list(st.next).filter(mine),
+  };
+  return out;
 }
 
 // A tap in Portal, for Nova Agent to carry out. Each gets an id (so Nova

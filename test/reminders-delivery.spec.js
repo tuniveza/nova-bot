@@ -183,6 +183,29 @@ describe("Nova Quests' reminders reach their own phones too", () => {
 		expect(delivered).toEqual(["https://web.push.apple.com/owner"]);
 	});
 
+	it("P0-4: a quest's reminder for A reaches only A's phones, never B's", async () => {
+		// A is test-staff (not the studio owner); B is test-admin
+		await notify({ title: "Practise scales", message: "Starting now", source: "quest", kind: "starting", owner: "test-staff" });
+		expect(delivered).toEqual(["https://web.push.apple.com/staff"]);
+		delivered = [];
+		await notify({ title: "Mix the EP", message: "Starting now", source: "quest", kind: "starting", owner: "test-admin" });
+		expect(delivered).toEqual(["https://web.push.apple.com/owner"]);
+		delivered = [];
+		// A mission's news too
+		await notify({ title: "Mission planned", message: "12 quests", source: "mission", kind: "mission", owner: "test-staff" });
+		expect(delivered).toEqual(["https://web.push.apple.com/staff"]);
+	});
+
+	it("P0-4: someone with no phone gets nothing (it never falls back to another person's phone)", async () => {
+		await notify({ title: "Practise scales", message: "Starting now", source: "quest", kind: "starting", owner: "someone-new" });
+		expect(delivered).toEqual([]);
+	});
+
+	it("P0-4: phones picked on the quest still win over its owner's", async () => {
+		await notify({ title: "Mix the EP", message: "Starting now", source: "quest", kind: "starting", owner: "test-staff", phones: [await phoneId("https://web.push.apple.com/owner")] });
+		expect(delivered).toEqual(["https://web.push.apple.com/owner"]);
+	});
+
 	it("Nova Agent's own alerts (Acuity problems) still reach every phone", async () => {
 		await notify({ title: "Can't log in", message: "Run npm run login" });
 		expect(delivered.sort()).toEqual(["https://web.push.apple.com/owner", "https://web.push.apple.com/staff"]);

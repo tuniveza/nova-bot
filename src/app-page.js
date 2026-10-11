@@ -153,7 +153,8 @@ export async function handleApp(request, env, ctx, answer) {
     return handleCalendarItems(request, env, route);
   }
   if (route === "/calendar" && request.method === "GET") return calendar(env);
-  if (route === "/quests" && request.method === "GET") return json(await questsForPortal(env));
+  // Your own quests (admins: ?who=everyone for everyone's)
+  if (route === "/quests" && request.method === "GET") return json(await questsForPortal(env, me, url.searchParams.get("who") === "everyone" ? "everyone" : "mine"));
   // Index: the suite's memory (browse, edit, approve)
   if (route.startsWith("/memory/")) {
     if (request.method !== "GET" && request.headers.get("Origin") !== url.origin) return json({ error: "Forbidden" }, 403);
@@ -165,7 +166,7 @@ export async function handleApp(request, env, ctx, answer) {
     return handleMemoryForStaff(request, env, ctx, route.slice("/memory".length), request.headers.get("X-Nova-App") === "portal" ? "Portal" : "Index", member, by);
   }
   if (route === "/links" && request.method === "GET") return json(await checkedLinks(env));
-  if (route === "/quests/action" && request.method === "POST") return questAction(request, env);
+  if (route === "/quests/action" && request.method === "POST") return questAction(request, env, me);
   if (route === "/ask" && request.method === "POST") return (await allowed(env, request, "app-ask:")) ? askPortal(request, env) : json({ error: "Too many questions. Wait a minute." }, 429);
   return json({ error: "Not found" }, 404);
 }
@@ -176,7 +177,7 @@ export async function handleApp(request, env, ctx, answer) {
 const QUEST_ACTIONS = ["done", "start", "skip", "reopen", "snooze", "finish", "pause", "resume", "mode"];
 // How a quest is going (Nova Agent's MODES): Portal's mode chip
 const QUEST_MODES = ["waiting", "soon", "working", "nearly", "longer", "questions", "done"];
-async function questAction(request, env) {
+async function questAction(request, env, me) {
   const body = await readJson(request);
   const id = String(body.id || "").replace(/[^\w-]/g, "").slice(0, 64);
   const action = String(body.action || "");
@@ -186,7 +187,8 @@ async function questAction(request, env) {
   // The session it was tapped on, so a late or repeated "done" can't count against the next one
   const session = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(body.session) ? body.session : undefined;
   if (action === "mode" && !QUEST_MODES.includes(body.mode)) return json({ error: "That isn't a mode" }, 400);
-  await queueQuestAction(env, { kind, id, action, minutes, ...(session && { session }), ...(action === "mode" && { mode: body.mode }) });
+  // Who tapped: Nova Agent lets staff change only their own (admins anyone's)
+  await queueQuestAction(env, { kind, id, action, minutes, ...(session && { session }), ...(action === "mode" && { mode: body.mode }), ...(me && { by: me.id, admin: me.role === "admin" }) });
   return json({ ok: true });
 }
 

@@ -71,6 +71,12 @@ describe("which addresses go to the PC", () => {
     expect(relayRule("GET", "/events").admin).toBe(true);
     expect(relayRule("GET", "/actions/chat")).toBeNull();
     expect(relayRule("DELETE", "/quests/state")).toBeNull();
+    // P0-4: each person's own Agent conversation, kept on the PC
+    expect(relayRule("GET", "/chat/history")).toBeTruthy();
+    expect(relayRule("POST", "/actions/chat/clear")).toBeTruthy();
+    expect(relayRule("POST", "/actions/chat/adopt")).toBeTruthy();
+    expect(relayRule("POST", "/chat/history")).toBeNull();
+    expect(relayRule("POST", "/actions/chat/other")).toBeNull();
     // Files Nova Agent wrote: the list, one to read, removing one; a mission saved as a file
     expect(relayRule("GET", "/files/list")).toBeTruthy();
     expect(relayRule("POST", "/actions/files/f-1/remove")).toBeTruthy();
@@ -146,6 +152,16 @@ describe("through to the PC and back", () => {
     expect(body.cookie).toBeNull();
     const status = await call("/nova-agent/link/status", { headers: STAFF_AUTH });
     expect(await status.json()).toMatchObject({ connected: true });
+    pc.ws.close();
+  });
+
+  it("P0-4: someone's chat history is asked for as them (the PC answers with their own)", async () => {
+    const pc = await connectPc((req, pc) => pc.text(req.id, 200, JSON.stringify({ path: req.path, staff: req.staff })));
+    const res = await call("/chat/history", { headers: STAFF_AUTH });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.path).toBe("/chat/history");
+    expect(body.staff).toMatchObject({ id: "test-admin", name: "Test Admin", role: "admin" });
     pc.ws.close();
   });
 
