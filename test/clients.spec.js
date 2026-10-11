@@ -22,8 +22,8 @@ let feed; // the bookings in it
 let feedStatus; // what the feed answers (200, or a failure)
 
 // One booking as Acuity's calendar feed writes it
-function event({ id, name, email = "", phone = "", session = "Mixing", start, end, price = "50.00" }) {
-	const lines = [`Name: ${name}`, phone && `Phone: ${phone}`, email && `Email: ${email}`, `Price: ${price}`].filter(Boolean).join("\\n");
+function event({ id, name, email = "", phone = "", session = "Mixing", start, end, price = "50.00", form = [] }) {
+	const lines = [`Name: ${name}`, phone && `Phone: ${phone}`, email && `Email: ${email}`, `Price: ${price}`, ...form].filter(Boolean).join("\\n");
 	return `BEGIN:VEVENT\r\nUID:${id}@scheduling\r\nSUMMARY:${name}: ${session} (Novacane Studios)\r\nDTSTART:${start}\r\nDTEND:${end}\r\nDESCRIPTION:${lines}\r\nEND:VEVENT\r\n`;
 }
 
@@ -551,4 +551,35 @@ describe("/nova-agent/bookings-feed", () => {
 // The list helper on its own: a bad filter is refused
 it("refuses a filter it doesn't know", async () => {
 	expect(await listClients(env, { filter: "vip" })).toMatchObject({ status: 400 });
+});
+
+describe("the booking form's \"send me studio news\" tick", () => {
+	const consent = (email) => env.DB.prepare("SELECT marketing_consent, consent_source, consent_by FROM clients WHERE email = ?").bind(email).first();
+
+	it("a tick is a recorded yes, from the customer, with the question as the source", async () => {
+		feed = [
+			{ id: 1700000501, name: "Ana Tick", email: "ana@example.com", start: "20261101T120000Z", end: "20261101T140000Z", form: ["Send me news about releases and studio offers: yes"] },
+			{ id: 1700000502, name: "Ben Blank", email: "ben@example.com", start: "20261101T150000Z", end: "20261101T170000Z", form: ["Send me news about releases and studio offers: no"] },
+			{ id: 1700000503, name: "Cy Other", email: "cy@example.com", start: "20261102T150000Z", end: "20261102T170000Z", form: ["Anything we should know?: yes, bring snacks"] },
+		];
+		await syncClientsFromFeed(feedEnv());
+		expect(await consent("ana@example.com")).toEqual({ marketing_consent: 1, consent_source: 'Ticked "Send me news about releases and studio offers" on the Acuity booking form', consent_by: "customer" });
+		expect((await consent("ben@example.com")).marketing_consent).toBe(0);
+		expect((await consent("cy@example.com")).marketing_consent).toBe(0);
+		const log = await env.DB.prepare("SELECT COUNT(*) AS n FROM client_consent_log").first("n");
+		expect(log).toBe(1);
+		// Syncing again records nothing new
+		await syncClientsFromFeed(feedEnv());
+		expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM client_consent_log").first("n")).toBe(1);
+	});
+
+	it("never undoes a no that's already recorded (an unsubscribe, or staff)", async () => {
+		feed = [{ id: 1700000601, name: "Dee Said No", email: "dee@example.com", start: "20261101T120000Z", end: "20261101T140000Z" }];
+		await syncClientsFromFeed(feedEnv());
+		const { id } = await env.DB.prepare("SELECT id FROM clients WHERE email = 'dee@example.com'").first();
+		await env.DB.prepare("INSERT INTO client_consent_log (client_id, consent, at, source, \"by\", recorded_at) VALUES (?, 0, ?, 'Unsubscribed from a Nova email', 'customer', ?)").bind(id, "2026-10-01T00:00:00.000Z", "2026-10-01T00:00:00.000Z").run();
+		feed = [{ id: 1700000601, name: "Dee Said No", email: "dee@example.com", start: "20261101T120000Z", end: "20261101T140000Z", form: ["Join our mailing list: yes"] }];
+		await syncClientsFromFeed(feedEnv());
+		expect((await consent("dee@example.com")).marketing_consent).toBe(0);
+	});
 });

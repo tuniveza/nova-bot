@@ -5,7 +5,7 @@ import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bookSession } from "../src/nova/book-session.js";
 import { getBooking, paymentReceived } from "../src/nova/bookings.js";
-import { runManageBookingTool } from "../src/nova/manage-bookings.js";
+import { carryOutNovaChange, runManageBookingTool } from "../src/nova/manage-bookings.js";
 import { clearTables, connectGoogle, installFakes, ukDay, ukEvent, ukIso } from "./fakes.js";
 
 const RAP_2 = 64806309; // £200, deposit £100
@@ -28,6 +28,28 @@ async function makeBooking({ day = ukDay(10), time = "14:00", type = RAP_2, firs
 }
 
 const run = (name, input) => runManageBookingTool(env, name, input);
+// What an approved change would do (the AI can't call this: see the next describe)
+const carry = (name, input) => carryOutNovaChange(env, name, input);
+
+describe("the AI never makes a change itself", () => {
+	it("confirmed true is refused for every change tool, and nothing changes", async () => {
+		const b = await makeBooking({ paid: 10000 });
+		for (const [name, input] of [
+			["cancel_booking", { booking_id: b.id, notify_client: true }],
+			["reschedule_booking", { booking_id: b.id, date: ukDay(11), time: "11:00", notify_client: true }],
+			["update_booking", { booking_id: b.id, notes: "x" }],
+			["change_booking_extras", { booking_id: b.id, paid: true }],
+			["send_payment_link", { booking_id: b.id, what: "balance" }],
+			["refund_payment", { booking_id: b.id, amount: "10" }],
+		]) {
+			const out = await run(name, { ...input, confirmed: true });
+			expect(out.ok).toBe(false);
+			expect(out.message).toContain("by hand");
+		}
+		expect(await getBooking(env, b.id)).toEqual(b);
+		expect(fakes.google.emails).toHaveLength(0);
+	});
+});
 
 describe("find_bookings", () => {
   it("lists bookings with their numbers and what's paid, plus other calendar events", async () => {
@@ -58,7 +80,7 @@ describe("cancel_booking", () => {
     expect(ask.message).toContain("Refund: £100 to their card (the studio's policy)");
     expect((await getBooking(env, b.id)).status).toBe("booked");
 
-    const done = await run("cancel_booking", { booking_id: b.id, notify_client: true, confirmed: true });
+    const done = await carry("cancel_booking", { booking_id: b.id, notify_client: true });
     expect(done.ok).toBe(true);
     expect(done.message).toContain("£100 refunded");
     expect(fakes.stripe.refunds).toEqual([{ id: expect.any(String), paymentIntent: `pi_${b.id}_10000`, amount: 10000 }]);
@@ -71,17 +93,17 @@ describe("cancel_booking", () => {
   it("keeps the deposit under 48 hours, unless staff say otherwise", async () => {
     const b = await makeBooking({ day: ukDay(1), time: "10:00", paid: 10000 });
     expect((await run("cancel_booking", { booking_id: b.id, notify_client: false, confirmed: false })).message).toContain("Refund: nothing");
-    const done = await run("cancel_booking", { booking_id: b.id, notify_client: false, refund: "full", confirmed: true });
+    const done = await carry("cancel_booking", { booking_id: b.id, notify_client: false, refund: "full" });
     expect(done.message).toContain("£100 refunded");
     expect(fakes.google.emails).toHaveLength(0);
   });
 
   it("won't refund more than was paid, or cancel twice, or a booking that doesn't exist", async () => {
     const b = await makeBooking({ paid: 10000 });
-    expect((await run("cancel_booking", { booking_id: b.id, notify_client: true, refund: "150", confirmed: true })).ok).toBe(false);
-    await run("cancel_booking", { booking_id: b.id, notify_client: false, refund: "none", confirmed: true });
-    expect((await run("cancel_booking", { booking_id: b.id, notify_client: true, confirmed: true })).message).toContain("already cancelled");
-    expect((await run("cancel_booking", { booking_id: 999, notify_client: true, confirmed: true })).message).toContain("no booking #999");
+    expect((await carry("cancel_booking", { booking_id: b.id, notify_client: true, refund: "150" })).ok).toBe(false);
+    await carry("cancel_booking", { booking_id: b.id, notify_client: false, refund: "none" });
+    expect((await carry("cancel_booking", { booking_id: b.id, notify_client: true })).message).toContain("already cancelled");
+    expect((await carry("cancel_booking", { booking_id: 999, notify_client: true })).message).toContain("no booking #999");
   });
 });
 
@@ -90,7 +112,7 @@ describe("reschedule_booking", () => {
     const b = await makeBooking();
     const day = ukDay(15);
     expect((await run("reschedule_booking", { booking_id: b.id, date: day, time: "11:00", notify_client: true, confirmed: false })).message).toContain("Not moved yet");
-    const done = await run("reschedule_booking", { booking_id: b.id, date: day, time: "11:00", notify_client: true, confirmed: true });
+    const done = await carry("reschedule_booking", { booking_id: b.id, date: day, time: "11:00", notify_client: true });
     expect(done.ok).toBe(true);
     expect((await getBooking(env, b.id)).starts_at).toBe(ukIso(day, "11:00"));
     expect(fakes.google.emails[0].subject).toMatch(/^Your session has moved/);
@@ -98,7 +120,7 @@ describe("reschedule_booking", () => {
 
   it("can move it a little within its own time (it doesn't clash with itself)", async () => {
     const b = await makeBooking({ time: "14:00" });
-    const done = await run("reschedule_booking", { booking_id: b.id, date: ukDay(10), time: "15:00", notify_client: false, confirmed: true });
+    const done = await carry("reschedule_booking", { booking_id: b.id, date: ukDay(10), time: "15:00", notify_client: false });
     expect(done.ok).toBe(true);
   });
 
@@ -106,8 +128,8 @@ describe("reschedule_booking", () => {
     const b = await makeBooking({ type: VOICE_1H });
     const day = ukDay(15);
     fakes.google.add(ukEvent(day, "11:00", "13:00"));
-    expect((await run("reschedule_booking", { booking_id: b.id, date: day, time: "11:00", notify_client: false, confirmed: true })).message).toContain("isn't free");
-    const forced = await run("reschedule_booking", { booking_id: b.id, date: day, time: "11:00", notify_client: false, ignore_availability: true, confirmed: true });
+    expect((await carry("reschedule_booking", { booking_id: b.id, date: day, time: "11:00", notify_client: false })).message).toContain("isn't free");
+    const forced = await carry("reschedule_booking", { booking_id: b.id, date: day, time: "11:00", notify_client: false, ignore_availability: true });
     expect(forced.ok).toBe(true);
   });
 });
@@ -115,7 +137,7 @@ describe("reschedule_booking", () => {
 describe("changing details and money", () => {
   it("update_booking changes contact details in the calendar too", async () => {
     const b = await makeBooking();
-    const done = await run("update_booking", { booking_id: b.id, phone: "07700 900999", notes: "Needs the vocal booth", confirmed: true });
+    const done = await carry("update_booking", { booking_id: b.id, phone: "07700 900999", notes: "Needs the vocal booth" });
     expect(done.message).toContain('phone: "07700 900111" → "07700 900999"');
     expect(fakes.google.events.get(b.event_id).description).toContain("Notes: Needs the vocal booth");
   });
@@ -124,12 +146,12 @@ describe("changing details and money", () => {
     const b = await makeBooking();
     const ask = await run("change_booking_extras", { booking_id: b.id, session_type: "Voiceover Recording with Engineer - 1 hour", confirmed: false });
     expect(ask.message).toContain('→ "Voiceover Recording with Engineer - 1 hour"');
-    await run("change_booking_extras", { booking_id: b.id, session_type: String(VOICE_1H), confirmed: true });
+    await carry("change_booking_extras", { booking_id: b.id, session_type: String(VOICE_1H) });
     let after = await getBooking(env, b.id);
     expect(after).toMatchObject({ type_id: VOICE_1H, duration: 60, price_pence: 8000, deposit_pence: 4000 });
     expect(fakes.google.events.get(b.event_id).end.dateTime).toBe(new Date(Date.parse(b.starts_at) + 3_600_000).toISOString());
 
-    await run("change_booking_extras", { booking_id: b.id, paid: true, confirmed: true });
+    await carry("change_booking_extras", { booking_id: b.id, paid: true });
     after = await getBooking(env, b.id);
     expect(after.paid_pence).toBe(8000);
     expect((await env.DB.prepare("SELECT kind, amount_pence FROM payments").first())).toEqual({ kind: "manual", amount_pence: 8000 });
@@ -137,8 +159,8 @@ describe("changing details and money", () => {
 
   it("send_payment_link emails the deposit or balance link", async () => {
     const b = await makeBooking({ paid: 10000 });
-    expect((await run("send_payment_link", { booking_id: b.id, what: "deposit", confirmed: true })).message).toContain("Nothing to pay");
-    const done = await run("send_payment_link", { booking_id: b.id, what: "balance", confirmed: true });
+    expect((await carry("send_payment_link", { booking_id: b.id, what: "deposit" })).message).toContain("Nothing to pay");
+    const done = await carry("send_payment_link", { booking_id: b.id, what: "balance" });
     expect(done.ok).toBe(true);
     expect(fakes.google.emails[0].subject).toBe(`Pay your balance: £100 for ${fakes.google.emails[0].subject.split("for ")[1]}`);
     expect(fakes.google.emails[0].text).toContain(`/pay/${b.token}?for=balance`);
@@ -146,8 +168,8 @@ describe("changing details and money", () => {
 
   it("refund_payment refunds online payments only", async () => {
     const b = await makeBooking({ paid: 10000 });
-    expect((await run("refund_payment", { booking_id: b.id, amount: "120", confirmed: true })).ok).toBe(false);
-    const done = await run("refund_payment", { booking_id: b.id, amount: "40", reason: "Started late", confirmed: true });
+    expect((await carry("refund_payment", { booking_id: b.id, amount: "120" })).ok).toBe(false);
+    const done = await carry("refund_payment", { booking_id: b.id, amount: "40", reason: "Started late" });
     expect(done.message).toContain("Refunded £40");
     expect((await getBooking(env, b.id)).refunded_pence).toBe(4000);
     expect(fakes.stripe.refunds[0].amount).toBe(4000);
@@ -156,7 +178,7 @@ describe("changing details and money", () => {
   it("tells staff when Gmail won't send", async () => {
     const b = await makeBooking();
     fakes.google.failGmail = true;
-    const done = await run("send_payment_link", { booking_id: b.id, what: "deposit", confirmed: true });
+    const done = await carry("send_payment_link", { booking_id: b.id, what: "deposit" });
     expect(done.ok).toBe(false);
     expect((await env.DB.prepare("SELECT sent, error FROM outbox ORDER BY id DESC").first()).sent).toBe(0);
   });

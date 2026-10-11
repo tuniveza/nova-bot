@@ -5,8 +5,12 @@
 // balance link", "refund booking 12"). These tools are only given to NovaBot in
 // the staff chat, never on the website.
 //
-// Everything happens straight away, in the bookings table, the studio's Google
-// Calendar, Gmail (the client's emails) and Stripe (refunds), see bookings.js.
+// The AI never makes a change itself (the owner's rule: a person approves every change to a
+// booking, and the AI can't approve). It can find bookings, and check a change and summarise
+// it (confirmed false); asked to go ahead (confirmed true) it's told no, and staff make the
+// change by hand. carryOutNovaChange() below does the change itself, for an approval step
+// (Portal → Approvals, still to be built for Nova's own booking system) and the tests: it is
+// never given to the AI. (Acuity's tools in ../manage-bookings.js propose changes for approval.)
 //
 // Safety:
 // - Changes name the booking by its number (#12), which NovaBot gets from
@@ -167,15 +171,17 @@ export const MANAGE_BOOKING_TOOLS = [FIND_BOOKINGS_TOOL, CANCEL_BOOKING_TOOL, RE
 export const MANAGE_BOOKINGS_RULES = `STAFF CHAT: MANAGING BOOKINGS
 You're talking to Novacane staff in Portal, not a customer. Besides everything
 above, you can look up and change bookings. Everything happens straight away in the
-studio's Google Calendar, the client's emails (Gmail) and payments (Stripe):
+studio's Google Calendar, the client's emails (Gmail) and payments (Stripe), which
+staff change by hand:
 - find_bookings lists bookings with their numbers (#12). Use it to answer questions
   ("what's on Saturday?", "when is Kai in next?", "who hasn't paid?") and before any change.
 - cancel_booking, reschedule_booking, update_booking, change_booking_extras,
   send_payment_link and refund_payment change a booking by its number.
-- Every change takes two steps: first call the tool with confirmed false. That
-  changes nothing and tells you exactly what will happen: show staff that summary
-  and ask them to confirm. Only after they clearly say yes, call it again with
-  confirmed true. If more than one booking could be the one they mean, ask which.
+- You can't make changes yourself: call a change tool with confirmed false. That
+  changes nothing and tells you exactly what would happen: show staff that summary,
+  and tell them to make the change by hand (the client's Manage booking link, the
+  studio's Google Calendar, Stripe for refunds). Never call with confirmed true
+  expecting it to happen. If more than one booking could be the one they mean, ask which.
 - Ask whether to email the client if staff haven't said (it's usually wanted).
 - Cancelling refunds the studio's policy amount unless staff say otherwise: say how
   much will be refunded in the summary.
@@ -194,6 +200,27 @@ export async function runManageBookingTool(env, name, input, today = ukToday()) 
   if (name === FIND_BOOKINGS_TOOL.name) return findBookings(env, input, today);
   const b = await bookingFor(env, input?.booking_id ?? input?.appointment_id);
   if (b.problem) return { ok: false, message: b.problem };
+  // Checking and summarising only: the AI never carries a change out
+  if (input?.confirmed === true) {
+    return {
+      ok: false,
+      message:
+        "Not done: a person has to make changes to bookings, and the chat can't yet ask an admin to approve them for Nova's own booking system. " +
+        "Tell staff to make this change by hand for now (the client's own Manage booking link, the studio's Google Calendar, and Stripe for refunds), and never say it's done.",
+    };
+  }
+  return carryOut(env, name, b, input, today);
+}
+
+// Make a change (no AI ever calls this: see the top of this file). -> { ok, message }
+export async function carryOutNovaChange(env, name, input, today = ukToday()) {
+  if (!(await googleReady(env))) return { ok: false, message: "The studio's Google Calendar isn't connected." };
+  const b = await bookingFor(env, input?.booking_id ?? input?.appointment_id);
+  if (b.problem) return { ok: false, message: b.problem };
+  return carryOut(env, name, b, { ...input, confirmed: true }, today);
+}
+
+async function carryOut(env, name, b, input, today) {
   if (name === CANCEL_BOOKING_TOOL.name) return cancel(env, b, input);
   if (name === RESCHEDULE_BOOKING_TOOL.name) return reschedule(env, b, input, today);
   if (name === UPDATE_BOOKING_TOOL.name) return update(env, b, input);

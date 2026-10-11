@@ -452,7 +452,10 @@ async function testBookingPage(env, url, page, admin) {
       try {
         data = await aapi("state" + (session ? "?session=" + encodeURIComponent(session) : ""));
       } catch (err) {
-        $("ta-facts").textContent = err.message;
+        // Acuity's API is only on its Powerhouse plan: say so plainly, and how to check bookings meanwhile
+        $("ta-facts").textContent = /powerhouse|refused|\b40[13]\b/i.test(err.message)
+          ? "This needs Acuity's Powerhouse plan (it includes Acuity's API), which this account doesn't have. Until then, to check real bookings work: book the cheapest session on the website yourself, check the phone alert and Portal's Calendar, then cancel and refund it in Acuity."
+          : err.message;
         $("ta-form").hidden = true;
         return;
       }

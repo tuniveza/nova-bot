@@ -12,9 +12,11 @@
 // (with neither) the same exact name. Running a sync or an import twice changes nothing. A
 // sync only fills in contact details that are missing: what staff typed always wins.
 //
-// Marketing consent (UK GDPR) is NO for everyone until staff record a yes with where it came
-// from; every change is written to client_consent_log. Nothing here ever sets it from a sync
-// or an import, and an enquiry's consent to be replied to isn't marketing consent.
+// Marketing consent (UK GDPR) is NO for everyone until a yes is recorded with where it came
+// from; every change is written to client_consent_log. A yes comes from staff, or from a tick
+// in a "send me studio news" question on Acuity's booking form (formOptIn below: only for
+// someone with no yes or no recorded yet, so an unsubscribe or a staff "no" is never undone).
+// Imports never set it, and an enquiry's consent to be replied to isn't marketing consent.
 //
 // Logs say ids and counts only, never a client's details.
 
@@ -313,6 +315,47 @@ function addBooking(book, booking, source, status) {
   return true;
 }
 
+// ===== THE BOOKING FORM'S "SEND ME STUDIO NEWS" TICK =====
+
+// A question on Acuity's booking form asking about news / offers / the mailing list, answered
+// with a tick (the feed shows it as "Question: yes"). -> the question, or null
+const OPT_IN_QUESTION = /\b(news|newsletters?|mailing list|marketing|offers|updates)\b/i;
+const TICKED = /^(yes|y|true|checked|on|ticked|agreed|i agree|✓|✔|x)\b/i;
+export function formOptIn(booking) {
+  for (const pair of Array.isArray(booking?.extra) ? booking.extra : []) {
+    const [label, value] = pair;
+    if (OPT_IN_QUESTION.test(String(label || "")) && TICKED.test(String(value || "").trim())) return String(label).trim();
+  }
+  return null;
+}
+
+// Record those ticks as a yes (by 'customer'), only for clients with nothing recorded yet.
+// -> how many were recorded
+async function applyFormOptIns(env, bookings) {
+  let recorded = 0;
+  for (const booking of bookings || []) {
+    const question = formOptIn(booking);
+    if (!question || booking.name === TEST_NAME) continue;
+    const email = cleanEmail(booking.email);
+    const key = phoneKey(booking.phone);
+    if (!email && !key) continue;
+    const client = await env.DB.prepare("SELECT id, marketing_consent FROM clients WHERE email = ? OR (? IS NOT NULL AND phone_key = ?) ORDER BY (email = ?) DESC LIMIT 1")
+      .bind(email, key, key, email)
+      .first();
+    if (!client || client.marketing_consent === 1) continue;
+    if (await env.DB.prepare("SELECT 1 FROM client_consent_log WHERE client_id = ? LIMIT 1").bind(client.id).first()) continue;
+    const now = nowIso();
+    const source = `Ticked "${question.slice(0, 120)}" on the Acuity booking form`;
+    await env.DB.batch([
+      env.DB.prepare("UPDATE clients SET marketing_consent = 1, consent_at = ?, consent_source = ?, consent_by = 'customer', updated_at = ? WHERE id = ? AND marketing_consent = 0").bind(now, source, now, client.id),
+      env.DB.prepare('INSERT INTO client_consent_log (client_id, consent, at, source, "by", recorded_at) VALUES (?, 1, ?, ?, \'customer\', ?)').bind(client.id, now, source, now),
+    ]);
+    recorded++;
+  }
+  if (recorded) console.log(`Client list: ${recorded} marketing yes(es) from the booking form.`);
+  return recorded;
+}
+
 // ===== SYNCS =====
 
 // Every booking in Acuity's calendar feed -> clients and sessions. null if the feed isn't set up.
@@ -321,7 +364,9 @@ export async function syncClientsFromFeed(env) {
   if (!bookings) return null;
   const book = await ClientBook.load(env, "acuity");
   for (const booking of bookings) addBooking(book, booking, "feed", "booked");
-  return book.save(env);
+  const saved = await book.save(env);
+  await applyFormOptIns(env, bookings);
+  return saved;
 }
 
 // Each enquiry's person -> a client (no sessions; marketing consent stays NO)
@@ -341,7 +386,9 @@ export async function syncClients(env) {
   const book = await ClientBook.load(env, "acuity");
   for (const booking of bookings || []) addBooking(book, booking, "feed", "booked");
   addEnquiries(book, await readEnquiries(env));
-  return { ...(await book.save(env)), feed: Boolean(bookings) };
+  const saved = await book.save(env);
+  await applyFormOptIns(env, bookings);
+  return { ...saved, feed: Boolean(bookings) };
 }
 
 // Every minute (index.js): a sync, if the last one was 30 minutes ago or more
@@ -377,6 +424,7 @@ export async function clientsAfterWebhook(env, action, id) {
       const book = await ClientBook.load(env, "acuity", { email, phoneKey: key, name: cleanName(info.name) || email || cleanPhone(info.phone), acuityId });
       addBooking(book, { ...info, id: acuityId }, "webhook", status);
       await book.save(env);
+      if (status === "booked") await applyFormOptIns(env, [info]);
     } else if (status === "cancelled") {
       await env.DB.prepare("UPDATE client_sessions SET status = 'cancelled', source = 'webhook', updated_at = ? WHERE acuity_id = ? AND status != 'cancelled'")
         .bind(nowIso(), acuityId)
