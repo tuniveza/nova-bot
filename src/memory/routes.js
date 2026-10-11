@@ -8,18 +8,39 @@
 //   GET  /memory/index?scope=                       the listing (no bodies)
 // For Portal and Index (signed in), role "staff", under /app/api/memory/:
 //   index, file (GET/PUT/DELETE), pending (GET), pending/:id (POST approve/reject), stats
+//   and, for admins only, the cleanup (src/memory/cleanup.js):
+//     POST cleanup/check                  the dry run: what WOULD be removed, with reasons (nothing changes)
+//     POST cleanup/apply                  { report_id, ids }: removes only those, each re-checked
+//     GET  cleanup/removed                the bin (30 days) and the last few cleanups
+//     POST cleanup/removed/:id/restore    put one back
 // The website's NovaBot reads its own customer's slice in-process (see readForWebsite).
 
 import { approve, learn, PATHS } from "./extract.js";
+import { applyReport, checkForJunk, listRemoved, restoreRemoved } from "./cleanup.js";
 import { allowed, cleanPath, context, deleteFile, getFile, listFiles, listPending, putFile, restorePending, SCOPES, takePending } from "./store.js";
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
 
 // Shared by both doors: the role decides what's allowed
-async function serve(request, env, ctx, route, role, sourceApp, memberId = null) {
+// by: who's asking, for the record (a removed file, a cleanup)
+async function serve(request, env, ctx, route, role, sourceApp, memberId = null, by = sourceApp) {
   const url = new URL(request.url);
   const q = (k) => url.searchParams.get(k);
   if (!env.DB) return json({ error: "No database" }, 503);
+  // The cleanup: admins only (signed in to Portal), never Nova Agent's key or other staff
+  if (route === "/cleanup" || route.startsWith("/cleanup/")) {
+    if (role !== "staff") return json({ error: "Cleaning up Index is for admins, signed in to Portal" }, 403);
+    const done = (res) => (res.error ? json({ error: res.error }, res.status || 400) : json(res));
+    if (route === "/cleanup/check" && request.method === "POST") return json({ report: await checkForJunk(env, by) });
+    if (route === "/cleanup/apply" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      return done(await applyReport(env, { report_id: body.report_id, ids: body.ids, by }));
+    }
+    if (route === "/cleanup/removed" && request.method === "GET") return json(await listRemoved(env));
+    const restore = route.match(/^\/cleanup\/removed\/([\w-]{1,64})\/restore$/);
+    if (restore && request.method === "POST") return done(await restoreRemoved(env, restore[1], by));
+    return json({ error: "Not found" }, 404);
+  }
   // A member only ever sees their own staff partition
   if (role === "member") {
     const owner = (request.method === "PUT" ? null : q("owner_id")) || null;
@@ -28,25 +49,31 @@ async function serve(request, env, ctx, route, role, sourceApp, memberId = null)
       const scopes = q("scope") ? [q("scope")].filter((s) => allowed(role, "read", s)) : ["studio", "staff"];
       const files = [];
       for (const s of scopes) files.push(...(await listFiles(env, { scopes: [s], owner_id: s === "staff" ? memberId : undefined, q: q("q"), since: q("since") })));
-      return json({ files: files.sort((a, b) => b.updated_at - a.updated_at), at: Date.now(), member: memberId });
+      // editable: whether this person may change or delete it (their own partition only)
+      for (const f of files) f.editable = f.scope === "staff" && f.owner_id === memberId;
+      return json({ files: files.sort((a, b) => b.updated_at - a.updated_at), at: Date.now(), member: memberId, admin: false });
     }
     if (route === "/file" && request.method === "PUT") {
       const peek = await request.clone().json().catch(() => ({}));
       if (peek.scope === "staff" && String(peek.owner_id || "").toLowerCase() !== memberId) return json({ error: "Not allowed" }, 403);
     }
+    // Deleting: only a file in their own partition
+    if (route === "/file" && request.method === "DELETE" && (q("scope") !== "staff" || String(q("owner_id") || "").toLowerCase() !== memberId)) return json({ error: "Not allowed" }, 403);
     if (route === "/pending" || route.startsWith("/pending/")) return route === "/pending" ? json({ pending: [], locked: true }) : json({ error: "Approvals are for admins" }, 403);
     if (route === "/stats") {
       const files = [...(await listFiles(env, { scopes: ["studio"] })), ...(await listFiles(env, { scopes: ["staff"], owner_id: memberId }))];
       const by = {};
       for (const f of files) (by[f.scope] ||= { scope: f.scope, files: 0, facts: 0 }), by[f.scope].files++, (by[f.scope].facts += f.facts);
-      return json({ scopes: Object.values(by), pending: 0, locked: true });
+      return json({ scopes: Object.values(by), pending: 0, locked: true, admin: false });
     }
     if (route === "/context") return json({ error: "Not allowed" }, 403);
   }
 
   if (route === "/index" && request.method === "GET") {
     const scopes = (q("scope") ? [q("scope")] : SCOPES).filter((s) => allowed(role, "read", s));
-    return json({ files: await listFiles(env, { scopes, q: q("q"), since: q("since") }), at: Date.now() });
+    const files = await listFiles(env, { scopes, q: q("q"), since: q("since") });
+    for (const f of files) f.editable = allowed(role, "write", f.scope);
+    return json({ files, at: Date.now(), admin: role === "staff" });
   }
   if (route === "/file" && request.method === "GET") {
     const scope = q("scope");
@@ -58,14 +85,14 @@ async function serve(request, env, ctx, route, role, sourceApp, memberId = null)
     const body = await request.json().catch(() => ({}));
     if (!allowed(role, "write", body.scope)) return json({ error: "Not allowed" }, 403);
     const res = await putFile(env, body, sourceApp);
-    if (res.error) return json({ error: res.error }, res.status || 400);
+    if (res.error) return json({ error: res.error, ...(res.refused ? { refused: res.refused } : {}) }, res.status || 400);
     if (res.conflict) return json({ error: "Changed since you read it", current: res.current }, 409);
-    return json({ ok: true, file: res.file, dropped: res.dropped, ...(res.note ? { note: res.note } : {}) });
+    return json({ ok: true, file: res.file, dropped: res.dropped, ...(res.note ? { note: res.note, refused: res.refused } : {}) });
   }
   if (route === "/file" && request.method === "DELETE") {
     const scope = q("scope");
     if (!allowed(role, "write", scope)) return json({ error: "Not allowed" }, 403);
-    const res = await deleteFile(env, scope, q("owner_id"), q("path"), q("version"));
+    const res = await deleteFile(env, scope, q("owner_id"), q("path"), q("version"), by);
     return res.conflict ? json({ error: "Changed since you read it", current: res.current }, 409) : json(res);
   }
   if (route === "/context" && request.method === "GET") {
@@ -109,14 +136,14 @@ async function serve(request, env, ctx, route, role, sourceApp, memberId = null)
       await restorePending(env, row);
       return json({ error: res.error, kept: true }, 400);
     }
-    return json({ ok: true, file: res.file });
+    return json({ ok: true, file: res.file, ...(res.already ? { already: true } : {}) });
   }
   if (role === "staff" && route === "/stats" && request.method === "GET") {
     const counts = await env.DB.batch([
       env.DB.prepare("SELECT scope, COUNT(*) AS files, SUM(CASE WHEN body = '' THEN 0 ELSE LENGTH(body) - LENGTH(REPLACE(body, char(10), '')) + 1 END) AS facts FROM memory_files GROUP BY scope"),
       env.DB.prepare("SELECT COUNT(*) AS n FROM memory_pending"),
     ]);
-    return json({ scopes: counts[0].results, pending: counts[1].results[0].n });
+    return json({ scopes: counts[0].results, pending: counts[1].results[0].n, admin: true });
   }
   return json({ error: "Not found" }, 404);
 }
@@ -137,8 +164,9 @@ export async function handleMemoryApi(request, env, ctx, pathname) {
 
 // Portal's and Index's door (already signed in when this is called)
 // memberId: a signed-in staff member who isn't an admin (only their own partition and the studio's facts)
-export function handleMemoryForStaff(request, env, ctx, route, sourceApp = "Index", memberId = null) {
-  return memberId ? serve(request, env, ctx, route, "member", sourceApp, memberId) : serve(request, env, ctx, route, "staff", sourceApp);
+// by: the signed-in person's name, for the record (who deleted a file, who ran a cleanup)
+export function handleMemoryForStaff(request, env, ctx, route, sourceApp = "Index", memberId = null, by = null) {
+  return memberId ? serve(request, env, ctx, route, "member", sourceApp, memberId, by || memberId) : serve(request, env, ctx, route, "staff", sourceApp, null, by || "an admin");
 }
 
 // ---- The website's NovaBot (in-process) ----

@@ -12,7 +12,7 @@
 //      instead of being saved straight away.
 // Files that grow past MAX_FILE_BYTES are condensed in the same pass.
 
-import { addPending, cleanPath, factLine, getFile, isForbidden, MAX_FILE_BYTES, putFile, TAGS } from "./store.js";
+import { addPending, cleanPath, factLine, getFile, isForbidden, junkReason, MAX_FILE_BYTES, normalFact, putFile, TAGS } from "./store.js";
 
 const MODEL = "claude-haiku-4-5";
 
@@ -78,7 +78,8 @@ export async function distil(env, { transcript, paths, who }) {
   });
   return (input && Array.isArray(input.facts) ? input.facts : [])
     .map((f) => ({ path: cleanPath(f.path), tag: TAGS.includes(f.tag) ? f.tag : "stated", fact: String(f.fact || "").trim() }))
-    .filter((f) => f.path && f.fact && !isForbidden(f.fact))
+    // Junk (empty, placeholder, cut off, too long) never gets as far as a file or the queue
+    .filter((f) => f.path && f.fact && !isForbidden(f.fact) && !junkReason(f.fact))
     .slice(0, 8);
 }
 
@@ -140,8 +141,10 @@ export async function learn(env, { transcript, scope, owner_id, mode, source_app
   const facts = await distil(env, { transcript, paths, who });
   if (!facts.length) return { facts: 0 };
   if (mode === "pending") {
-    for (const f of facts) await addPending(env, { scope, owner_id, target: f.path, tag: f.tag, fact: f.fact, source_app, source_ref });
-    return { facts: facts.length, pending: true };
+    // Repeats (already waiting, or already remembered) aren't queued again
+    let queued = 0;
+    for (const f of facts) if ((await addPending(env, { scope, owner_id, target: f.path, tag: f.tag, fact: f.fact, source_app, source_ref })).ok) queued++;
+    return { facts: facts.length, pending: true, queued };
   }
   // Group by file, then merge each file once
   const byFile = new Map();
@@ -158,8 +161,13 @@ export async function learn(env, { transcript, scope, owner_id, mode, source_app
 
 // An approved pending fact goes into its file the same way (merged, never just appended)
 export async function approve(env, row, editedFact) {
-  const fact = String(editedFact || row.fact);
+  const fact = String(editedFact || row.fact).replace(/\s+/g, " ").trim();
   if (isForbidden(fact)) return { error: "That can't be kept in memory" };
+  const junk = junkReason(fact);
+  if (junk) return { error: `That can't be kept: ${junk}` };
+  // Already in the file: nothing to add
+  const current = await getFile(env, row.scope, row.owner_id, row.target);
+  if (current && current.body.split("\n").some((l) => normalFact(l) === normalFact(fact))) return { ok: true, file: current, already: true };
   return mergeInto(env, { scope: row.scope, owner_id: row.owner_id, path: row.target, facts: [{ tag: row.tag, fact }], source_app: "Index" });
 }
 

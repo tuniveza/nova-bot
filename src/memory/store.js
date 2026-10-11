@@ -78,20 +78,92 @@ const NEVER = [
 ];
 export const isForbidden = (fact) => NEVER.some((re) => re.test(String(fact)));
 
-// The body's lines, kept to fact lines only, without repeats
-export function cleanBody(body) {
-  const seen = new Set();
+// ---- What counts as a fact worth keeping (every write goes through this) ----
+
+// A fact's text for comparing: no tag, case, accents, punctuation or extra spaces
+// ("- [stated] Prefers  evening sessions." and "prefers evening sessions" are the same fact)
+export function normalFact(fact) {
+  return String(fact ?? "")
+    .replace(/^\s*-?\s*\[(?:stated|observed|inferred)\]\s*/i, "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Text that's a stand-in, not a fact (compared after normalFact)
+const PLACEHOLDERS = new Set(
+  [
+    "n a", "na", "none", "null", "nil", "undefined", "nan", "object object", "unknown", "tbd", "tbc", "todo", "to do",
+    "test", "testing", "test fact", "placeholder", "example", "example fact", "fact", "a fact", "new fact", "xxx", "xxxx",
+    "asdf", "qwerty", "foo", "bar", "foo bar", "lorem ipsum", "no facts", "no fact", "nothing", "nothing to note",
+    "nothing to remember", "no durable facts", "nothing durable", "empty", "blank", "etc", "misc", "same as above",
+    "see above", "ditto", "yes", "no", "ok", "okay", "hi", "hello", "thanks", "thank you", "noted", "add a fact",
+  ]
+);
+export const FACT_MAX = 240;
+
+// Why a fact can't be kept (or null when it's fine). Plain words, shown to people.
+export function junkReason(fact) {
+  const f = String(fact ?? "").replace(/\s+/g, " ").replace(/^[-•*\s]+/, "").trim();
+  if (!f) return "it's empty";
+  if (f.length > FACT_MAX) return `it's too long for one fact (over ${FACT_MAX} characters): split it into short facts`;
+  const n = normalFact(f);
+  if (!n) return "it's only punctuation or symbols";
+  if (PLACEHOLDERS.has(n) || n.startsWith("lorem ipsum")) return "it's placeholder text, not a fact";
+  const solid = n.replace(/\s/g, "");
+  if ((n.match(/\p{L}/gu) || []).length < 2) return "it has no words in it";
+  if (solid.length < 3) return "it's too short to be a fact";
+  if (/^(.)\1+$/u.test(solid)) return "it's one character over and over";
+  // Cut off mid-sentence: a trailing "…" (but not "etc…"), a dangling comma, colon or dash,
+  // an unclosed bracket at the end, or a last word that needs something after it
+  if ((/(\.\.\.|…)$/.test(f) && !/\betc\.*…?$/i.test(f)) || /[,:;(\-–—&]$/.test(f) || /\b(and|or|but|the|because|plus)$/i.test(f)) {
+    return "it looks cut off mid-sentence";
+  }
+  return null;
+}
+
+// A body checked line by line: what's kept, and each line that wasn't (with why).
+// Kept: "- [tag] fact" lines that aren't junk, card/bank/ID numbers, or a repeat of an
+// earlier line in the same file (the first copy stays).
+export function checkBody(body) {
+  const seen = new Map();
   const lines = [];
+  const refused = [];
   for (const raw of String(body || "").split("\n")) {
-    const m = raw.trim().match(/^-\s*\[(stated|observed|inferred)\]\s*(.+)$/i);
-    if (!m) continue;
+    const shown = raw.trim();
+    if (!shown) continue;
+    const m = shown.match(/^-\s*\[(stated|observed|inferred)\]\s*(.*)$/i);
+    if (!m) {
+      refused.push({ line: shown.slice(0, 120), reason: 'it isn\'t a "- [tag] fact" line' });
+      continue;
+    }
+    if (isForbidden(m[2])) {
+      refused.push({ line: "(hidden)", reason: "memory never keeps card, bank or ID numbers, or passwords" });
+      continue;
+    }
+    const junk = junkReason(m[2]);
+    if (junk) {
+      refused.push({ line: shown.slice(0, 120), reason: junk });
+      continue;
+    }
     const line = factLine(m[1].toLowerCase(), m[2]);
-    const key = line.toLowerCase();
-    if (!line || seen.has(key) || isForbidden(m[2])) continue;
-    seen.add(key);
+    const key = normalFact(m[2]);
+    if (seen.has(key)) {
+      refused.push({ line: shown.slice(0, 120), reason: `it repeats "${seen.get(key)}"` });
+      continue;
+    }
+    seen.set(key, line.replace(/^- \[\w+\] /, "").slice(0, 80));
     lines.push(line);
   }
-  return lines.join("\n");
+  return { body: lines.join("\n"), refused };
+}
+
+// The body's lines, kept to fact lines only, without junk or repeats
+export function cleanBody(body) {
+  return checkBody(body).body;
 }
 
 function aliasesOf(value) {
@@ -142,6 +214,8 @@ const bump = () => {
   generation += 1;
   cache.clear();
 };
+// For the cleanup (src/memory/cleanup.js), which writes D1 itself
+export const forgetCached = () => bump();
 
 // ---- Reading ----
 
@@ -198,11 +272,17 @@ export async function putFile(env, input, source_app = "unknown") {
   if (!scope || !path) return { error: "A scope and a path (profile, people/…, topics/…, areas/…, studio or public) are needed", status: 400 };
   const owner = cleanOwner(scope, input.owner_id);
   if (scope !== "studio" && !owner) return { error: "An owner is needed for staff and customer files", status: 400 };
-  const body = cleanBody(input.body);
-  // Lines left out: not "- [tag] fact", repeats, or card, bank or ID numbers
+  // Every line checked: lines that aren't "- [tag] fact", junk (empty, placeholder, cut off),
+  // repeats, or card, bank or ID numbers are left out, each with its reason
+  const { body, refused } = checkBody(input.body);
   const given = String(input.body || "").split("\n").filter((l) => l.trim()).length;
   const kept = body ? body.split("\n").length : 0;
   const dropped = Math.max(0, given - kept);
+  // Nothing worth keeping: refused (an empty file is junk too), with the reasons
+  if (!kept) {
+    if (!given) return { error: "A file needs at least one fact. To remove a file, delete it instead.", refused, status: 400 };
+    return { error: `Nothing was saved: ${refusedText(refused)}`, refused, status: 400 };
+  }
   const current = await getFile(env, scope, owner, path);
   const ifVersion = String(input.if_version || "");
   if (current ? ifVersion !== current.version : ifVersion !== "new") return { conflict: true, current, status: 409 };
@@ -231,22 +311,48 @@ export async function putFile(env, input, source_app = "unknown") {
     }
   }
   bump();
-  return { ok: true, file: await getFile(env, scope, owner, path), dropped, ...(dropped ? { note: `${dropped} line${dropped === 1 ? " was" : "s were"} left out: each fact must be one "- [tag] fact" line, no repeats, and never card, bank or ID numbers.` } : {}) };
+  return {
+    ok: true,
+    file: await getFile(env, scope, owner, path),
+    dropped,
+    ...(dropped ? { refused, note: `${dropped} line${dropped === 1 ? " was" : "s were"} left out: ${refusedText(refused)}` } : {}),
+  };
 }
 
-// Delete a file (only the version you read, if you give one: someone may have just added to it)
-export async function deleteFile(env, scope, owner_id, path, version) {
+// "“ok” (it's placeholder text, not a fact); …" for people to read
+export function refusedText(refused) {
+  if (!refused || !refused.length) return "";
+  const shown = refused.slice(0, 4).map((r) => (r.line === "(hidden)" ? r.reason : `"${String(r.line).slice(0, 60)}" (${r.reason})`));
+  return shown.join("; ") + (refused.length > 4 ? `; and ${refused.length - 4} more` : "") + ".";
+}
+
+// Delete a file (only the version you read, if you give one: someone may have just added to it).
+// A copy goes in the bin (memory_removed) first, so an admin can put it back for 30 days.
+export async function deleteFile(env, scope, owner_id, path, version, by = "someone") {
   const owner = cleanOwner(scope, owner_id);
   const p = cleanPath(path);
-  if (version) {
-    const current = await getFile(env, scope, owner, p);
-    if (current && current.version !== version) return { conflict: true, current };
-  }
-  await env.DB.prepare(`DELETE FROM memory_files WHERE scope = ? AND path = ? AND ${owner === null ? "owner_id IS NULL" : "owner_id = ?"}`)
-    .bind(...(owner === null ? [scope, p] : [scope, p, owner]))
-    .run();
+  const current = await getFile(env, scope, owner, p);
+  if (!current) return { ok: true };
+  if (version && current.version !== version) return { conflict: true, current };
+  const res = await binAndDeleteFile(env, current, { reason: "deleted in Index", by, cleanup_id: null });
+  if (!res.ok) return { conflict: true, current: await getFile(env, scope, owner, p) };
+  return { ok: true, binned: res.bin_id };
+}
+
+// Copy a file into the bin and delete it, in one go, only if it's still the version given
+export async function binAndDeleteFile(env, file, { reason, by, cleanup_id }) {
+  const binId = crypto.randomUUID();
+  const row = { id: file.id, scope: file.scope, owner_id: file.owner_id, path: file.path, name: file.name, description: file.description, aliases: file.aliases, body: file.body || "", source_app: file.source_app, updated_at: file.updated_at };
+  const [, del] = await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO memory_removed (id, cleanup_id, kind, reason, scope, owner_id, path, content, removed_by, removed_at) SELECT ?, ?, 'file', ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM memory_files WHERE id = ? AND version = ?)"
+    ).bind(binId, cleanup_id, reason, file.scope, file.owner_id, file.path, JSON.stringify(row), String(by).slice(0, 80), Date.now(), file.id, file.version),
+    env.DB.prepare("DELETE FROM memory_files WHERE id = ? AND version = ?").bind(file.id, file.version),
+    // The bin keeps things 30 days, then they're gone for good
+    env.DB.prepare("DELETE FROM memory_removed WHERE removed_at < ?").bind(Date.now() - 30 * 86_400_000),
+  ]);
   bump();
-  return { ok: true };
+  return del.meta.changes ? { ok: true, bin_id: binId } : { ok: false };
 }
 
 // A pending fact goes back in the queue (when approving it failed)
@@ -260,16 +366,33 @@ export async function restorePending(env, row) {
 
 // ---- Facts waiting for approval ----
 
+// A fact learned from a customer waits for approval, unless it's junk or already known:
+// the same fact (after normalFact) waiting already for the same file, or already in that file.
+// Returns { ok } or { refused: "why" }.
 export async function addPending(env, { scope, owner_id, target, tag, fact, source_app, source_ref }) {
-  if (!SCOPES.includes(scope) || isForbidden(fact)) return;
+  if (!SCOPES.includes(scope)) return { refused: "no such memory" };
+  if (isForbidden(fact)) return { refused: "memory never keeps card, bank or ID numbers, or passwords" };
   const path = cleanPath(target);
+  if (!path) return { refused: "no such file" };
+  const junk = junkReason(fact);
+  if (junk) return { refused: junk };
   const line = factLine(tag, fact);
-  if (!path || !line) return;
+  const owner = cleanOwner(scope, owner_id);
+  const key = normalFact(line);
+  const { results: waiting } = await env.DB.prepare(
+    `SELECT fact FROM memory_pending WHERE scope = ? AND target = ? AND ${owner === null ? "owner_id IS NULL" : "owner_id = ?"}`
+  )
+    .bind(...(owner === null ? [scope, path] : [scope, path, owner]))
+    .all();
+  if (waiting.some((w) => normalFact(w.fact) === key)) return { refused: "the same fact is already waiting for approval" };
+  const file = await getFile(env, scope, owner, path);
+  if (file && file.body.split("\n").some((l) => normalFact(l) === key)) return { refused: "it's already remembered" };
   await env.DB.prepare(
     "INSERT INTO memory_pending (id, scope, owner_id, target, tag, fact, source_app, source_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
   )
-    .bind(crypto.randomUUID(), scope, cleanOwner(scope, owner_id), path, TAGS.includes(tag) ? tag : "stated", line.replace(/^- \[\w+\] /, ""), text(source_app, 40), text(source_ref, 120) || null, Date.now())
+    .bind(crypto.randomUUID(), scope, owner, path, TAGS.includes(tag) ? tag : "stated", line.replace(/^- \[\w+\] /, ""), text(source_app, 40), text(source_ref, 120) || null, Date.now())
     .run();
+  return { ok: true };
 }
 
 export async function listPending(env) {

@@ -161,7 +161,8 @@ export async function handleApp(request, env, ctx, answer) {
     // memory and their own partition (Portal decides who's who)
     const who = await requireStaff(request, env);
     const member = who && who.role !== "admin" ? who.id : null;
-    return handleMemoryForStaff(request, env, ctx, route.slice("/memory".length), request.headers.get("X-Nova-App") === "portal" ? "Portal" : "Index", member);
+    const by = who ? who.display_name || who.email || who.id : null;
+    return handleMemoryForStaff(request, env, ctx, route.slice("/memory".length), request.headers.get("X-Nova-App") === "portal" ? "Portal" : "Index", member, by);
   }
   if (route === "/links" && request.method === "GET") return json(await checkedLinks(env));
   if (route === "/quests/action" && request.method === "POST") return questAction(request, env);
