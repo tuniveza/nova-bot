@@ -334,3 +334,21 @@ describe("editing and deleting in Index: who may", () => {
 		expect((await getFile(e, "staff", "dominic", "profile")).body).toBe("- [stated] runs the studio");
 	});
 });
+
+describe("saving a file never drops lines that were already in it", () => {
+	it("old lines the newer checks wouldn't allow stay until the cleanup's report removes them", async () => {
+		const { putFile, getFile } = await import("../src/memory/store.js");
+		// An older line that today's checks call junk, written straight into the database (as it was before the checks)
+		await env.DB.prepare(
+			"INSERT INTO memory_files (id, scope, owner_id, path, name, description, aliases, body, version, source_app, updated_at) VALUES ('old-1', 'studio', NULL, 'topics/gear', 'gear', 'Facts about gear', '[]', ?, 'v1', 'test', 1)"
+		)
+			.bind("- [stated] TBD\n- [stated] The studio has a Neumann U87 microphone")
+			.run();
+		const out = await putFile(env, { scope: "studio", path: "topics/gear", if_version: "v1", body: "- [stated] TBD\n- [stated] The studio has a Neumann U87 microphone\n- [stated] n/a" }, "test");
+		expect(out.ok).toBe(true);
+		const body = (await getFile(env, "studio", null, "topics/gear")).body;
+		expect(body).toContain("- [stated] TBD"); // old: kept
+		expect(body).not.toContain("n/a"); // new junk: left out
+		expect(out.note).toContain("left out");
+	});
+});

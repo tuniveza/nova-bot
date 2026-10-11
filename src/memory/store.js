@@ -128,7 +128,10 @@ export function junkReason(fact) {
 // A body checked line by line: what's kept, and each line that wasn't (with why).
 // Kept: "- [tag] fact" lines that aren't junk, card/bank/ID numbers, or a repeat of an
 // earlier line in the same file (the first copy stays).
-export function checkBody(body) {
+// keep: lines already saved in the file. They're kept as they are even if the newer junk and
+// repeat checks wouldn't let them in: old lines only ever go through the cleanup's report
+// (cleanup.js: checked first, then a person presses Remove, and they go to the bin).
+export function checkBody(body, { keep = new Set() } = {}) {
   const seen = new Map();
   const lines = [];
   const refused = [];
@@ -144,18 +147,19 @@ export function checkBody(body) {
       refused.push({ line: "(hidden)", reason: "memory never keeps card, bank or ID numbers, or passwords" });
       continue;
     }
-    const junk = junkReason(m[2]);
+    const old = keep.has(shown);
+    const junk = old ? "" : junkReason(m[2]);
     if (junk) {
       refused.push({ line: shown.slice(0, 120), reason: junk });
       continue;
     }
     const line = factLine(m[1].toLowerCase(), m[2]);
     const key = normalFact(m[2]);
-    if (seen.has(key)) {
+    if (seen.has(key) && !old) {
       refused.push({ line: shown.slice(0, 120), reason: `it repeats "${seen.get(key)}"` });
       continue;
     }
-    seen.set(key, line.replace(/^- \[\w+\] /, "").slice(0, 80));
+    if (!seen.has(key)) seen.set(key, line.replace(/^- \[\w+\] /, "").slice(0, 80));
     lines.push(line);
   }
   return { body: lines.join("\n"), refused };
@@ -272,9 +276,12 @@ export async function putFile(env, input, source_app = "unknown") {
   if (!scope || !path) return { error: "A scope and a path (profile, people/…, topics/…, areas/…, studio or public) are needed", status: 400 };
   const owner = cleanOwner(scope, input.owner_id);
   if (scope !== "studio" && !owner) return { error: "An owner is needed for staff and customer files", status: 400 };
-  // Every line checked: lines that aren't "- [tag] fact", junk (empty, placeholder, cut off),
-  // repeats, or card, bank or ID numbers are left out, each with its reason
-  const { body, refused } = checkBody(input.body);
+  // Every new line checked: lines that aren't "- [tag] fact", junk (empty, placeholder, cut
+  // off), repeats, or card, bank or ID numbers are left out, each with its reason. Lines
+  // already in the file stay (old ones are only tidied by the cleanup, with its report and bin).
+  const before = await getFile(env, scope, owner, path);
+  const keep = new Set(String(before?.body || "").split("\n").map((l) => l.trim()).filter(Boolean));
+  const { body, refused } = checkBody(input.body, { keep });
   const given = String(input.body || "").split("\n").filter((l) => l.trim()).length;
   const kept = body ? body.split("\n").length : 0;
   const dropped = Math.max(0, given - kept);
