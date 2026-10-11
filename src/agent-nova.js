@@ -373,7 +373,7 @@ async function reportResult(env, body) {
 
 // An alert from Nova Agent itself (e.g. "can't log in to Acuity")
 // Which Nova app an alert is from, and the name shown in front of its title
-const ALERT_SOURCES = { agent: "Nova Agent", quest: "Quest", mission: "Mission" };
+const ALERT_SOURCES = { agent: "Nova Agent", quest: "Quest", mission: "Mission", fixer: "Fixer" };
 
 async function sendAlert(env, body) {
   const title = typeof body.title === "string" ? body.title.trim().slice(0, 100) : "";
@@ -394,7 +394,15 @@ async function sendAlert(env, body) {
     const phones = Array.isArray(body.phones) ? body.phones.filter((x) => typeof x === "string" && /^[0-9a-f]{12}$/.test(x)).slice(0, 10) : [];
     to = { phones, staff: owner ? [owner.id] : [] };
   }
-  const delivered = await notifyPhones(env, { title: `${ALERT_SOURCES[source]}: ${title}`, body: message, url: "/portal/#nova", style, save: body.keep !== false, to });
+  // The Fixer's pings (a new serious problem, a fix ready to approve) are for the admins: only
+  // they can approve. Tapping one opens the Fixer.
+  if (source === "fixer") {
+    const { results } = await env.DB.prepare("SELECT id FROM staff WHERE role = 'admin' AND status = 'active'").all();
+    if (!results.length) return Response.json({ ok: true, phones: 0 });
+    to = { staff: results.map((r) => r.id) };
+  }
+  const url = source === "fixer" ? "/agent/?open=%2Ffixer%2F" : "/portal/#nova";
+  const delivered = await notifyPhones(env, { title: `${ALERT_SOURCES[source]}: ${title}`, body: message, url, style, save: body.keep !== false, to });
   return Response.json({ ok: true, phones: delivered });
 }
 

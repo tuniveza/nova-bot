@@ -16,6 +16,7 @@
 //   na/web/shared    → public/shared/     the look, sounds, badge and manual they share
 //   na/web/observatory → public/observatory/ Observatory (its projects and media only for signed-in staff)
 //   na/web/lossless/public/lossless → public/lossless/  Lossless audio's page
+//   na/web/fixer     → public/fixer/      the Fixer (its data comes from the studio PC, admins only)
 //   na/web/lossless/src  → src/lossless/  its signalling (LosslessRoom) and relay setup (/lossless/ice)
 //   na/web/portal/planet → src/portal/planet/  the planet generator (also draws planet.svg)
 // NOVA_AGENT_DIR points somewhere else than ../../na (e.g. a branch's worktree).
@@ -47,6 +48,7 @@ const copies = [
   ["web/portal/planet/", "../src/portal/planet/", "the planet generator"],
   ["web/observatory/", "../public/observatory/", "Observatory"],
   ["web/lossless/public/lossless/", "../public/lossless/", "Lossless audio"],
+  ["web/fixer/", "../public/fixer/", "the Fixer"],
   ["web/lossless/src/", "../src/lossless/", "Lossless audio's signalling"],
 ];
 // Nova Agent's page used to be the main address (public/index.html); the main address is Nova Bot's again

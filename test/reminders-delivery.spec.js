@@ -178,6 +178,11 @@ describe("Nova Quests' reminders reach their own phones too", () => {
 		expect(delivered).toEqual(["https://web.push.apple.com/staff"]);
 	});
 
+	it("the Fixer's pings (a fix to approve) reach only the admins' phones", async () => {
+		expect(await notify({ title: "A fix is ready for you", message: "Nothing changes until you tap Approve", source: "fixer", kind: "fixer" })).toBe(200);
+		expect(delivered).toEqual(["https://web.push.apple.com/owner"]);
+	});
+
 	it("Nova Agent's own alerts (Acuity problems) still reach every phone", async () => {
 		await notify({ title: "Can't log in", message: "Run npm run login" });
 		expect(delivered.sort()).toEqual(["https://web.push.apple.com/owner", "https://web.push.apple.com/staff"]);

@@ -1435,13 +1435,13 @@ async function observatoryFiles(request, env, pathname) {
 // /agent/?open=<their address>. Inside Nova Agent's viewer (a frame) they load as themselves. The browser
 // says which (Sec-Fetch-Dest); the panels' own inside.js catches browsers that don't.
 // (wrangler.jsonc sends / and the panels' pages through here first: "run_worker_first".)
-const PANELS = ["/portal", "/calendar", "/notes", "/app/memory", "/observatory", "/lossless", "/visualizer", "/admin"];
+const PANELS = ["/portal", "/calendar", "/notes", "/app/memory", "/observatory", "/lossless", "/visualizer", "/admin", "/fixer"];
 // Under the panels' addresses but not pages: Lossless audio's signalling, and connecting or
 // signing in with Google (Google won't show its pages inside a frame, so those leave Nova Agent
 // for a moment, in a popup, and come back)
 const NOT_PAGES = /^\/(lossless\/(ws|ice)|admin\/google(\/callback)?)$/;
 // /agent/<name>: Nova Agent with that panel open
-const PANEL_NAMES = { portal: "/portal/", calendar: "/calendar/", notes: "/notes/", index: "/app/memory/", observatory: "/observatory/", lossless: "/lossless/", visualizer: "/visualizer", admin: "/admin" };
+const PANEL_NAMES = { portal: "/portal/", calendar: "/calendar/", notes: "/notes/", index: "/app/memory/", observatory: "/observatory/", lossless: "/lossless/", visualizer: "/visualizer", admin: "/admin", fixer: "/fixer/" };
 const AGENT = "/agent/";
 // Admin lives inside Portal: an admin page's address opens Portal's Admin section showing it
 function opened(panel, search) {

@@ -40,6 +40,9 @@ export const RELAYED = [
   { methods: ["GET"], path: /^\/calendar-api\/events$/ },
   { methods: ["GET"], path: /^\/(events|cache|tasks)$/, admin: true },
   { methods: ["POST"], path: /^\/actions\/(run\/[\w-]+|forget)$/, admin: true },
+  // The Fixer: its state, pictures and taps (Approve, Reject, Ask for a tweak...) are for admins
+  { methods: ["GET"], path: /^\/fixer-api\/(state|jobs\/[\w-]+|shots\/[\w-]+\/[\w-]+\.png)$/, admin: true },
+  { methods: ["POST"], path: /^\/actions\/fixer\/(check|settings|quests|(quests|suggestions|issues|jobs)\/[\w-]+)$/, admin: true },
 ];
 
 // A path that's what it looks like: no dot segments, encoded slashes or dots, backslashes

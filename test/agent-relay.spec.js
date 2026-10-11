@@ -81,6 +81,15 @@ describe("which addresses go to the PC", () => {
     expect(relayRule("GET", "/calendar-sync.js")).toBeNull();
   });
 
+  it("the Fixer's addresses, for admins only", () => {
+    for (const path of ["/fixer-api/state", "/fixer-api/jobs/20261011-ab12cd34", "/fixer-api/shots/20261011-ab12cd34/after-notes-390.png"]) expect(relayRule("GET", path).admin).toBe(true);
+    for (const path of ["/actions/fixer/check", "/actions/fixer/settings", "/actions/fixer/quests", "/actions/fixer/quests/q-1", "/actions/fixer/suggestions/q-1", "/actions/fixer/issues/i-1", "/actions/fixer/jobs/j-1"]) expect(relayRule("POST", path).admin).toBe(true);
+    expect(relayRule("POST", "/fixer-api/state")).toBeNull();
+    expect(relayRule("GET", "/actions/fixer/jobs/j-1")).toBeNull();
+    expect(relayRule("GET", "/fixer-api/shots/j/../../x.png")).toBeNull();
+    expect(relayRule("GET", "/fixer/")).toBeNull();
+  });
+
   it("never Portal's API or the staff pages", () => {
     for (const path of ["/auth/me", "/auth/login", "/staff", "/staff/x", "/app/api/me", "/portal/", "/", "/admin"]) {
       for (const method of ["GET", "POST"]) expect(relayRule(method, path)).toBeNull();
@@ -166,6 +175,19 @@ describe("through to the PC and back", () => {
     expect((await call("/tasks", { headers: staff })).status).toBe(403);
     expect((await call("/quests/state", { headers: staff })).status).toBe(200);
     expect((await call("/tasks", { headers: STAFF_AUTH })).status).toBe(200);
+    pc.ws.close();
+  });
+
+  it("the Fixer is for admins: Approve from a staff member never reaches the PC", async () => {
+    const pc = await connectPc((req, pc) => pc.text(req.id, 200, JSON.stringify({ ok: true, role: req.staff.role })));
+    const staff = await signInAs("plain-staff-2", "staff");
+    const post = (headers) => call("/actions/fixer/jobs/j-1", { method: "POST", headers: { ...headers, "Content-Type": "application/json", "X-Nova-Visualizer": "1", Origin: BASE, "Sec-Fetch-Site": "same-origin" }, body: JSON.stringify({ action: "approve" }) });
+    expect((await call("/fixer-api/state", { headers: staff })).status).toBe(403);
+    expect((await post(staff)).status).toBe(403);
+    expect(pc.seen.filter((f) => f.t === "req")).toHaveLength(0);
+    const ok = await post(STAFF_AUTH);
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ ok: true, role: "admin" });
     pc.ws.close();
   });
 
