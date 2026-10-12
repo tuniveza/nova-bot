@@ -2528,3 +2528,10 @@ html.nv-page-locked body {
    its fields scrolling, when the chat is shorter than that */
 #nv-chat-panel.nv-booking #nv-chat-messages > .nv-card { flex: 0 1 auto; }
 #nv-chat-panel.nv-booking .nv-card-body { flex: 0 1 auto; }
+/* ----- The Book button: still. No light sweeping across it, and the stars and grain don't slide
+   when the pointer is on it: it just glows a little brighter ----- */
+.nv-card-book::after { display: none; animation: none; }
+.nv-card-book,
+.nv-card-book:hover { background-position: 0 0, 0 0, 0 0; }
+.nv-card-book { transition: transform 0.15s, filter 0.2s, box-shadow 0.2s; }
+.nv-card-book:not(.nv-card-self):hover { filter: brightness(1.12); box-shadow: 0 0 18px rgba(208, 42, 125, 0.5); }
