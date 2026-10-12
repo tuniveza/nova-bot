@@ -7,7 +7,13 @@
 //
 //   POST /app/api/logout                signs out of Portal (everything)
 //   GET  /app/api/me                    is this browser signed in?
-//   GET  /app/api/enquiries?show=all    enquiries (new ones only, unless show=all)
+//   GET  /app/api/enquiries?show=all    enquiries (new ones only, unless show=all; show=spam for Spam)
+//        &box=new|open|replied|done|spam  one inbox state instead; &q=words searches them
+//                                       -> { enquiries, newCount (new + open), counts, team, labels }
+//   POST /app/api/inbox/sort            { id, state?, assignedTo?, label? } -> sorts one (src/inbox.js)
+//   GET  /app/api/inbox/saved           saved replies; POST { id?, title, body } adds or changes one
+//   POST /app/api/inbox/saved/remove    { id }
+//   POST /app/api/inbox/chat            { chatId, state: "needs-person" | "done" | null, assignedTo? }
 //   POST /app/api/enquiries/status      { id, status: "new" | "replied" | "done" } ("closed" = "done")
 //   GET  /app/api/enquiries/thread?id=N an enquiry and its conversation (replies, notes, drafts)
 //   POST /app/api/enquiries/reply       { id, body, key } -> emails the customer (a person pressed Send)
@@ -94,6 +100,7 @@ import { listBookings } from "./booking-calendar.js";
 import { handleClientsForStaff } from "./clients.js";
 import { handleCampaignsForStaff } from "./campaigns.js";
 import { handleOutreachForStaff } from "./outreach.js";
+import { STATES as INBOX_STATES, handleInboxForStaff, labelsInUse, stateCounts, team } from "./inbox.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
 import { usesNova } from "./mode.js";
 import { handleCalendarItems } from "./calendar/items.js";
@@ -126,6 +133,11 @@ export async function handleApp(request, env, ctx, answer) {
   if (route.startsWith("/enquiries/")) {
     const reply = await enquiryReplies(request, env, me, route);
     if (reply) return reply;
+  }
+  // The inbox (src/inbox.js): sorting, spam, saved replies, website chats as tickets
+  if (route.startsWith("/inbox/")) {
+    const answer = await handleInboxForStaff(request, env, me, route);
+    if (answer) return answer;
   }
   if (route === "/booking-actions" || route.startsWith("/booking-actions/")) {
     const answer = await approvals(request, env, me, route);
@@ -224,10 +236,17 @@ async function logout(request, env) {
 // ===== ENQUIRIES =====
 
 async function listEnquiries(env, url) {
-  const all = url.searchParams.get("show") === "all";
-  const enquiries = await replies.listEnquiries(env, { show: all ? "all" : "new" });
-  const { count } = await env.DB.prepare("SELECT COUNT(*) AS count FROM enquiries WHERE status = 'new'").first();
-  return json({ enquiries, newCount: count });
+  const show = url.searchParams.get("show");
+  const box = INBOX_STATES.includes(url.searchParams.get("box")) ? url.searchParams.get("box") : null;
+  const q = url.searchParams.get("q") || "";
+  const [enquiries, counts, people, labels] = await Promise.all([
+    replies.listEnquiries(env, { show: ["all", "spam"].includes(show) ? show : "new", box, q }),
+    stateCounts(env),
+    team(env),
+    labelsInUse(env),
+  ]);
+  // newCount: what still needs someone (new and open), for the badge and Today
+  return json({ enquiries, newCount: counts.new + counts.open, counts, team: people, labels });
 }
 
 // The conversation on each enquiry (src/enquiry-replies.js). Reading and notes need a Portal
@@ -239,7 +258,7 @@ async function enquiryReplies(request, env, me, route) {
     const thread = Number.isInteger(id) ? await replies.enquiryThread(env, id) : null;
     if (!thread) return json({ error: "That enquiry doesn't exist." }, 404);
     // Whether this sign-in can send (a browser's), and where Portal is online for one that can't
-    return json({ ...thread, canSend: me.session_kind === "cookie", onlineUrl: `${publicUrl(env)}/portal/?view=enquiries&enquiry=${id}` });
+    return json({ ...thread, team: await team(env), canSend: me.session_kind === "cookie", onlineUrl: `${publicUrl(env)}/portal/?view=enquiries&enquiry=${id}` });
   }
   if (request.method !== "POST") return null;
   const SENDS = ["/enquiries/reply", "/enquiries/draft/approve", "/enquiries/retry"];
@@ -324,21 +343,25 @@ async function makeLink(request, env) {
 
 // ===== CONVERSATIONS =====
 
+// Each chat with its ticket mark (src/inbox.js: "needs-person" or "done"; none = not marked)
 async function conversations(env, url) {
   const chatId = url.searchParams.get("chat");
   if (chatId) {
-    const { results } = await env.DB.prepare("SELECT role, content, page, created_at FROM chat_messages WHERE chat_id = ? ORDER BY id")
-      .bind(chatId)
-      .all();
-    return json({ messages: results });
+    const [{ results }, ticket] = await Promise.all([
+      env.DB.prepare("SELECT role, content, page, created_at FROM chat_messages WHERE chat_id = ? ORDER BY id").bind(chatId).all(),
+      env.DB.prepare("SELECT t.state, t.assigned_to, s.display_name AS assigned_name FROM chat_tickets t LEFT JOIN staff s ON s.id = t.assigned_to WHERE t.chat_id = ?").bind(chatId).first(),
+    ]);
+    return json({ messages: results, ticket: ticket || null });
   }
   const { results } = await env.DB.prepare(
     `SELECT chat_id, MIN(created_at) AS started, MAX(created_at) AS last, COUNT(*) / 2 AS messages,
        (SELECT content FROM chat_messages f WHERE f.chat_id = m.chat_id AND f.role = 'user' ORDER BY f.id LIMIT 1) AS first_question,
-       (SELECT COUNT(*) FROM enquiries q WHERE q.chat_id = m.chat_id) AS enquiries
+       (SELECT COUNT(*) FROM enquiries q WHERE q.chat_id = m.chat_id) AS enquiries,
+       (SELECT t.state FROM chat_tickets t WHERE t.chat_id = m.chat_id) AS ticket,
+       (SELECT s.display_name FROM chat_tickets t JOIN staff s ON s.id = t.assigned_to WHERE t.chat_id = m.chat_id) AS assigned_name
      FROM chat_messages m GROUP BY chat_id ORDER BY last DESC LIMIT 200`
   ).all();
-  return json({ conversations: results });
+  return json({ conversations: results, needsPerson: results.filter((c) => c.ticket === "needs-person").length });
 }
 
 // ===== STAFF CHAT WITH NOVABOT =====

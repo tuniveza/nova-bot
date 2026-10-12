@@ -9,6 +9,8 @@
 
 // Sends Portal notifications to staff phones
 import { notifyPhones } from "./push.js";
+// The spam filter (likely spam goes to Portal's Spam folder, quietly)
+import { spamCheck, spamReason } from "./inbox.js";
 
 // How many enquiries one visitor can send in 24 hours (stops spam)
 const MAX_ENQUIRIES_PER_DAY = 5;
@@ -116,9 +118,12 @@ export async function sendEnquiry(env, input, { chatId, page, ip }, waitUntil) {
     };
   }
 
+  // Likely spam goes straight to the Spam folder, with the reasons (src/inbox.js). It's kept,
+  // never deleted, and "Not spam" in Portal moves it back; it just doesn't ping or email anyone.
+  const check = spamCheck(enquiry, { recent: count });
   const { meta } = await env.DB.prepare(
-    `INSERT INTO enquiries (created_at, name, email, phone, subject, details, page, chat_id, sender, consent_at, consent_source)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO enquiries (created_at, name, email, phone, subject, details, page, chat_id, sender, consent_at, consent_source, status, spam_reason, state_at, state_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       now.toISOString(),
@@ -132,9 +137,19 @@ export async function sendEnquiry(env, input, { chatId, page, ip }, waitUntil) {
       sender,
       // They asked the studio to get back to them: when, and where (UK GDPR: why we may email them)
       now.toISOString(),
-      consentSource(page)
+      consentSource(page),
+      check.spam ? "spam" : "new",
+      check.spam ? spamReason(check) : null,
+      check.spam ? now.toISOString() : null,
+      check.spam ? "filter" : null
     )
     .run();
+
+  // The visitor hears the same either way (a spammer learns nothing)
+  if (check.spam) {
+    console.log(`Enquiry ${meta.last_row_id} went to Spam (score ${check.score})`);
+    return { sent: true, message: "Sent: the enquiry is with the Novacane team, who will reply by email." };
+  }
 
   waitUntil(emailTeam(env, { id: meta.last_row_id, ...enquiry, page }));
   // Ping staff phones with everything in the enquiry

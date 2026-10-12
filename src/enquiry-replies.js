@@ -48,11 +48,14 @@ function cleanKey(value) {
   return typeof value === "string" && /^[\w-]{8,64}$/.test(value) ? value : null;
 }
 
-// new / replied / closed / do-not-contact ('done' is stored for closed: Portal's "Done")
+// new / open / replied / closed / spam / do-not-contact ('done' is stored for closed: Portal's
+// "Done"; 'open' and 'spam' are the inbox's, src/inbox.js)
 export function enquiryState(e) {
+  if (e.status === "spam") return "spam";
   if (e.do_not_contact_at) return "do-not-contact";
   if (e.status === "done") return "closed";
   if (e.status === "replied") return "replied";
+  if (e.status === "open") return "open";
   return "new";
 }
 
@@ -66,7 +69,7 @@ const fail = (status, error) => ({ status, error });
 // ===== READING =====
 
 const ENQUIRY_FIELDS =
-  "id, created_at, name, email, phone, subject, details, page, chat_id, emailed, status, consent_at, consent_source, do_not_contact_at, do_not_contact_by";
+  "id, created_at, name, email, phone, subject, details, page, chat_id, emailed, status, consent_at, consent_source, do_not_contact_at, do_not_contact_by, assigned_to, label, spam_reason, state_at";
 
 // The enquiry and its conversation (drafts included; discarded ones left out), or null
 export async function enquiryThread(env, id) {
@@ -93,19 +96,37 @@ export async function enquiryThread(env, id) {
 }
 
 // Enquiries for a list: newest first, with what's waiting in each conversation.
-// show: "new" (the ones still to answer), "open" (new or replied), or "all".
-export async function listEnquiries(env, { show = "new", limit = 300 } = {}) {
-  const where = show === "all" ? "" : show === "open" ? "WHERE e.status IN ('new', 'replied') AND e.do_not_contact_at IS NULL" : "WHERE e.status = 'new'";
+// show: "new" (the ones still to answer), "open" (new, open or replied), "all" (everything but
+// Spam), or "spam". box: one inbox state (src/inbox.js: new, open, replied, done, spam) instead.
+// q: words to look for (name, email, subject, message, label).
+export async function listEnquiries(env, { show = "new", box = null, q = "", limit = 300 } = {}) {
+  const terms = [];
+  const binds = [];
+  if (box) {
+    terms.push("e.status = ?");
+    binds.push(box);
+  } else if (show === "open") terms.push("e.status IN ('new', 'open', 'replied') AND e.do_not_contact_at IS NULL");
+  else if (show === "spam") terms.push("e.status = 'spam'");
+  else if (show === "all") terms.push("e.status != 'spam'");
+  else terms.push("e.status = 'new'");
+  const words = String(q || "").trim().slice(0, 100);
+  if (words) {
+    terms.push("(e.name LIKE ? ESCAPE '\\' OR e.email LIKE ? ESCAPE '\\' OR e.subject LIKE ? ESCAPE '\\' OR e.details LIKE ? ESCAPE '\\' OR e.label LIKE ? ESCAPE '\\')");
+    const like = "%" + words.replace(/[\\%_]/g, (c) => "\\" + c) + "%";
+    binds.push(like, like, like, like, like);
+  }
+  const where = terms.length ? "WHERE " + terms.join(" AND ") : "";
   const { results } = await env.DB.prepare(
     `SELECT e.id, e.created_at, e.name, e.email, e.phone, e.subject, e.details, e.page, e.chat_id, e.emailed, e.status,
        e.consent_at, e.consent_source, e.do_not_contact_at, e.do_not_contact_by,
+       e.assigned_to, e.label, e.spam_reason, e.state_at, (SELECT s.display_name FROM staff s WHERE s.id = e.assigned_to) AS assigned_name,
        (SELECT COUNT(*) FROM enquiry_messages m WHERE m.enquiry_id = e.id AND m.status = 'draft') AS drafts,
        (SELECT COUNT(*) FROM enquiry_messages m WHERE m.enquiry_id = e.id AND m.status = 'sent') AS replies,
        (SELECT COUNT(*) FROM enquiry_messages m WHERE m.enquiry_id = e.id AND m.status = 'failed') AS failed,
        (SELECT MAX(m.updated_at) FROM enquiry_messages m WHERE m.enquiry_id = e.id) AS last_activity
      FROM enquiries e ${where} ORDER BY e.created_at DESC LIMIT ?`
   )
-    .bind(limit)
+    .bind(...binds, limit)
     .all();
   return results.map((e) => ({ ...e, state: enquiryState(e), dial: dialNumber(e.phone || "") || null }));
 }
@@ -256,11 +277,12 @@ export async function setDoNotContact(env, { id, on, by }) {
   return { ok: true };
 }
 
-// Change an enquiry's status from Portal: new / replied / done (closed)
+// Change an enquiry's status from Portal: new / open / replied / done (closed). (Spam, who's on
+// it and labels: src/inbox.js's sortEnquiry.)
 export async function setEnquiryStatus(env, { id, status }) {
   if (status === "closed") status = "done";
-  if (!Number.isInteger(id) || !["new", "replied", "done"].includes(status)) return fail(400, "Bad request");
-  const { meta } = await env.DB.prepare("UPDATE enquiries SET status = ? WHERE id = ?").bind(status, id).run();
+  if (!Number.isInteger(id) || !["new", "open", "replied", "done"].includes(status)) return fail(400, "Bad request");
+  const { meta } = await env.DB.prepare("UPDATE enquiries SET status = ?, state_at = ?, spam_reason = NULL WHERE id = ?").bind(status, nowIso(), id).run();
   if (!meta.changes) return fail(404, "That enquiry doesn't exist.");
   return { ok: true };
 }
@@ -308,7 +330,7 @@ export async function staffLogged(env, me, { id, kind, body, outcome, key }) {
     const same = await env.DB.prepare("SELECT id FROM enquiry_messages WHERE enquiry_id = ? AND client_key = ?").bind(id, clientKey).first();
     return { message: await publicMessage(env, same.id), repeated: true };
   }
-  if (outcome !== "no-answer") await env.DB.prepare("UPDATE enquiries SET status = 'replied' WHERE id = ? AND status = 'new'").bind(id).run();
+  if (outcome !== "no-answer") await env.DB.prepare("UPDATE enquiries SET status = 'replied', state_at = ? WHERE id = ? AND status IN ('new', 'open')").bind(now, id).run();
   return { message: await publicMessage(env, meta.last_row_id) };
 }
 
@@ -400,8 +422,8 @@ async function deliver(env, messageId, { sameAttempt = false } = {}) {
       now,
       messageId
     ),
-    // The first reply moves a new enquiry on to "replied"
-    env.DB.prepare("UPDATE enquiries SET status = 'replied' WHERE id = ? AND status = 'new'").bind(m.enquiry_id),
+    // A reply moves a new or open enquiry on to "replied" (waiting on them)
+    env.DB.prepare("UPDATE enquiries SET status = 'replied', state_at = ? WHERE id = ? AND status IN ('new', 'open')").bind(now, m.enquiry_id),
   ]);
   return publicMessage(env, messageId);
 }

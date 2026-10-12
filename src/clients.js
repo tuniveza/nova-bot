@@ -376,7 +376,8 @@ export async function syncClientsFromEnquiries(env) {
   return book.save(env);
 }
 
-const readEnquiries = async (env) => (await env.DB.prepare("SELECT name, email, phone FROM enquiries ORDER BY id").all()).results;
+// (Spam isn't anyone's enquiry: src/inbox.js)
+const readEnquiries = async (env) => (await env.DB.prepare("SELECT name, email, phone FROM enquiries WHERE status != 'spam' ORDER BY id").all()).results;
 const addEnquiries = (book, enquiries) => enquiries.forEach((e) => book.person(e, "enquiry"));
 
 // The feed (when it's set up) and the enquiries, together: Portal's "Sync now" and the cron.

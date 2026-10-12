@@ -23,7 +23,10 @@
 //   POST /nova-agent/notify         { title, message, source?, kind?, tag?, ttl?, urgent?, keep? }
 //                            -> staff phones get Nova Agent's, Quest's and Mission's alerts
 //
-//   POST /nova-agent/enquiries          { show? }  -> the enquiries ("new", "open" or "all")
+//   POST /nova-agent/enquiries          { show? }  -> the enquiries ("new", "open", "all" or "spam")
+//   POST /nova-agent/inbox/sort         { id, state, label? } -> sorts one (new, open, waiting, done, spam;
+//                            never sends anything: src/inbox.js)
+//   POST /nova-agent/inbox/saved        {}         -> the team's saved replies (read only)
 //   POST /nova-agent/enquiries/:id      {}         -> one enquiry and its conversation
 //   POST /nova-agent/enquiries/:id/drafts { body } -> a DRAFT reply, for a person to approve in Portal
 //                            (the AI can only draft: nothing here approves or sends; see src/enquiry-replies.js)
@@ -77,6 +80,7 @@ import { planetFacts, profile } from "./portal/routes.js";
 import { notifyPhones, studioOwner } from "./push.js";
 import { syncFromAgent } from "./calendar/items.js";
 import { agentDraft, enquiryThread, listEnquiries } from "./enquiry-replies.js";
+import { handleInboxForAgent } from "./inbox.js";
 import { acuityFailure, availableTimes, daysBetween, isUkDate, listAppointments, listBlocks, listTypes, searchClients, ukWallToUtc } from "./acuity/api.js";
 import { bookingsChangedAt, listActions, proposeAction } from "./booking-actions.js";
 import { handleClientsForAgent } from "./clients.js";
@@ -155,6 +159,8 @@ export async function handleAgentNova(request, env, pathname) {
   if (pathname === "/nova-agent/calendar") return syncFromAgent(env, body);
   // Enquiries: read them, and draft replies (never send: a person approves in Portal)
   if (pathname === "/nova-agent/enquiries" || pathname.startsWith("/nova-agent/enquiries/")) return agentEnquiries(env, pathname, body);
+  // The inbox: sort an enquiry (or move it to Spam), read the saved replies (src/inbox.js)
+  if (pathname.startsWith("/nova-agent/inbox/")) return handleInboxForAgent(env, pathname, body);
   // Acuity: read the diary, and PROPOSE changes (never make them: an admin approves in Portal)
   if (pathname.startsWith("/nova-agent/acuity/")) return agentAcuity(env, pathname, body);
   if (pathname === "/nova-agent/booking-actions" || pathname.startsWith("/nova-agent/booking-actions/")) return agentBookingActions(env, pathname, body);
@@ -263,12 +269,13 @@ async function agentBookingActions(env, pathname, body) {
 
 async function agentEnquiries(env, pathname, body) {
   if (pathname === "/nova-agent/enquiries") {
-    const show = ["new", "open", "all"].includes(body?.show) ? body.show : "open";
+    const show = ["new", "open", "all", "spam"].includes(body?.show) ? body.show : "open";
     const enquiries = await listEnquiries(env, { show, limit: 50 });
     // Short: the AI reads one in full with /nova-agent/enquiries/:id
     return Response.json({
       enquiries: enquiries.map((e) => ({
-        id: e.id, created_at: e.created_at, name: e.name, email: e.email, subject: e.subject, state: e.state,
+        id: e.id, created_at: e.created_at, name: e.name, email: e.email, subject: e.subject, state: e.state, label: e.label || null,
+        ...(e.spam_reason ? { spam_reason: e.spam_reason } : {}),
         details: String(e.details || "").slice(0, 300), drafts_waiting: e.drafts, replies_sent: e.replies,
       })),
     });

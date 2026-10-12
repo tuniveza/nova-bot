@@ -119,7 +119,7 @@ async function snapshot(env) {
 
   // Recent enquiries from NovaBot
   const { results: enquiries } = await env.DB.prepare(
-    "SELECT created_at, name, email, phone, subject, details, status FROM enquiries ORDER BY id DESC LIMIT ?"
+    "SELECT created_at, name, email, phone, subject, details, status FROM enquiries WHERE status != 'spam' ORDER BY id DESC LIMIT ?"
   )
     .bind(MAX_ENQUIRIES)
     .all();

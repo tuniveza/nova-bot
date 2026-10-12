@@ -76,6 +76,35 @@ whole conversation: replies sent, internal notes, and drafts from Agent.
   <date> …" plus the stop link (also the email's one-click unsubscribe header). These are
   replies to people who asked to be contacted, not marketing.
 
+### The inbox: sorting, Spam and saved replies
+
+Portal → Enquiries works like a support-ticket inbox (`src/inbox.js`,
+migrations/0030_inbox.sql). Every enquiry is in one place, and moving it is one press on its card:
+
+- **New** (not looked at yet) → **Open** (someone's on it) → **Waiting on them** (replied;
+  stored as `replied`) → **Done**. Sending a reply moves New or Open to Waiting by itself.
+  The tab's badge and Today count New and Open.
+- **Who's on it**: pick a person on the card. **Label**: type a short one (labels used before
+  are suggested). **Search** looks through names, emails, subjects, messages and labels.
+- **Spam** is a folder: nothing is ever deleted. When an enquiry arrives, a few plain rules
+  score it: 3+ links (2 links count half), a throwaway email address (mailinator.com and
+  friends), spam phrases ("SEO services", "backlinks", "crypto investment"…), keyboard
+  mashing or symbol soup, and a visitor sending their 4th+ enquiry today (half). A score of 2
+  or more goes to Spam with the reasons shown on the card. Spam doesn't ping phones or email
+  the team a copy, and the visitor sees the usual "Sent". **Not spam** moves it back to New.
+  Spam is also left out of the client list and Ask Nova.
+- **Saved replies** (the button by the search, or the picker in the reply box): the team's
+  answers to routine questions: prices, opening times, how to book. `{name}` becomes the
+  customer's first name. Picking one only fills the box; it still goes only when someone
+  presses **Send**, exactly as before.
+- **Agent** can sort enquiries (`enquiry_set_state`: new, open, waiting, done, spam, and a
+  label) and read the saved replies (`saved_replies_list`), to draft replies to routine
+  questions with the studio's own wording. It can't choose who's on it, change saved replies,
+  or send anything.
+- **Conversations** (website chats) can be marked **Needs a person** (you're put on it) or
+  **Done**, and filtered by either, so chats that need following up don't get lost. Press
+  the lit mark again to clear it.
+
 ### What it needs
 
 1. **A verified domain in Resend** (see above). Until then Resend only delivers to the
@@ -86,6 +115,8 @@ whole conversation: replies sent, internal notes, and drafts from Agent.
    `ENQUIRY_EMAIL_TO` address).
 3. The database change: `npx wrangler d1 migrations apply novabot --remote`
    (migrations/0022_enquiry_replies.sql).
+4. For the inbox: the same command applies migrations/0030_inbox.sql (it only adds columns
+   and two tables; every existing enquiry keeps its status).
 
 ### WhatsApp, calls and texts (from your own phone)
 
