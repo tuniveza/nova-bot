@@ -1733,10 +1733,13 @@
       section(timeLabel, timeGrid),
       section(detailsLabel, nameRow, contactRow),
       summary,
-      problem,
-      ...buttons
+      problem
     );
-    card.append(glow, close, title, body);
+    // The buttons sit under the fields, outside the part that scrolls, so they're always in
+    // sight and never on top of each other or of the fields
+    const foot = el("div", "nv-card-foot");
+    foot.append(...buttons);
+    card.append(glow, close, title, body, foot);
     list.appendChild(card);
     enterBooking(card);
 
@@ -1897,6 +1900,7 @@
         done.appendChild(pay);
       }
       body.replaceWith(done);
+      foot.remove();
       close.remove();
       title.textContent = payFirst ? "Pay the deposit to book" : "Booking received";
       setTimeout(() => exitBooking(card), 2600);

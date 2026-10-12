@@ -2506,12 +2506,9 @@ html.nv-page-locked body {
 }
 #nv-chat-panel.nv-booking .nv-card-body::-webkit-scrollbar { width: 6px; }
 #nv-chat-panel.nv-booking .nv-card-body::-webkit-scrollbar-thumb { border-radius: 6px; background: rgba(255, 95, 168, 0.45); }
-/* The Book button (and "Do it myself") stay at the bottom while the fields scroll */
-#nv-chat-panel.nv-booking .nv-card-body > .nv-card-book {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  flex-shrink: 0;
-  box-shadow: 0 -14px 18px rgba(20, 11, 30, 0.92), 0 4px 14px rgba(176, 29, 104, 0.35);
-}
-#nv-chat-panel.nv-booking .nv-card-body > .nv-card-book ~ .nv-card-book { bottom: 0; }
+/* The buttons: under the fields, outside the scrolling part, one above the other */
+.nv-card-foot { position: relative; display: flex; flex-direction: column; gap: 8px; margin-top: 12px; flex-shrink: 0; }
+.nv-card-foot > .nv-card-book { margin: 0; }
+#nv-chat-panel.nv-booking .nv-card-foot { padding-top: 12px; border-top: 1px solid rgba(255, 95, 168, 0.16); }
+/* Clear of the chat's rounded bottom corners, so the card's whole border shows */
+#nv-chat-panel.nv-booking #nv-chat-messages { padding-left: 14px; padding-right: 14px; padding-bottom: 26px; }
