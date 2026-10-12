@@ -183,6 +183,18 @@ export async function handleGoogleForStaff(request, env, me, route) {
     await saveClient(env, id, secret);
     return json({ ok: true, message: "Saved ✓ Now press Connect Google." });
   }
+  // Connect Google: a one-time pass (10 minutes) for /admin/google, so connecting works however
+  // this admin is signed in (the browser's cookie, or Nova Agent's app sign-in, which a plain
+  // window to Google's page doesn't carry). Only the newest pass works; /admin/google uses it up.
+  if (route === "/google/connect-link") {
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    const ticket = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('google_connect_ticket', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+      .bind(JSON.stringify({ ticket, at: Date.now(), by: me.id }))
+      .run();
+    const origin = new URL(request.url).origin;
+    return json({ ok: true, url: `${origin}/admin/google?ticket=${ticket}${body.popup ? "&popup=1" : ""}` });
+  }
   if (route === "/google/key/remove") {
     await removeClient(env);
     return json({ ok: true });

@@ -37,6 +37,18 @@ import { googleSetupPage, removeClient, saveGoogleSetup } from "./admin-google.j
 import { handleTestBooking } from "./admin-test-booking.js";
 
 export async function handleAdmin(request, env) {
+  // Connecting Google: a one-time pass from Portal (POST /app/api/google/connect-link, admins)
+  // stands in for the sign-in, since the window to Google's page may not carry it; and Google's
+  // answer (the callback) is checked against the state cookie set when it started
+  const early = new URL(request.url);
+  if (request.method === "GET" && early.pathname === "/admin/google" && early.searchParams.get("ticket")) {
+    if (await useConnectTicket(env, early.searchParams.get("ticket"))) return connectGoogle(env, early);
+    return text("That Connect Google link has expired. Go back to Portal → Admin → Google and press Connect Google again.", 403);
+  }
+  if (request.method === "GET" && early.pathname === "/admin/google/callback" && /(?:^|;\s*)nv_gstate=/.test(request.headers.get("Cookie") || "")) {
+    return googleCallback(request, env, early);
+  }
+
   // Portal is the one sign-in: admins only; signed out, go and sign in, then come back
   const admin = await requireStaff(request, env, { admin: true });
   if (!admin) {
@@ -504,6 +516,19 @@ async function acuityPage(env, url) {
 // "Connect Google": a one-off random value, kept in a short-lived cookie, must come back
 // from Google unchanged (so nobody can trick the admin into connecting their account).
 // From Admin → Google it runs in a small window (?popup=1): Google won't show inside Nova Agent.
+// A one-time pass for Connect Google: the newest one only, under 10 minutes old, used up here
+async function useConnectTicket(env, ticket) {
+  if (!/^[0-9a-f]{48}$/.test(String(ticket))) return false;
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_connect_ticket'").first("value");
+  let saved = null;
+  try {
+    saved = JSON.parse(row || "null");
+  } catch {}
+  if (!saved || saved.ticket !== ticket || Date.now() - saved.at > 10 * 60 * 1000) return false;
+  const { meta } = await env.DB.prepare("DELETE FROM settings WHERE key = 'google_connect_ticket' AND value = ?").bind(row).run();
+  return meta.changes > 0;
+}
+
 async function connectGoogle(env, url) {
   if (!(await googleClient(env)).id) return back("Set Google up first: paste the key in step 5.", "/admin/google/setup");
   const state = crypto.randomUUID();

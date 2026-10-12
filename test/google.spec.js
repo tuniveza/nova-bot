@@ -370,6 +370,35 @@ describe("Drive and Sheets", () => {
 });
 
 describe("Portal's Admin → Google and Nova Agent's tools", () => {
+	it("Connect Google works with a one-time pass, whatever the sign-in (and only once)", async () => {
+		const res = await call("/app/api/google/connect-link", { method: "POST", body: { popup: true } });
+		expect(res.status).toBe(200);
+		const { url } = await res.json();
+		expect(url).toMatch(/^https:\/\/novacane-worker\.test\/admin\/google\?ticket=[0-9a-f]{48}&popup=1$/);
+		const path = url.replace(BASE, "");
+		// No cookie at all: the pass is enough, and Google's consent page is next
+		const go = await call(path, { cookie: "" });
+		expect(go.status).toBe(302);
+		expect(go.headers.get("Location")).toContain("accounts.google.com");
+		expect(go.headers.get("Set-Cookie")).toContain("nv_gstate=");
+		// Used up
+		const again = await call(path, { cookie: "" });
+		expect(again.status).toBe(403);
+		// A made-up pass doesn't work
+		const forged = await call("/admin/google?ticket=" + "a".repeat(48), { cookie: "" });
+		expect(forged.status).toBe(403);
+	});
+
+	it("Connect Google's pass is for admins only, and runs out after 10 minutes", async () => {
+		const res = await call("/app/api/google/connect-link", { method: "POST", body: {} });
+		const { url } = await res.json();
+		const saved = JSON.parse(await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_connect_ticket'").first("value"));
+		await env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'google_connect_ticket'").bind(JSON.stringify({ ...saved, at: Date.now() - 11 * 60 * 1000 })).run();
+		expect((await call(url.replace(BASE, ""), { cookie: "" })).status).toBe(403);
+		// Without a sign-in, no pass
+		expect((await call("/app/api/google/connect-link", { method: "POST", body: {}, cookie: "" })).status).toBe(401);
+	});
+
 	it("shows admins the steps, what's on and what's missing; only admins change it", async () => {
 		await env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'google_scopes'").bind("https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send").run();
 		const res = await call("/app/api/google");
