@@ -101,6 +101,34 @@ export async function createCheckout(env, { booking, amountPence, purpose, succe
   return { id: session.id, url: session.url };
 }
 
+// A checkout page for what's left to pay on an invoice (src/money.js). Returns { id, url }.
+// The webhook knows it by metadata.invoice_id (and records it once, by the payment's id).
+export async function createInvoiceCheckout(env, { invoice, amountPence, successUrl, cancelUrl }) {
+  const session = await stripe(
+    env,
+    "POST",
+    "/checkout/sessions",
+    {
+      mode: "payment",
+      ...(invoice.email ? { customer_email: invoice.email } : {}),
+      client_reference_id: `invoice-${invoice.id}`,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: { currency: "gbp", unit_amount: amountPence, product_data: { name: `Invoice ${invoice.number}`, description: String(invoice.business || "Novacane Studios").slice(0, 200) } },
+        },
+      ],
+      metadata: { invoice_id: invoice.id },
+      payment_intent_data: { metadata: { invoice_id: invoice.id }, description: `Novacane invoice ${invoice.number}` },
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      expires_at: Math.floor(Date.now() / 1000) + 60 * 60,
+    },
+    `invoice-checkout-${invoice.id}-${amountPence}-${Math.floor(Date.now() / 60_000)}`
+  );
+  return { id: session.id, url: session.url };
+}
+
 export async function expireCheckout(env, id) {
   if (!id || stripeOffline(env) || !id.startsWith("cs_")) return;
   try {

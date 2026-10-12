@@ -36,6 +36,7 @@ import { moneyState } from "./emails.js";
 import { googleReady } from "./google.js";
 import { senderId } from "../enquiries.js";
 import { stripeOffline, stripeReady, verifyWebhook } from "./stripe.js";
+import { invoicePaidByStripe } from "../money.js";
 import { CANCEL_NOTICE_HOURS, CUSTOMER_CANCEL_REFUNDS, CUSTOMER_MOVE_HOURS, DEPOSIT_PERCENT, MAX_DAYS_AHEAD, STUDIO, getType, money, ukToMs } from "./studio.js";
 import { PAGE_STYLE, escapeHtml as e } from "../referrals.js";
 
@@ -177,6 +178,20 @@ async function stripeWebhook(request, env) {
   const event = await verifyWebhook(env, payload, request.headers.get("Stripe-Signature"));
   if (!event) return new Response("Bad signature", { status: 400 });
   const session = event.data?.object || {};
+  // An invoice's "Pay by card" (src/money.js): recorded against the invoice, once
+  const invoiceId = Number(session.metadata?.invoice_id) || 0;
+  if (invoiceId) {
+    try {
+      if ((event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") && session.payment_status === "paid") {
+        const result = await invoicePaidByStripe(env, { invoiceId, amountPence: Number(session.amount_total) || 0, stripeId: String(session.payment_intent || session.id) });
+        if (result.status >= 500) return new Response("Error", { status: 500 });
+      }
+    } catch (err) {
+      console.log("Stripe webhook (invoice) failed:", err?.name);
+      return new Response("Error", { status: 500 });
+    }
+    return new Response("OK");
+  }
   const bookingId = Number(session.metadata?.booking_id || session.client_reference_id);
   try {
     if ((event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") && session.payment_status === "paid" && bookingId) {

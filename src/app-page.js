@@ -71,6 +71,17 @@
 //   POST /app/api/campaigns/:id/approve {} -> { campaign } approves it, then Resend sends it (or schedules it)
 //   POST /app/api/campaigns/:id/reject  { note? }
 //   POST /app/api/campaigns/test-send   { id } -> emails it once to the admin who pressed it, marked [TEST]
+//   GET  /app/api/money                 -> { summary, invoices, expenses, reminders, settings, canDecide, … }
+//                                       invoices, payments and expenses (see src/money.js)
+//   GET  /app/api/money/invoices/:id    -> { invoice, payments, reminders, log }
+//   GET  /app/api/money/invoices/:id/preview -> the invoice as the client will see it (a page)
+//   GET  /app/api/money/export.csv?what=invoices|payments|expenses&from=&to= (admins in a browser)
+//   POST /app/api/money/invoices        { clientId?, billName, billEmail, billAddress?, lines, vatRate?, issueDate?, dueDate?, notes? }
+//   POST /app/api/money/invoices/:id/edit, /payments { amount, paidOn, method, note }, /reminder { body? }
+//   POST /app/api/money/invoices/:id/approve | reject | void, /money/reminders/:id/approve | reject,
+//        /money/payments/:id/remove, /money/invoices/test-send { id }, /money/settings (admins in a browser)
+//   POST /app/api/money/expenses        { spentOn, amount, category, supplier, note, receiptId? }
+//   POST /app/api/money/expenses/:id/edit | confirm | delete
 //   GET  /app/api/outreach?status=…     -> { outreach, canDecide, ready, optouts, sentToday, perDay }
 //                                       one-to-one emails (see src/outreach.js)
 //   GET  /app/api/outreach/:id          -> { outreach, log, email } (email: the text as it goes, with its footer)
@@ -116,6 +127,7 @@ import { handleCampaignsForStaff } from "./campaigns.js";
 import { handleOutreachForStaff } from "./outreach.js";
 import { STATES as INBOX_STATES, handleInboxForStaff, labelsInUse, stateCounts, team } from "./inbox.js";
 import { handleSocialForStaff } from "./social.js";
+import { handleMoneyForStaff } from "./money.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
 import { usesNova } from "./mode.js";
 import { handleCalendarItems } from "./calendar/items.js";
@@ -176,6 +188,11 @@ export async function handleApp(request, env, ctx, answer) {
   // Social posts (src/social.js): approving and rejecting are for an admin in a browser
   if (route === "/social" || route.startsWith("/social/")) {
     const answer = await handleSocialForStaff(request, env, me, route);
+    if (answer) return answer;
+  }
+  // Money (src/money.js): invoices, payments and expenses; approving, voiding and settings are for an admin in a browser
+  if (route === "/money" || route.startsWith("/money/")) {
+    const answer = await handleMoneyForStaff(request, env, me, route);
     if (answer) return answer;
   }
   if (route === "/services" && request.method === "GET") return json({ services: await servicesStatus(env), admin: me.role === "admin" });

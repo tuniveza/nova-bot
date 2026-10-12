@@ -68,6 +68,7 @@ import { sendCalendarReminders } from "./calendar/reminders.js";
 import { syncClientsOnSchedule } from "./clients.js";
 import { campaignsOnSchedule } from "./campaigns.js";
 import { handleSocialMedia, socialOnSchedule } from "./social.js";
+import { handleInvoicePage } from "./money.js";
 import { handleJoin } from "./fans.js";
 import { handleNoThanks } from "./outreach.js";
 
@@ -803,6 +804,8 @@ export default {
     if (pathname === "/join" || pathname === "/join/confirm") return handleJoin(request, env, ctx, pathname);
     // "Don't email me again", from the link at the bottom of a one-to-one email (src/outreach.js)
     if (pathname === "/no-thanks") return handleNoThanks(request, env);
+    // A client's invoice: see it, print it, pay it (src/money.js; the link's random secret is the key)
+    if (pathname.startsWith("/invoice/")) return handleInvoicePage(request, env, pathname);
 
     const origin = request.headers.get("Origin") || "";
     // In the sandbox, any page on this computer (localhost) may use it too
@@ -1498,7 +1501,7 @@ function novaAgentPage(request, env, pathname) {
 // goes to /agent/: a panel's address (or one it had before, or /agent/<panel>) opens that panel,
 // anything else just Nova Agent. Files (scripts, icons, a CSV) aren't pages and stay as they are,
 // and so do the website chat's pages for customers (Nova Bot's own) and connecting Google.
-const CUSTOMER_PAGES = /^\/(book(\/.*)?|referral|privacy|enquiry\/stop|join(\/confirm)?)$/;
+const CUSTOMER_PAGES = /^\/(book(\/.*)?|referral|privacy|enquiry\/stop|join(\/confirm)?|invoice\/[0-9a-f]{32})$/;
 function panelFor(pathname) {
   if (pathname.startsWith(AGENT)) return PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")] || "";
   if (PANELS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return pathname;

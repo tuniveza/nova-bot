@@ -40,6 +40,9 @@ export const RELAYED = [
   { methods: ["POST"], path: /^\/actions\/files\/[\w-]+\/remove$/ },
   { methods: ["GET"], path: /^\/files\/(list|[\w-]+\/[^/]+)$/ },
   { methods: ["GET", "PUT"], path: /^\/calendar-api\/data$/ },
+  // Receipts for expenses (Portal → Money), kept on the PC (src/receipts.ts in Nova Agent)
+  { methods: ["POST"], path: /^\/actions\/receipts$/ },
+  { methods: ["GET"], path: /^\/receipts\/r-\d{8}-[a-f0-9]{10}$/ },
   { methods: ["GET"], path: /^\/calendar-api\/events$/ },
   { methods: ["GET"], path: /^\/(events|cache|tasks)$/, admin: true },
   { methods: ["POST"], path: /^\/actions\/(run\/[\w-]+|forget)$/, admin: true },

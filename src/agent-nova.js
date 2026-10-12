@@ -57,6 +57,13 @@
 //   POST /nova-agent/campaigns/:id/edit { subject?, body?, audience?, sendAt? } -> { campaign } back to waiting
 //   POST /nova-agent/campaigns        { status? } -> { campaigns }
 //   POST /nova-agent/campaigns/:id    {}         -> { campaign, log }
+//   POST /nova-agent/money/context    {}         -> { summary, vatRate, dueDays, categories, recentInvoices, today }
+//   POST /nova-agent/money/invoices   { status? } -> { invoices }
+//   POST /nova-agent/money/invoices/:id {}       -> { invoice, payments }
+//   POST /nova-agent/money/invoices/draft { clientId?, billName, billEmail, lines, … } -> { invoice } waiting
+//                            for an admin's approval in Portal → Money (never sent by the agent)
+//   POST /nova-agent/money/invoices/:id/edit { … } -> { invoice } back to waiting
+//   POST /nova-agent/money/expenses   { spentOn, amount, category, supplier, note } -> { expense } 'unconfirmed'
 //                            (the AI can only write and edit: nothing here approves, sends, schedules or
 //                            test-sends; see src/campaigns.js)
 //   POST /nova-agent/outreach/draft   { kind, toEmail, toName?, organisation?, clientId?, aboutBooking?, subject, body }
@@ -97,6 +104,7 @@ import { handleClientsForAgent } from "./clients.js";
 import { handleCampaignsForAgent } from "./campaigns.js";
 import { handleOutreachForAgent } from "./outreach.js";
 import { handleSocialForAgent } from "./social.js";
+import { handleMoneyForAgent } from "./money.js";
 import { feedTimeToIso, listBookings } from "./booking-calendar.js";
 
 // A job Nova Agent took but never reported on (e.g. it was restarted) is
@@ -184,6 +192,9 @@ export async function handleAgentNova(request, env, pathname) {
   if (pathname === "/nova-agent/outreach" || pathname.startsWith("/nova-agent/outreach/")) return handleOutreachForAgent(env, pathname, body);
   // Social posts: read, write, edit and draft replies (never approve or post: an admin approves in Portal)
   if (pathname === "/nova-agent/social" || pathname.startsWith("/nova-agent/social/")) return handleSocialForAgent(env, pathname, body);
+  // Money: read, write and edit invoices (an admin approves and sends them in Portal), and log
+  // expenses as unconfirmed (a person confirms them). No payments, sending or settings.
+  if (pathname.startsWith("/nova-agent/money/")) return handleMoneyForAgent(env, pathname, body);
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
