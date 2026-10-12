@@ -84,6 +84,20 @@
 //   POST /app/api/outreach/test-send    { id } -> emails it once to the admin who pressed it, marked [TEST]
 //     (Approve, reject and test-send need an admin with Portal open in a browser, the cookie: never an
 //      app's token, other staff, or Nova Agent's key.)
+//   GET  /app/api/social                -> { posts, comments, followers, connected, canDecide, adsUrl, limits }
+//                                       Facebook and Instagram posts (see src/social.js)
+//   GET  /app/api/social/:id            -> { post, log }
+//   POST /app/api/social                { caption, platforms, media, postAt? } -> { post } waiting for approval
+//   POST /app/api/social/:id/edit       { caption?, platforms?, media?, postAt? } -> { post } back to waiting
+//   POST /app/api/social/:id/approve    {} -> { post } approves it, then Meta posts it (or it's scheduled,
+//                                       or it waits to be posted by hand while Meta isn't connected)
+//   POST /app/api/social/:id/reject     { note? }
+//   POST /app/api/social/:id/posted     { platform, url? } -> "I posted it" (by hand), any staff
+//   POST /app/api/social/comments/:id/reply    { text } -> a reply, waiting for approval
+//   POST /app/api/social/comments/:id/approve  {} -> posts the reply on Facebook or Instagram
+//   POST /app/api/social/comments/:id/reject   { note? }
+//   POST /app/api/social/comments/:id/handled  { handled } -> "Dealt with" (or not)
+//     (Approve and reject need an admin with Portal open in a browser, the cookie.)
 
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { askPortal } from "./portal-ask.js";
@@ -101,6 +115,7 @@ import { handleClientsForStaff } from "./clients.js";
 import { handleCampaignsForStaff } from "./campaigns.js";
 import { handleOutreachForStaff } from "./outreach.js";
 import { STATES as INBOX_STATES, handleInboxForStaff, labelsInUse, stateCounts, team } from "./inbox.js";
+import { handleSocialForStaff } from "./social.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
 import { usesNova } from "./mode.js";
 import { handleCalendarItems } from "./calendar/items.js";
@@ -156,6 +171,11 @@ export async function handleApp(request, env, ctx, answer) {
   // One-to-one emails (src/outreach.js): approve, reject and test-send are for an admin in a browser
   if (route === "/outreach" || route.startsWith("/outreach/")) {
     const answer = await handleOutreachForStaff(request, env, me, route);
+    if (answer) return answer;
+  }
+  // Social posts (src/social.js): approving and rejecting are for an admin in a browser
+  if (route === "/social" || route.startsWith("/social/")) {
+    const answer = await handleSocialForStaff(request, env, me, route);
     if (answer) return answer;
   }
   if (route === "/services" && request.method === "GET") return json({ services: await servicesStatus(env), admin: me.role === "admin" });

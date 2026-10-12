@@ -9,6 +9,7 @@ import { bookingSystem } from "./mode.js";
 import { googleReady } from "./nova/google.js";
 import { stripeReady } from "./nova/stripe.js";
 import { campaignFrom } from "./campaigns.js";
+import { readyFor } from "./social.js";
 import { publicUrl } from "./nova/booking.js";
 
 // One test email per person per this long (the button can't be used to flood an inbox)
@@ -37,9 +38,10 @@ async function pcConnected(env) {
 export async function servicesStatus(env) {
   const from = env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || "";
   const copies = emailRecipients(env);
-  const [lastEmail, lastCampaign, phones, system, google, pc] = await Promise.all([
+  const [lastEmail, lastCampaign, lastPost, phones, system, google, pc] = await Promise.all([
     latest(env, "SELECT MAX(sent_at) AS at FROM enquiry_messages WHERE channel = 'email' AND status = 'sent'"),
     latest(env, "SELECT MAX(sent_at) AS at FROM email_campaigns WHERE status = 'sent'"),
+    latest(env, "SELECT MAX(posted_at) AS at FROM social_posts WHERE status = 'posted'"),
     env.DB.prepare("SELECT COUNT(*) AS n FROM push_subscriptions")
       .first("n")
       .catch(() => 0),
@@ -64,6 +66,7 @@ export async function servicesStatus(env) {
       test: emailIsSetUp(env),
     },
     newsletters(env, lastCampaign),
+    socialPosts(env, lastPost, pc),
     {
       id: "phone",
       name: "WhatsApp, calls and texts",
@@ -145,6 +148,28 @@ function newsletters(env, last) {
     detail: !anyKey || !from
       ? "Needs a full-access Resend key (the RESEND_MARKETING_KEY secret) and the address campaigns come from (CAMPAIGN_FROM)."
       : `Campaigns go from ${from} only to people who opted in (confirmed fans, and clients who said yes), and only after an admin approves them in Portal → Campaigns. Fans sign up at ${publicUrl(env)}/join.${fullKey ? "" : " Using RESEND_API_KEY: it needs full access for contacts and broadcasts (or add RESEND_MARKETING_KEY)."}`,
+    last,
+  };
+}
+
+// Facebook and Instagram posts (src/social.js): posted by Meta's Graph API once META_PAGE_TOKEN and
+// the Page's (and Instagram account's) ids are set; until then, approved posts wait to be posted by hand
+function socialPosts(env, last, pc) {
+  const on = readyFor(env);
+  const both = on.facebook && on.instagram;
+  const one = on.facebook || on.instagram;
+  return {
+    id: "social",
+    name: "Social posts",
+    tech: "Meta's Graph API (Facebook Page and Instagram); pictures and videos kept on the studio computer",
+    ready: both ? true : one ? "partly" : false,
+    detail: `${
+      both
+        ? "Approved posts go out on Facebook and Instagram by themselves."
+        : one
+          ? `Approved posts go out on ${on.facebook ? "Facebook" : "Instagram"} by themselves; ${on.facebook ? "Instagram" : "Facebook"} posts wait to be posted by hand (set ${on.facebook ? "META_IG_USER_ID" : "META_PAGE_ID"} to connect it).`
+          : "Not connected to Meta yet (the META_PAGE_TOKEN, META_PAGE_ID and META_IG_USER_ID secrets), so approved posts wait in Portal → Social for someone to post them by hand."
+    } Nothing is posted until an admin approves it. The pictures and videos are on the studio computer, so it has to be on when a post goes out${pc ? "" : " (it's off or offline right now)"}.`,
     last,
   };
 }

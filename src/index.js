@@ -67,6 +67,7 @@ import { handleMusicWorld } from "./music-world.js";
 import { sendCalendarReminders } from "./calendar/reminders.js";
 import { syncClientsOnSchedule } from "./clients.js";
 import { campaignsOnSchedule } from "./campaigns.js";
+import { handleSocialMedia, socialOnSchedule } from "./social.js";
 import { handleJoin } from "./fans.js";
 import { handleNoThanks } from "./outreach.js";
 
@@ -726,6 +727,9 @@ export default {
         // Email campaigns (src/campaigns.js): scheduled ones become 'sent' once Resend sends them; every
         // hour, unsubscribes come back from Resend and the numbers (opened, clicked…) are refreshed
         campaignsOnSchedule(env, at).catch((err) => console.log("Campaigns cron failed:", err?.name)),
+        // Social posts (src/social.js): approved ones whose time has come go out (Instagram videos
+        // carry on until they're ready); every hour, results, followers and new comments from Meta
+        socialOnSchedule(env, at).catch((err) => console.log("Social cron failed:", err?.name)),
       ])
     );
   },
@@ -746,6 +750,10 @@ export default {
     // Nova Agent's Portal panel online (its pages are copied into public/ from Nova Agent's
     // repo; its data is here). The staff API keeps its address (/app/api/, from Portal's old address).
     if (pathname.startsWith("/app/api/")) return handleApp(request, env, ctx, answer);
+    // A social post's picture or video, for Meta to fetch while it posts it (signed; src/social.js)
+    if (pathname.startsWith("/social/media/")) return handleSocialMedia(request, env, pathname);
+    // A social post's picture or video, for Meta to fetch while it posts it (signed; src/social.js)
+    if (pathname.startsWith("/social/media/")) return handleSocialMedia(request, env, pathname);
     // Nova Agent, the one app: its page is the main address, and the panels open only inside it
     const novaAgent = novaAgentPage(request, env, pathname);
     if (novaAgent) return novaAgent;

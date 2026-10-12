@@ -46,6 +46,10 @@ export const RELAYED = [
   // The Fixer: its state, pictures and taps (Approve, Reject, Ask for a tweak...) are for admins
   { methods: ["GET"], path: /^\/fixer-api\/(state|jobs\/[\w-]+|shots\/[\w-]+\/[\w-]+\.png)$/, admin: true },
   { methods: ["POST"], path: /^\/actions\/fixer\/(check|settings|quests|(quests|suggestions|issues|jobs)\/[\w-]+)$/, admin: true },
+  // Social posts' pictures and videos, kept on the studio computer (src/social-media.ts in Nova
+  // Agent): see them, add one, take one out of a draft
+  { methods: ["GET"], path: /^\/social-media\/[a-f0-9]{32}\.(jpg|png|webp|gif|mp4|mov)$/ },
+  { methods: ["POST"], path: /^\/actions\/social-media(\/[a-f0-9]{32}\/remove)?$/ },
 ];
 
 // A path that's what it looks like: no dot segments, encoded slashes or dots, backslashes
@@ -77,7 +81,7 @@ const PIECE = 256 * 1024;
 // Long enough for a chat that uses the Acuity helper
 const ANSWER_WITHIN_MS = 5 * 60_000;
 const SEND_HEADERS = ["accept", "content-type", "content-length", "x-nova-visualizer", "x-nova-rev", "x-nova-app", "last-event-id", "range"];
-const KEEP_HEADERS = ["content-type", "cache-control", "content-disposition", "content-range", "accept-ranges", "last-modified", "etag", "x-nova-rev"];
+const KEEP_HEADERS = ["content-type", "cache-control", "content-disposition", "content-range", "accept-ranges", "last-modified", "etag", "x-nova-rev", "x-nova-size"];
 
 const json = (body, status = 200, extra = {}) => Response.json(body, { status, headers: { "Cache-Control": "no-store", ...extra } });
 export const PC_OFFLINE = { error: "The studio computer is off or offline", pcOffline: true };
@@ -133,6 +137,23 @@ export async function handleRelay(request, env, ctx) {
     .then(() => ended || stub.fetch(new Request("https://agent-link/cancel?id=" + encodeURIComponent(id))).catch(() => {}));
   if (ctx && ctx.waitUntil) ctx.waitUntil(piping);
   return new Response(readable, { status: res.status, headers: out });
+}
+
+// ---- Nova Bot itself asks the PC for something (a social post's picture, for Meta) ----
+// Only addresses on the list above, as a staff member called "Nova Bot" (the PC checks the list
+// again). PC off: 503.
+const NOVA_BOT = { id: "nova-bot", name: "Nova Bot", role: "staff" };
+export async function askPC(env, path, { headers = {} } = {}) {
+  if (!relayRule("GET", path.split("?")[0])) return json({ error: "Not allowed" }, 403);
+  if (!env.AGENT_LINK) return json(PC_OFFLINE, 503);
+  const h = new Headers();
+  for (const [k, v] of Object.entries(headers)) if (SEND_HEADERS.includes(k.toLowerCase()) && v) h.set(k, v);
+  h.set("X-Nova-Staff", JSON.stringify(NOVA_BOT));
+  const res = await link(env).fetch(new Request("https://agent-link/relay" + path, { headers: h }));
+  if (!res.headers.get("X-Nova-Relay-Id")) return res;
+  const out = new Headers(res.headers);
+  out.delete("X-Nova-Relay-Id");
+  return new Response(res.body, { status: res.status, headers: out });
 }
 
 // ---- The PC connects (GET /nova-agent/link, a WebSocket, with Nova Agent's key) ----

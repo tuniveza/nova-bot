@@ -66,6 +66,16 @@
 //   POST /nova-agent/outreach         { status? } -> { outreach }
 //   POST /nova-agent/outreach/:id     {}         -> { outreach, log }
 //                            (write and edit only: nothing here approves, sends or test-sends; see src/outreach.js)
+//   POST /nova-agent/social/context  {}          -> { connected, recent, followers, openComments, today }
+//   POST /nova-agent/social/draft    { caption, platforms, postAt? } -> { post } waiting for an admin's approval
+//                            in Portal → Social (pictures and videos are added there by a person)
+//   POST /nova-agent/social/:id/edit { caption?, platforms?, postAt? } -> { post } back to waiting
+//   POST /nova-agent/social          { status? } -> { posts }
+//   POST /nova-agent/social/:id      {}          -> { post, log }
+//   POST /nova-agent/social/comments { open? }   -> { comments } on the studio's posts
+//   POST /nova-agent/social/comments/:id/reply { text } -> { comment } a reply waiting for approval
+//                            (the AI can only write, edit and draft: nothing here approves or posts; see
+//                            src/social.js)
 //
 //   POST /nova-agent/bookings-feed    { from, to } -> { appointments: [{ id, start, end, type, name }] } bookings on
 //                            those UK days (max 62) from Acuity's calendar feed, which works on every plan. Times in
@@ -86,6 +96,7 @@ import { bookingsChangedAt, listActions, proposeAction } from "./booking-actions
 import { handleClientsForAgent } from "./clients.js";
 import { handleCampaignsForAgent } from "./campaigns.js";
 import { handleOutreachForAgent } from "./outreach.js";
+import { handleSocialForAgent } from "./social.js";
 import { feedTimeToIso, listBookings } from "./booking-calendar.js";
 
 // A job Nova Agent took but never reported on (e.g. it was restarted) is
@@ -171,6 +182,8 @@ export async function handleAgentNova(request, env, pathname) {
   if (pathname === "/nova-agent/campaigns" || pathname.startsWith("/nova-agent/campaigns/")) return handleCampaignsForAgent(env, pathname, body);
   // One-to-one emails: read, write and edit (never approve or send: an admin approves in Portal)
   if (pathname === "/nova-agent/outreach" || pathname.startsWith("/nova-agent/outreach/")) return handleOutreachForAgent(env, pathname, body);
+  // Social posts: read, write, edit and draft replies (never approve or post: an admin approves in Portal)
+  if (pathname === "/nova-agent/social" || pathname.startsWith("/nova-agent/social/")) return handleSocialForAgent(env, pathname, body);
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
