@@ -9,6 +9,8 @@
 //   GET /music-world/art?q=<artist and song>   album art (Apple's public music search)
 const MARKETS = ["us", "gb", "br", "mx", "de", "fr", "jp", "kr", "in", "ng", "au", "es"];
 const HOURS = 3600;
+// Wikipedia slow to answer: give up and say "no photo" (well before Nova Agent stops waiting)
+const WAIT = 8000;
 // Apple's chart feed turns away requests that don't look like a browser
 const BROWSER = { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36", Accept: "application/json" };
 
@@ -69,13 +71,13 @@ export async function handleMusicWorld(request, env, ctx, pathname) {
   if (m) {
     return cached(request, ctx, async () => {
       try {
-        const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${m[1]}`, { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" } });
+        const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${m[1]}`, { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" }, signal: AbortSignal.timeout(WAIT) });
         const data = r.ok ? await r.json() : null;
         const src = data && data.thumbnail && data.thumbnail.source;
         // Served from here (not a link to Wikipedia's image server), so nothing in the browser
         // blocks it; without Wikipedia's tracking tags
         if (src && /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(src)) {
-          const img = await fetch(src.split("?")[0], { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" } });
+          const img = await fetch(src.split("?")[0], { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" }, signal: AbortSignal.timeout(WAIT) });
           if (img.ok && /^image\//.test(img.headers.get("Content-Type") || ""))
             return new Response(img.body, { headers: { "Content-Type": img.headers.get("Content-Type"), "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${7 * 24 * HOURS}` } });
         }
@@ -91,7 +93,7 @@ export async function handleMusicWorld(request, env, ctx, pathname) {
       try {
         const name = decodeURIComponent(f[1]);
         if (!/^[\w .()'&,-]+\.(jpe?g|png|webp)$/i.test(name)) return new Response("Not a photo", { status: 400 });
-        const img = await fetch(`https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(name)}?width=240`, { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" } });
+        const img = await fetch(`https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(name)}?width=240`, { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" }, signal: AbortSignal.timeout(WAIT) });
         if (img.ok && /^image\//.test(img.headers.get("Content-Type") || ""))
           return new Response(img.body, { headers: { "Content-Type": img.headers.get("Content-Type"), "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${7 * 24 * HOURS}` } });
       } catch (err) {}
