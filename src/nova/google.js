@@ -19,6 +19,8 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const CALENDAR = "https://www.googleapis.com/calendar/v3";
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
+// The studio's YouTube channel: its numbers, and videos uploaded after an admin's Approve in Social
+export const YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.readonly", "https://www.googleapis.com/auth/youtube.upload"];
 export const SCOPES = [
   "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/gmail.send",
@@ -34,9 +36,8 @@ export const SCOPES = [
   "https://www.googleapis.com/auth/tasks",
   // Reading the studio's Drive (Agent's search, opening a Google Doc in Notes); nothing is changed
   "https://www.googleapis.com/auth/drive.readonly",
-  // The studio's YouTube channel: its numbers, and videos uploaded after an admin's Approve in Social
-  "https://www.googleapis.com/auth/youtube.readonly",
-  "https://www.googleapis.com/auth/youtube.upload",
+  // (YouTube is NOT asked for here: Google refuses Drive and YouTube permission in one sign-in,
+  // "scopes that cannot be requested together". YouTube gets a sign-in of its own: YOUTUBE_SCOPES.)
   "openid",
   "email",
 ];
