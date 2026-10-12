@@ -27,7 +27,7 @@
 // at :50, backups at about 3am (UK).
 
 import { connectedAccount, disconnect, googleReady, grantedScopes, offline, FEATURE_SCOPES } from "../nova/google.js";
-import { clientProblem, googleClient, removeClient, saveClient } from "../nova/google-keys.js";
+import { clientProblem, googleClient, keyProblemWithGoogle, removeClient, saveClient } from "../nova/google-keys.js";
 import { publicUrl } from "../nova/booking.js";
 import { OPTIONS, partOn, readOptions, readSetting, readStatus, runPart, setOptions } from "./common.js";
 import { busyBetween, syncCalendar } from "./calendar.js";
@@ -178,7 +178,7 @@ export async function handleGoogleForStaff(request, env, me, route) {
   if (route === "/google/key") {
     const id = String(body.clientId || "").trim();
     const secret = String(body.clientSecret || "").trim();
-    const problem = clientProblem(id, secret);
+    const problem = clientProblem(id, secret) || (await keyProblemWithGoogle(id, secret, `${new URL(request.url).origin}/admin/google/callback`, env));
     if (problem) return json({ error: problem }, 400);
     await saveClient(env, id, secret);
     return json({ ok: true, message: "Saved ✓ Now press Connect Google." });

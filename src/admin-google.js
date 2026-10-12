@@ -8,7 +8,7 @@
 // way to sign in: Portal is the one sign-in.
 
 import { escapeHtml } from "./referrals.js";
-import { clientProblem, googleClient, removeClient, saveClient } from "./nova/google-keys.js";
+import { clientProblem, googleClient, keyProblemWithGoogle, removeClient, saveClient } from "./nova/google-keys.js";
 import { connectedAccount, googleProblem, offline } from "./nova/google.js";
 
 const e = escapeHtml;
@@ -140,7 +140,8 @@ export async function googleSetupPage(env, url, page) {
 export async function saveGoogleSetup(env, form) {
   const id = String(form.get("client_id") || "").trim();
   const secret = String(form.get("client_secret") || "").trim();
-  const problem = clientProblem(id, secret);
+  // (Google only looks at the ID and secret here, so any address does for the check)
+  const problem = clientProblem(id, secret) || (await keyProblemWithGoogle(id, secret, PC_ORIGIN, env));
   if (problem) return problem;
   await saveClient(env, id, secret);
   return "";

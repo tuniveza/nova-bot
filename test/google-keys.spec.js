@@ -131,3 +131,20 @@ describe("Google's status, for Portal and Notes", () => {
 		expect(JSON.stringify(d)).not.toContain(SECRET);
 	});
 });
+
+describe("the key is checked with Google before it's saved", () => {
+	it("refuses a secret Google says is wrong, and saves one Google accepts", async () => {
+		const { keyProblemWithGoogle } = await import("../src/nova/google-keys.js");
+		const real = globalThis.fetch;
+		try {
+			globalThis.fetch = async () => Response.json({ error: "invalid_client", error_description: "The provided client secret is invalid." }, { status: 401 });
+			expect(await keyProblemWithGoogle("x.apps.googleusercontent.com", "GOCSPX-short", "https://a.test/cb")).toMatch(/doesn't match/);
+			globalThis.fetch = async () => Response.json({ error: "invalid_grant", error_description: "Malformed auth code." }, { status: 400 });
+			expect(await keyProblemWithGoogle("x.apps.googleusercontent.com", "GOCSPX-right", "https://a.test/cb")).toBe("");
+			globalThis.fetch = async () => { throw new Error("offline"); };
+			expect(await keyProblemWithGoogle("x.apps.googleusercontent.com", "GOCSPX-any", "https://a.test/cb")).toBe("");
+		} finally {
+			globalThis.fetch = real;
+		}
+	});
+});

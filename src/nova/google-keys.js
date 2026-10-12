@@ -82,6 +82,32 @@ export function clientProblem(id, secret) {
   return "";
 }
 
+// Ask Google whether this ID and secret belong together, before saving them: a pretend sign-in
+// code is sent, and Google answers "invalid_client" when the secret is wrong (or a character went
+// missing when it was copied) and "invalid_grant" when the pair is right. If Google can't be
+// asked just now, the key is saved anyway (Connect Google will say).
+export async function keyProblemWithGoogle(id, secret, redirectUri, env = {}) {
+  if (env.GOOGLE_KEY_CHECK === "off") return "";
+  let data;
+  try {
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: id, client_secret: secret, code: "nova-key-check", grant_type: "authorization_code", redirect_uri: redirectUri }),
+      signal: AbortSignal.timeout(5000),
+    });
+    data = await res.json();
+  } catch {
+    return "";
+  }
+  if (data && data.error === "invalid_client") {
+    return /secret/i.test(String(data.error_description || ""))
+      ? "Google says that Client secret doesn't match this Client ID. Copy it again with Google's copy button (⧉) — it's 35 characters and starts with GOCSPX-."
+      : "Google doesn't know that Client ID. Copy it again from Google Cloud → Clients → Nova Agent.";
+  }
+  return "";
+}
+
 export async function saveClient(env, id, secret) {
   await env.DB.batch([write(env, ID_KEY, id), write(env, SECRET_KEY, await seal(env, secret))]);
 }
