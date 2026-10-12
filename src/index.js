@@ -68,6 +68,7 @@ import { sendCalendarReminders } from "./calendar/reminders.js";
 import { syncClientsOnSchedule } from "./clients.js";
 import { campaignsOnSchedule } from "./campaigns.js";
 import { handleJoin } from "./fans.js";
+import { handleNoThanks } from "./outreach.js";
 
 // ===== THINGS YOU CAN EDIT =====
 
@@ -792,6 +793,8 @@ export default {
     if (pathname === "/enquiry/stop" && (request.method === "GET" || request.method === "POST")) return handleStop(request, env);
     // Fans sign up for the studio's news here, and confirm by email (src/fans.js)
     if (pathname === "/join" || pathname === "/join/confirm") return handleJoin(request, env, ctx, pathname);
+    // "Don't email me again", from the link at the bottom of a one-to-one email (src/outreach.js)
+    if (pathname === "/no-thanks") return handleNoThanks(request, env);
 
     const origin = request.headers.get("Origin") || "";
     // In the sandbox, any page on this computer (localhost) may use it too

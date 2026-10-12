@@ -65,6 +65,17 @@
 //   POST /app/api/campaigns/:id/approve {} -> { campaign } approves it, then Resend sends it (or schedules it)
 //   POST /app/api/campaigns/:id/reject  { note? }
 //   POST /app/api/campaigns/test-send   { id } -> emails it once to the admin who pressed it, marked [TEST]
+//   GET  /app/api/outreach?status=…     -> { outreach, canDecide, ready, optouts, sentToday, perDay }
+//                                       one-to-one emails (see src/outreach.js)
+//   GET  /app/api/outreach/:id          -> { outreach, log, email } (email: the text as it goes, with its footer)
+//   POST /app/api/outreach              { kind, toEmail, toName?, organisation?, clientId?, aboutBooking?, subject, body }
+//                                       -> { outreach } waiting for approval (refused if they can't be emailed)
+//   POST /app/api/outreach/:id/edit     { …the same, any of them } -> { outreach } back to waiting
+//   POST /app/api/outreach/optouts      { email } -> someone replied "no thanks": never emailed this way again
+//   (an admin in a browser only:)
+//   POST /app/api/outreach/:id/approve  {} -> { outreach } approves it, then Resend sends it
+//   POST /app/api/outreach/:id/reject   { note? }
+//   POST /app/api/outreach/test-send    { id } -> emails it once to the admin who pressed it, marked [TEST]
 //     (Approve, reject and test-send need an admin with Portal open in a browser, the cookie: never an
 //      app's token, other staff, or Nova Agent's key.)
 
@@ -82,6 +93,7 @@ import { publicUrl } from "./nova/booking.js";
 import { listBookings } from "./booking-calendar.js";
 import { handleClientsForStaff } from "./clients.js";
 import { handleCampaignsForStaff } from "./campaigns.js";
+import { handleOutreachForStaff } from "./outreach.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
 import { usesNova } from "./mode.js";
 import { handleCalendarItems } from "./calendar/items.js";
@@ -127,6 +139,11 @@ export async function handleApp(request, env, ctx, answer) {
   // Email campaigns (src/campaigns.js): approve, reject and test-send are for an admin in a browser
   if (route === "/campaigns" || route.startsWith("/campaigns/")) {
     const answer = await handleCampaignsForStaff(request, env, me, route);
+    if (answer) return answer;
+  }
+  // One-to-one emails (src/outreach.js): approve, reject and test-send are for an admin in a browser
+  if (route === "/outreach" || route.startsWith("/outreach/")) {
+    const answer = await handleOutreachForStaff(request, env, me, route);
     if (answer) return answer;
   }
   if (route === "/services" && request.method === "GET") return json({ services: await servicesStatus(env), admin: me.role === "admin" });

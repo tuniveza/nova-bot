@@ -56,6 +56,13 @@
 //   POST /nova-agent/campaigns/:id    {}         -> { campaign, log }
 //                            (the AI can only write and edit: nothing here approves, sends, schedules or
 //                            test-sends; see src/campaigns.js)
+//   POST /nova-agent/outreach/draft   { kind, toEmail, toName?, organisation?, clientId?, aboutBooking?, subject, body }
+//                            -> { outreach } a one-to-one email waiting for an admin's approval in Portal →
+//                            Campaigns (refused, with the reason, if that person can't be emailed)
+//   POST /nova-agent/outreach/:id/edit { …any of those } -> { outreach } back to waiting
+//   POST /nova-agent/outreach         { status? } -> { outreach }
+//   POST /nova-agent/outreach/:id     {}         -> { outreach, log }
+//                            (write and edit only: nothing here approves, sends or test-sends; see src/outreach.js)
 //
 //   POST /nova-agent/bookings-feed    { from, to } -> { appointments: [{ id, start, end, type, name }] } bookings on
 //                            those UK days (max 62) from Acuity's calendar feed, which works on every plan. Times in
@@ -74,6 +81,7 @@ import { acuityFailure, availableTimes, daysBetween, isUkDate, listAppointments,
 import { bookingsChangedAt, listActions, proposeAction } from "./booking-actions.js";
 import { handleClientsForAgent } from "./clients.js";
 import { handleCampaignsForAgent } from "./campaigns.js";
+import { handleOutreachForAgent } from "./outreach.js";
 import { feedTimeToIso, listBookings } from "./booking-calendar.js";
 
 // A job Nova Agent took but never reported on (e.g. it was restarted) is
@@ -155,6 +163,8 @@ export async function handleAgentNova(request, env, pathname) {
   if (pathname === "/nova-agent/bookings-feed") return bookingsFeed(env, body);
   // Email campaigns: read, write and edit (never approve or send: an admin approves in Portal)
   if (pathname === "/nova-agent/campaigns" || pathname.startsWith("/nova-agent/campaigns/")) return handleCampaignsForAgent(env, pathname, body);
+  // One-to-one emails: read, write and edit (never approve or send: an admin approves in Portal)
+  if (pathname === "/nova-agent/outreach" || pathname.startsWith("/nova-agent/outreach/")) return handleOutreachForAgent(env, pathname, body);
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
