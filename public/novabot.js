@@ -256,11 +256,20 @@
 
   // The conversation so far (sent to the Worker each time)
   const history = Array.isArray(saved.history) ? saved.history : [];
+  // Live chat: the last message from the studio already shown, who from the studio has the chat
+  // (null: NovaBot), and when the visitor last wrote (see "SOMEONE FROM THE STUDIO, LIVE")
+  let liveAfter = Number(saved.liveAfter) || 0;
+  let liveStaff = typeof saved.liveStaff === "string" && saved.liveStaff ? saved.liveStaff : null;
+  let lastSent = Number(saved.lastSent) || 0;
 
   function saveChat() {
     const shown = [...list.children]
       .filter((div) => !div.classList.contains("nv-typing") && div.dataset.text)
-      .map((div) => ({ text: div.dataset.text, who: div.classList.contains("nv-user") ? "user" : "bot" }));
+      .map((div) => ({
+        text: div.dataset.text,
+        who: div.classList.contains("nv-user") ? "user" : div.classList.contains("nv-staff") ? "staff" : div.classList.contains("nv-note") ? "note" : "bot",
+        ...(div.dataset.name ? { name: div.dataset.name } : {}),
+      }));
     try {
       sessionStorage.setItem(
         "nv-chat",
@@ -269,6 +278,10 @@
           history: history.slice(-40), // the Worker reads the last 40 too
           shown: shown.slice(-60),
           closed: panel.classList.contains("nv-closed"),
+          // Someone from the studio (live chat): the last of their messages shown, who has the chat
+          liveAfter,
+          liveStaff,
+          lastSent,
         })
       );
     } catch (err) {}
@@ -1262,14 +1275,22 @@
     input.style.height = input.scrollHeight + 2 + "px";
   }
 
-  // Add a message to the screen. "who" is "user" or "bot".
-  function addMessage(text, who) {
+  // Add a message to the screen. "who" is "user", "bot", "staff" (someone from the studio,
+  // live: `name` is their first name) or "note" ("Sam from the studio has joined the chat.").
+  function addMessage(text, who, name) {
     // A reply arrived while shrunk: make the chat button pulse
-    if (who === "bot" && small) toggle.classList.add("nv-unread");
+    if ((who === "bot" || who === "staff") && small) toggle.classList.add("nv-unread");
     const div = document.createElement("div");
     div.dataset.text = text;
-    div.className = "nv-msg nv-" + who;
+    div.className = "nv-msg nv-" + (who === "staff" ? "bot nv-staff" : who);
     setText(div, text);
+    if (who === "staff") {
+      div.dataset.name = name || "";
+      const from = document.createElement("span");
+      from.className = "nv-from";
+      from.textContent = (name || "Someone") + " · Novacane";
+      div.prepend(from);
+    }
     list.appendChild(div);
     list.scrollTop = list.scrollHeight;
     return div;
@@ -2137,10 +2158,12 @@
     sound.send();
     acted();
     history.push({ role: "user", content: text });
+    lastSent = Date.now();
 
-    // Show "typing…" and stop double-sending
+    // Show "typing…" and stop double-sending (not while someone from the studio has the chat:
+    // their reply comes when they write it)
     send.disabled = true;
-    const typing = addMessage("NovaBot is typing…", "bot");
+    let typing = addMessage(liveStaff ? "Sent to " + liveStaff : "NovaBot is typing…", "bot");
     typing.classList.add("nv-typing");
 
     try {
@@ -2151,7 +2174,12 @@
       });
       const data = await res.json();
 
-      if (data.reply) {
+      if (data.live) {
+        // Someone from the studio has this chat: NovaBot stays quiet, they reply here
+        typing.remove();
+        typing = null;
+        applyLive({ mode: "staff", staff: data.live.staff, messages: [] });
+      } else if (data.reply) {
         const replyText = tidy(data.reply);
         setText(typing, replyText);
         sound.reply();
@@ -2169,12 +2197,80 @@
     }
 
     // Swap "typing…" into a normal reply
-    typing.classList.remove("nv-typing");
+    if (typing) typing.classList.remove("nv-typing");
     saveChat();
     send.disabled = false;
     input.focus();
     list.scrollTop = list.scrollHeight;
+    scheduleLive(1500);
   }
+
+  // ===== SOMEONE FROM THE STUDIO, LIVE (the Worker's src/livechat.js) =====
+  // When someone at Novacane takes this chat over in Portal, their messages show here with their
+  // first name, and NovaBot pauses until they hand it back. The chat asks for them every few
+  // seconds while it's open and this page is in front (a quick look; nothing is held open), less
+  // often when it's tucked away or quiet, and not at all before the visitor has said anything.
+  let liveTimer = 0;
+  let liveBusy = false;
+  const subtitle = panel.querySelector(".nv-subtitle");
+  const usualSubtitle = subtitle ? subtitle.textContent : "";
+  function liveGap() {
+    if (document.hidden || !history.some((m) => m.role === "user")) return 0;
+    const open = !panel.classList.contains("nv-closed");
+    if (liveStaff) return open ? 3000 : 8000;
+    if (Date.now() - lastSent < 15 * 60000) return open ? 6000 : 15000;
+    return open ? 30000 : 0;
+  }
+  function scheduleLive(ms) {
+    clearTimeout(liveTimer);
+    const gap = ms === undefined ? liveGap() : ms;
+    if (gap) liveTimer = setTimeout(checkLive, gap);
+  }
+  async function checkLive() {
+    if (liveBusy) return;
+    liveBusy = true;
+    try {
+      const res = await fetch(WORKER_URL + "/chat/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId, after: liveAfter }) });
+      if (res.ok) applyLive(await res.json());
+    } catch (err) {}
+    liveBusy = false;
+    scheduleLive();
+  }
+  function applyLive(data) {
+    let changed = false;
+    for (const m of (data && data.messages) || []) {
+      if (!(m.id > liveAfter)) continue;
+      liveAfter = m.id;
+      changed = true;
+      if (m.role === "staff") {
+        addMessage(m.content, "staff", m.name);
+        // (NovaBot reads it too, once it has the chat back)
+        history.push({ role: "assistant", content: "(" + (m.name || "Someone") + " from the studio) " + m.content });
+        sound.reply();
+      } else if (m.role === "note") addMessage(m.content, "note");
+    }
+    const now = data && data.mode === "staff" ? data.staff || "Someone" : null;
+    if (now !== liveStaff) {
+      liveStaff = now;
+      changed = true;
+    }
+    showLive();
+    if (changed) saveChat();
+  }
+  function showLive() {
+    if (subtitle) subtitle.textContent = liveStaff ? liveStaff + " from the studio is here" : usualSubtitle;
+    panel.classList.toggle("nv-live", Boolean(liveStaff));
+  }
+  document.addEventListener("visibilitychange", () => (document.hidden ? clearTimeout(liveTimer) : scheduleLive(500)));
+  // Opened or closed: ask sooner (or less often)
+  let liveOpen = !panel.classList.contains("nv-closed");
+  new MutationObserver(() => {
+    const open = !panel.classList.contains("nv-closed");
+    if (open !== liveOpen) {
+      liveOpen = open;
+      scheduleLive(open ? 400 : undefined);
+    }
+  }).observe(panel, { attributes: true, attributeFilter: ["class"] });
 
   // ===== NovaBot's voice (text to speech) =====
   // 1. If the visitor's device has a good British female voice (most phones,
@@ -2487,11 +2583,13 @@
   // Carry on the chat from the last page, or greet the visitor (the greeting
   // is shown on screen only, not sent to the Worker)
   if (Array.isArray(saved.shown) && saved.shown.length) {
-    saved.shown.forEach((message) => addMessage(message.text, message.who === "user" ? "user" : "bot"));
+    saved.shown.forEach((message) => addMessage(message.text, ["user", "staff", "note"].includes(message.who) ? message.who : "bot", message.name));
   } else {
     addMessage(pick(GREETINGS), "bot");
     saveChat();
   }
+  showLive();
+  scheduleLive(1200);
 
   // The chat window starts open, except on phones (where it would fill the
   // screen) or when the <script> tag says data-closed

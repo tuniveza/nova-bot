@@ -16,6 +16,7 @@
 // The website's NovaBot reads its own customer's slice in-process (see readForWebsite).
 
 import { approve, learn, PATHS } from "./extract.js";
+import { speakerOf } from "../livechat.js";
 import { applyReport, checkForJunk, listRemoved, restoreRemoved } from "./cleanup.js";
 import { allowed, cleanPath, context, deleteFile, getFile, listFiles, listPending, putFile, restorePending, SCOPES, takePending } from "./store.js";
 
@@ -220,7 +221,7 @@ export async function learnFromWebsiteChats(env) {
     .catch(() => ({ results: [] }));
   for (const chat of results) {
     const from = await env.DB.prepare("SELECT last_message_id FROM memory_progress WHERE chat_id = ?").bind(chat.chat_id).first("last_message_id");
-    const { results: msgs } = await env.DB.prepare("SELECT id, role, content FROM chat_messages WHERE chat_id = ? AND id > ? ORDER BY id LIMIT 40")
+    const { results: msgs } = await env.DB.prepare("SELECT id, role, content, sender FROM chat_messages WHERE chat_id = ? AND id > ? ORDER BY id LIMIT 40")
       .bind(chat.chat_id, from || 0)
       .all();
     if (!msgs.length) continue;
@@ -229,7 +230,8 @@ export async function learnFromWebsiteChats(env) {
     await env.DB.prepare("INSERT INTO memory_progress (chat_id, last_message_id, updated_at) VALUES (?, ?, ?) ON CONFLICT (chat_id) DO UPDATE SET last_message_id = excluded.last_message_id, updated_at = excluded.updated_at")
       .bind(chat.chat_id, last, Date.now())
       .run();
-    const transcript = msgs.map((m) => `${m.role === "user" ? "Customer" : "NovaBot"}: ${m.content}`).join("\n");
+    // (a person from the studio says so; "… has joined the chat" notes are left out)
+    const transcript = msgs.filter((m) => speakerOf(m)).map((m) => `${speakerOf(m)}: ${m.content}`).join("\n");
     await learn(env, {
       transcript,
       scope: "customer",

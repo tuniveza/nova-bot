@@ -280,6 +280,8 @@ export async function logChat(env, { chatId, page, question, answer }) {
     if (Math.random() < 0.05) {
       const cutoff = new Date(Date.now() - KEEP_CHATS_DAYS * 24 * 60 * 60 * 1000).toISOString();
       await env.DB.prepare("DELETE FROM chat_messages WHERE created_at < ?").bind(cutoff).run();
+      // (and who had which chat: src/livechat.js)
+      await env.DB.prepare("DELETE FROM chat_live WHERE updated_at < ?").bind(cutoff).run().catch(() => {});
     }
   } catch (err) {
     console.log("Chat log failed:", err);

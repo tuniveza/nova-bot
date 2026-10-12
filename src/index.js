@@ -24,6 +24,7 @@ import { handleAdmin } from "./admin.js";
 import { handleStop } from "./enquiry-replies.js";
 import { handleApp } from "./app-page.js";
 import { ENQUIRY_TOOL, logChat, sendEnquiry } from "./enquiries.js";
+import { asksForPerson, staffMode, visitorAskedForPerson, visitorPoll, visitorWroteToStaff } from "./livechat.js";
 import {
   ACUITY_OWNER,
   AVAILABILITY_TOOL,
@@ -851,7 +852,9 @@ export default {
     const isVoice = pathname === "/speak" || pathname === "/listen";
     // The booking card asks for free times each time the day or session changes, so it shares the bigger voice limit
     const isForm = pathname.startsWith("/booking-form/");
-    if (await tooMany(isVoice || isForm ? env.VOICE_LIMIT : env.CHAT_LIMIT, ip)) {
+    // The chat asks every few seconds for messages from the studio (src/livechat.js): the roomy limit
+    const isLive = pathname === "/chat/live";
+    if (await tooMany(isLive ? env.CLUB_LIMIT : isVoice || isForm ? env.VOICE_LIMIT : env.CHAT_LIMIT, ip)) {
       return reply({ error: "Too many requests", message: SLOW_DOWN }, 429, cors);
     }
 
@@ -871,6 +874,15 @@ export default {
         ? await novaForm.handleBookingForm(request, env, pathname, { chatId: null, ip })
         : await handleBookingForm(request, env, pathname, { chatId: null, ip });
       return reply(data, status, cors);
+    }
+
+    // Messages from someone at the studio who has taken this chat over (src/livechat.js)
+    if (isLive) {
+      let ask = {};
+      try {
+        ask = await request.json();
+      } catch {}
+      return reply(await visitorPoll(env, { chatId: ask.chatId, after: Number(ask.after) || 0 }), 200, cors);
     }
 
     // Read the chat from the website
@@ -903,10 +915,22 @@ export default {
     const chatId = /^[A-Za-z0-9-]{8,64}$/.test(body.chatId || "") ? body.chatId : null;
     const page = typeof body.page === "string" ? body.page.slice(0, 200) : null;
     const visitor = { chatId, page, ip };
+    const said = messages[messages.length - 1].role === "user" ? messages[messages.length - 1].content : "";
+
+    // Someone from the studio has this chat (Portal → Conversations): NovaBot stays quiet, the
+    // message is kept for them, and the chat shows their replies as they come (src/livechat.js)
+    const live = chatId ? await staffMode(env, chatId) : null;
+    if (live) {
+      if (said) ctx.waitUntil(visitorWroteToStaff(env, { chatId, page, text: said, live }).catch((err) => console.log("Live chat: couldn't keep a message:", err?.name)));
+      const name = live.staff_name || "Someone";
+      // (`message` is for an older copy of the chat that doesn't know about live replies)
+      return reply({ reply: null, live: { mode: "staff", staff: name }, message: `${name} from the studio will reply here.` }, 200, cors);
+    }
 
     const { text, choice, form } = await answer(messages, env, visitor, (work) => ctx.waitUntil(work));
-    if (messages[messages.length - 1].role === "user") {
-      ctx.waitUntil(logChat(env, { chatId, page, question: messages[messages.length - 1].content, answer: text }));
+    if (said) {
+      ctx.waitUntil(logChat(env, { chatId, page, question: said, answer: text }));
+      if (chatId && asksForPerson(said)) ctx.waitUntil(visitorAskedForPerson(env, { chatId }));
     }
     return reply({ reply: text, ...(choice ? { choice } : {}), ...(form ? { form } : {}) }, 200, cors);
   },

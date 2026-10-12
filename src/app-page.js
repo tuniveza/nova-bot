@@ -31,7 +31,8 @@
 //      See src/enquiry-replies.js.)
 //   GET  /app/api/sessions              the session types, for booking links
 //   POST /app/api/booking-link          { enquiryId, typeId } -> link with their details
-//   GET  /app/api/conversations         recent customer chats (?chat=ID for one)
+//   GET  /app/api/conversations         recent customer chats (?chat=ID for one; &after=N: only newer messages)
+//   POST /app/api/conversations/live    { chatId, action: takeover | handback | reply, text } (src/livechat.js)
 //   POST /app/api/chat                  { messages } -> NovaBot's reply (staff chat)
 //   GET  /app/api/push/key              the public key phones need to sign up for notifications
 //   POST /app/api/push/subscribe        { subscription } -> this phone gets notifications
@@ -129,6 +130,7 @@ import { listBookings } from "./booking-calendar.js";
 import { handleClientsForStaff } from "./clients.js";
 import { handleCampaignsForStaff } from "./campaigns.js";
 import { handleOutreachForStaff } from "./outreach.js";
+import { handleLiveForStaff, staffView } from "./livechat.js";
 import { STATES as INBOX_STATES, handleInboxForStaff, labelsInUse, stateCounts, team } from "./inbox.js";
 import { handleSocialForStaff } from "./social.js";
 import { handleMoneyForStaff } from "./money.js";
@@ -216,6 +218,8 @@ export async function handleApp(request, env, ctx, answer) {
   if (route === "/sessions") return listSessions(env);
   if (route === "/booking-link" && request.method === "POST") return makeLink(request, env);
   if (route === "/conversations") return conversations(env, url);
+  // Live chat (src/livechat.js): take a website chat over, reply to the visitor, hand it back
+  if (route === "/conversations/live" && request.method === "POST") return handleLiveForStaff(request, env, me);
   if (route === "/chat" && request.method === "POST") return staffChat(request, env, ctx, answer);
   if (route === "/push/key") return json({ publicKey: env.VAPID_PUBLIC_KEY || null });
   if (route === "/push/subscribe" && request.method === "POST") return subscribe(request, env, me);
@@ -400,18 +404,22 @@ async function makeLink(request, env) {
 async function conversations(env, url) {
   const chatId = url.searchParams.get("chat");
   if (chatId) {
-    const [{ results }, ticket] = await Promise.all([
-      env.DB.prepare("SELECT role, content, page, created_at FROM chat_messages WHERE chat_id = ? ORDER BY id").bind(chatId).all(),
+    // (?after=N: only the messages after #N, for Portal's quick check while a chat is open)
+    const after = Number(url.searchParams.get("after")) || 0;
+    const [view, ticket] = await Promise.all([
+      staffView(env, chatId, after),
       env.DB.prepare("SELECT t.state, t.assigned_to, s.display_name AS assigned_name FROM chat_tickets t LEFT JOIN staff s ON s.id = t.assigned_to WHERE t.chat_id = ?").bind(chatId).first(),
     ]);
-    return json({ messages: results, ticket: ticket || null });
+    return json({ messages: view.messages, live: view.live, ticket: ticket || null });
   }
   const { results } = await env.DB.prepare(
     `SELECT chat_id, MIN(created_at) AS started, MAX(created_at) AS last, COUNT(*) / 2 AS messages,
        (SELECT content FROM chat_messages f WHERE f.chat_id = m.chat_id AND f.role = 'user' ORDER BY f.id LIMIT 1) AS first_question,
        (SELECT COUNT(*) FROM enquiries q WHERE q.chat_id = m.chat_id) AS enquiries,
        (SELECT t.state FROM chat_tickets t WHERE t.chat_id = m.chat_id) AS ticket,
-       (SELECT s.display_name FROM chat_tickets t JOIN staff s ON s.id = t.assigned_to WHERE t.chat_id = m.chat_id) AS assigned_name
+       (SELECT s.display_name FROM chat_tickets t JOIN staff s ON s.id = t.assigned_to WHERE t.chat_id = m.chat_id) AS assigned_name,
+       (SELECT l.mode FROM chat_live l WHERE l.chat_id = m.chat_id) AS live,
+       (SELECT l.staff_name FROM chat_live l WHERE l.chat_id = m.chat_id AND l.mode = 'staff') AS live_name
      FROM chat_messages m GROUP BY chat_id ORDER BY last DESC LIMIT 200`
   ).all();
   return json({ conversations: results, needsPerson: results.filter((c) => c.ticket === "needs-person").length });

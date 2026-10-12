@@ -387,7 +387,7 @@ async function conversationsPage(env, url) {
     const lines = results
       .map(
         (m) => `<div class="line ${m.role === "user" ? "visitor" : "bot"}">
-          <span class="dim small">${m.role === "user" ? "Visitor" : "NovaBot"} · ${when(m.created_at)}${m.page ? ` · ${e(m.page)}` : ""}</span>
+          <span class="dim small">${m.role === "user" ? "Visitor" : m.role === "staff" ? `${e(m.sender || "Someone")} (studio)` : m.role === "note" ? "Note" : "NovaBot"} · ${when(m.created_at)}${m.page ? ` · ${e(m.page)}` : ""}</span>
           <p>${e(m.content)}</p>
         </div>`
       )
