@@ -14,11 +14,11 @@
 
 import { google } from "../nova/google.js";
 import { cleanEmail, phoneKey } from "../clients.js";
-import { getLink, linkByGoogle, putLink, dropLink, readSetting, sha, writeSetting } from "./common.js";
+import { flush, forgetLink, keepLink, later, linkFor, linkOf, links, low, prep, readSetting, sha, spendDb, writeSetting } from "./common.js";
 
 const PEOPLE = "https://people.googleapis.com/v1";
 const GROUP_KEY = "google_contacts_group";
-const SYNC_KEY = "google_contacts_sync";
+const PULL_AT_KEY = "google_contacts_pull_at";
 const PUSHED_KEY = "google_contacts_pushed_at";
 const FIELDS = "names,emailAddresses,phoneNumbers,memberships,metadata";
 
@@ -65,123 +65,151 @@ async function labelGroup(env, budget) {
   return resourceName;
 }
 
+// ===== WHAT NOVA HAS =====
+
+// Every client, read once a run (a studio has hundreds at most): by id, by email, by phone
+async function clientMaps(env, budget) {
+  if (budget.clients) return budget.clients;
+  spendDb(budget);
+  const { results } = await env.DB.prepare("SELECT id, name, email, phone, phone_key, updated_at FROM clients").all();
+  const byId = new Map();
+  const byEmail = new Map();
+  const byPhone = new Map();
+  for (const c of results) {
+    byId.set(String(c.id), c);
+    if (c.email) byEmail.set(c.email, c);
+    if (c.phone_key) byPhone.set(c.phone_key, c);
+  }
+  budget.clients = { byId, byEmail, byPhone, all: results };
+  return budget.clients;
+}
+
 // ===== GOOGLE → NOVA =====
+//
+// Only the studio's contacts are read: those with the label, and those already linked. Google is
+// asked for the label's members (one call), then for those people in batches of 200 (people:
+// batchGet), and only the ones whose etag changed are looked at. (Reading the whole Google account
+// page by page went over the free plan's limits on a big account.)
+
+const BATCH = 200;
 
 export async function pullContacts(env, budget, group) {
-  let token = await readSetting(env, SYNC_KEY);
-  let pageToken = "";
+  prep(budget);
+  const L = await links(env, budget, "contact");
+  budget.left--;
+  const g = await google(env, "GET", `${PEOPLE}/${group}?maxMembers=5000`);
+  const wanted = [...new Set([...(g.memberResourceNames || []), ...L.byGoogle.keys()])].sort();
+  // Where the last run stopped (big lists take a few runs)
+  const from = Math.max(0, Number(await readSetting(env, PULL_AT_KEY)) || 0);
+  let at = from < wanted.length ? from : 0;
   let changed = 0;
-  // Every contact already linked, read once (a big Google account has thousands of contacts, and
-  // asking the database about each one went over the worker's time)
-  const { results } = await env.DB.prepare("SELECT * FROM google_links WHERE kind = 'contact'").all();
-  const links = new Map(results.map((l) => [l.google_id, l]));
-  for (;;) {
-    if (budget.left <= 2) break;
-    const params = new URLSearchParams({ personFields: FIELDS, pageSize: "200", requestSyncToken: "true" });
-    if (token) params.set("syncToken", token);
-    if (pageToken) params.set("pageToken", pageToken);
+  while (at < wanted.length) {
+    if (low(budget, 3)) break;
+    const names = wanted.slice(at, at + BATCH);
     budget.left--;
-    let data;
-    try {
-      data = await google(env, "GET", `${PEOPLE}/people/me/connections?${params}`);
-    } catch (err) {
-      // The sync token ran out (they last a week): read everything again
-      if ((err.status === 400 || err.status === 410) && token) {
-        token = "";
-        await writeSetting(env, SYNC_KEY, "").run();
+    const params = new URLSearchParams({ personFields: FIELDS });
+    for (const n of names) params.append("resourceNames", n);
+    const data = await google(env, "GET", `${PEOPLE}/people:batchGet?${params}`);
+    for (const r of data.responses || []) {
+      const name = r.requestedResourceName || r.person?.resourceName;
+      const linked = L.byGoogle.get(String(name)) || null;
+      // Deleted in Google: just unlinked (the client, their sessions and money stay)
+      if (!r.person || r.status?.code === 5 || r.person.metadata?.deleted) {
+        if (linked) forgetLink(env, budget, "contact", linked.nova_id);
         continue;
       }
-      throw err;
+      if (linked && linked.extra === r.person.etag) continue;
+      changed += await takePerson(env, r.person, group, budget);
     }
-    for (const p of data.connections || []) {
-      // Not one of the studio's (not linked, not in the "Novacane clients" label): nothing to do
-      const linked = links.get(p.resourceName) || null;
-      if (!linked && !p.metadata?.deleted && !(p.memberships || []).some((m) => m.contactGroupMembership?.contactGroupResourceName === group)) continue;
-      changed += await takePerson(env, p, group, linked);
-    }
-    if (data.nextPageToken) {
-      pageToken = data.nextPageToken;
-      continue;
-    }
-    if (data.nextSyncToken) await writeSetting(env, SYNC_KEY, data.nextSyncToken).run();
-    break;
+    at += names.length;
   }
-  return changed;
+  const done = at >= wanted.length;
+  later(budget, writeSetting(env, PULL_AT_KEY, done ? 0 : at));
+  return { changed, more: !done };
 }
 
 // One contact from Google. Returns 1 if a client changed or was added.
-export async function takePerson(env, p, group, known) {
-  const link = known === undefined ? await linkByGoogle(env, "contact", p.resourceName) : known;
-  if (p.metadata?.deleted) {
-    if (link) await dropLink(env, "contact", link.nova_id).run();
-    return 0;
-  }
+export async function takePerson(env, p, group, budget = prep({ left: 0 })) {
+  const link = await linkFor(env, budget, "contact", p.resourceName);
   const inGroup = (p.memberships || []).some((m) => m.contactGroupMembership?.contactGroupResourceName === group);
   if (!link && !inGroup) return 0;
   const f = personFields(p);
   if (!f.name && !f.email) return 0;
   const hash = await contactHash(f);
   const now = nowIso();
+  const clients = await clientMaps(env, budget);
   if (link) {
     if (link.hash === hash) {
-      if (link.extra !== p.etag) await putLink(env, "contact", link.nova_id, p.resourceName, { extra: p.etag, hash }).run();
+      if (link.extra !== p.etag) keepLink(env, budget, "contact", link.nova_id, p.resourceName, { extra: p.etag, hash });
       return 0;
     }
-    const client = await env.DB.prepare("SELECT * FROM clients WHERE id = ?").bind(Number(link.nova_id)).first();
+    const client = clients.byId.get(String(link.nova_id));
     if (!client) {
-      await dropLink(env, "contact", link.nova_id).run();
+      forgetLink(env, budget, "contact", link.nova_id);
       return 0;
     }
     // Nova changed it later than Google: Nova's goes out (pushContacts), not this
     const googleAt = (p.metadata?.sources || []).map((s) => s.updateTime).filter(Boolean).sort().pop() || now;
     if (client.updated_at > googleAt) return 0;
-    try {
-      await env.DB.prepare("UPDATE clients SET name = ?, email = ?, phone = ?, phone_key = ?, updated_at = ?, updated_by = 'google' WHERE id = ?")
-        .bind(f.name || client.name, f.email ?? client.email, f.phone ?? client.phone, phoneKey(f.phone ?? client.phone), now, client.id)
-        .run();
-    } catch {
-      // That email is another client's already: leave both as they are
-      return 0;
-    }
-    await putLink(env, "contact", client.id, p.resourceName, { extra: p.etag, hash }).run();
+    // That email is another client's already: leave both as they are
+    const email = f.email ?? client.email;
+    const other = email ? clients.byEmail.get(email) : null;
+    if (other && String(other.id) !== String(client.id)) return 0;
+    const phone = f.phone ?? client.phone;
+    later(
+      budget,
+      env.DB.prepare("UPDATE clients SET name = ?, email = ?, phone = ?, phone_key = ?, updated_at = ?, updated_by = 'google' WHERE id = ?").bind(f.name || client.name, email, phone, phoneKey(phone), now, client.id)
+    );
+    Object.assign(client, { name: f.name || client.name, email, phone, phone_key: phoneKey(phone), updated_at: now });
+    keepLink(env, budget, "contact", client.id, p.resourceName, { extra: p.etag, hash });
     return 1;
   }
   // Labelled in Google, not linked yet: the same person in Nova (email, then phone), or a new client
   const key = phoneKey(f.phone);
-  let client = f.email ? await env.DB.prepare("SELECT * FROM clients WHERE email = ?").bind(f.email).first() : null;
-  if (!client && key) client = await env.DB.prepare("SELECT * FROM clients WHERE phone_key = ?").bind(key).first();
+  const client = (f.email && clients.byEmail.get(f.email)) || (key && clients.byPhone.get(key)) || null;
   if (client) {
-    const taken = await getLink(env, "contact", client.id);
-    if (taken) return 0; // already linked to another contact: leave it
-    await putLink(env, "contact", client.id, p.resourceName, { extra: p.etag, hash: await contactHash(client) }).run();
+    if (await linkOf(env, budget, "contact", client.id)) return 0; // already linked to another contact: leave it
+    keepLink(env, budget, "contact", client.id, p.resourceName, { extra: p.etag, hash: await contactHash(client) });
     return 0;
   }
+  spendDb(budget);
   const row = await env.DB.prepare(
     "INSERT INTO clients (name, email, phone, phone_key, source, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, 'import', ?, ?, 'google') RETURNING id"
   )
     .bind(f.name || f.email, f.email, f.phone, key, now, now)
     .first();
-  await putLink(env, "contact", row.id, p.resourceName, { extra: p.etag, hash }).run();
+  const made = { id: row.id, name: f.name || f.email, email: f.email, phone: f.phone, phone_key: key, updated_at: now };
+  clients.byId.set(String(row.id), made);
+  if (f.email) clients.byEmail.set(f.email, made);
+  if (key) clients.byPhone.set(key, made);
+  keepLink(env, budget, "contact", row.id, p.resourceName, { extra: p.etag, hash });
   return 1;
 }
 
 // ===== NOVA → GOOGLE =====
 
+// Clients new to Google, or changed since: a few each run (each new one is two calls to Google)
+const PUSH_PER_RUN = 15;
+
 export async function pushContacts(env, budget, group) {
+  prep(budget);
+  const L = await links(env, budget, "contact");
+  const clients = await clientMaps(env, budget);
   const since = (await readSetting(env, PUSHED_KEY)) || "";
-  // Changed since last time, or never sent; oldest change first
-  const { results } = await env.DB.prepare(
-    `SELECT c.* FROM clients c LEFT JOIN google_links l ON l.kind = 'contact' AND l.nova_id = CAST(c.id AS TEXT)
-     WHERE l.nova_id IS NULL OR c.updated_at > ? ORDER BY c.updated_at LIMIT 60`
-  )
-    .bind(since)
-    .all();
+  // Not in Google yet, or changed since last time; oldest change first
+  const todo = clients.all
+    .filter((c) => !L.byNova.has(String(c.id)) || c.updated_at > since)
+    .sort((a, b) => String(a.updated_at).localeCompare(String(b.updated_at)));
   let done = 0;
   let reached = since;
-  for (const c of results) {
-    if (budget.left <= 3) break;
+  let stopped = false;
+  for (const c of todo) {
+    if (done >= PUSH_PER_RUN || low(budget, 3)) {
+      stopped = true;
+      break;
+    }
     const hash = await contactHash(c);
-    const link = await getLink(env, "contact", c.id);
+    const link = L.byNova.get(String(c.id)) || null;
     if (link && link.hash === hash) {
       if (c.updated_at > reached) reached = c.updated_at;
       continue;
@@ -192,12 +220,12 @@ export async function pushContacts(env, budget, group) {
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           const updated = await google(env, "PATCH", `${PEOPLE}/${link.google_id}:updateContact?updatePersonFields=names,emailAddresses,phoneNumbers`, { ...personBody(c), etag });
-          await putLink(env, "contact", c.id, link.google_id, { extra: updated.etag, hash }).run();
+          keepLink(env, budget, "contact", c.id, link.google_id, { extra: updated.etag, hash });
           break;
         } catch (err) {
           if (err.status === 404) {
             // Deleted in Google: made again with the label next time
-            await dropLink(env, "contact", c.id).run();
+            forgetLink(env, budget, "contact", c.id);
             break;
           }
           if (err.status !== 400 || attempt) throw err;
@@ -214,33 +242,48 @@ export async function pushContacts(env, budget, group) {
         const found = await google(env, "GET", `${PEOPLE}/people:searchContacts?${new URLSearchParams({ query: c.email, readMask: "emailAddresses,memberships,names" })}`);
         existing = (found.results || []).map((r) => r.person).find((p) => (p.emailAddresses || []).some((e) => cleanEmail(e.value) === c.email));
       }
+      if (existing && L.byGoogle.has(existing.resourceName)) existing = null; // linked to another client: make a new one
       if (existing) {
         if (!(existing.memberships || []).some((m) => m.contactGroupMembership?.contactGroupResourceName === group)) {
           budget.left--;
           await google(env, "POST", `${PEOPLE}/${group}/members:modify`, { resourceNamesToAdd: [existing.resourceName] });
         }
-        await putLink(env, "contact", c.id, existing.resourceName, { extra: existing.etag, hash: await contactHash(personFields(existing)) }).run();
+        keepLink(env, budget, "contact", c.id, existing.resourceName, { extra: existing.etag, hash: await contactHash(personFields(existing)) });
       } else {
         budget.left--;
         const made = await google(env, "POST", `${PEOPLE}/people:createContact?personFields=metadata`, personBody(c, group));
-        await putLink(env, "contact", c.id, made.resourceName, { extra: made.etag, hash }).run();
+        keepLink(env, budget, "contact", c.id, made.resourceName, { extra: made.etag, hash });
       }
     }
     done++;
     if (c.updated_at > reached) reached = c.updated_at;
   }
-  if (reached !== since) await writeSetting(env, PUSHED_KEY, reached).run();
-  return done;
+  // (only moves on past changes that were all sent; new clients are found by "not linked yet")
+  if (reached !== since && !stopped) later(budget, writeSetting(env, PUSHED_KEY, reached));
+  return { done, more: stopped };
 }
 
 // ===== ONE RUN =====
 
 export async function syncContacts(env, budget) {
-  const group = await labelGroup(env, budget);
-  const pulled = await pullContacts(env, budget, group);
-  const pushed = await pushContacts(env, budget, group);
-  const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM google_links WHERE kind = 'contact'").first();
-  return `${n} client${n === 1 ? "" : "s"} in Google Contacts${pulled + pushed ? ` (${pulled} in, ${pushed} out just now)` : ""}`;
+  prep(budget);
+  try {
+    const group = await labelGroup(env, budget);
+    const pulled = await pullContacts(env, budget, group);
+    const pushed = await pushContacts(env, budget, group);
+    await flush(env, budget);
+    const L = await links(env, budget, "contact");
+    const total = (await clientMaps(env, budget)).all.length;
+    const linked = [...L.byNova.keys()].filter((id) => (budget.clients?.byId || new Map()).has(id)).length;
+    const more = pulled.more || pushed.more || linked < total;
+    const moved = pulled.changed + pushed.done;
+    const note = more
+      ? `Contacts: ${linked} of ${total} client${total === 1 ? "" : "s"} in Google so far · the rest next run`
+      : `${linked} client${linked === 1 ? "" : "s"} in Google Contacts${moved ? ` (${pulled.changed} in, ${pushed.done} out just now)` : ""}`;
+    return { note, more };
+  } finally {
+    await flush(env, budget).catch(() => {});
+  }
 }
 
 // For Agent's google_contacts_find: names, emails and phones matching what's typed

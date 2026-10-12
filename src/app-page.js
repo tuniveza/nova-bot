@@ -205,7 +205,7 @@ export async function handleApp(request, env, ctx, answer) {
   }
   // Google (src/google/): the setup and options are for admins; a note to Docs, Money's sheet for anyone
   if (route === "/google" || route.startsWith("/google/")) {
-    const answer = await handleGoogleForStaff(request, env, me, route);
+    const answer = await handleGoogleForStaff(request, env, me, route, ctx);
     if (answer) return answer;
   }
   // Test stuff (src/tidy.js): what looks like tests or copies, with Delete and "Not a test" (admins only)

@@ -11,8 +11,8 @@ import { pullReplies, sendStudioEmail, stripQuoted } from "../src/google/gmail.j
 import { syncContacts } from "../src/google/contacts.js";
 import { refreshSheet } from "../src/google/sheets.js";
 import { fetchMedia } from "../src/social.js";
-import { setOptions } from "../src/google/common.js";
-import { googleOnSchedule } from "../src/google/index.js";
+import { setOptions, readStatus, readBackoff } from "../src/google/common.js";
+import { googleOnSchedule, runGooglePart } from "../src/google/index.js";
 
 const BASE = "https://novacane-worker.test";
 const ALL_SCOPES = [
@@ -127,6 +127,16 @@ function fakeFetch() {
 				return ok(g);
 			}
 			if (p === "/v1/people/me/connections") return ok({ connections: [...G.people.values()], nextSyncToken: "pt" + G.seq });
+			const grp = p.match(/^\/v1\/(contactGroups\/[^/:]+)$/);
+			if (grp && method === "GET") {
+				const members = [...G.people.values()].filter((x) => (x.memberships || []).some((m) => m.contactGroupMembership?.contactGroupResourceName === grp[1])).map((x) => x.resourceName);
+				return ok({ resourceName: grp[1], memberResourceNames: members });
+			}
+			if (p === "/v1/people:batchGet") {
+				const names = url.searchParams.getAll("resourceNames");
+				G.batchGets = (G.batchGets || 0) + 1;
+				return ok({ responses: names.map((n) => (G.people.has(n) ? { requestedResourceName: n, person: G.people.get(n), status: {} } : { requestedResourceName: n, status: { code: 5 } })) });
+			}
 			if (p === "/v1/people:createContact") {
 				const b = await bodyOf(init);
 				const person = { ...b, resourceName: "people/c" + ++G.seq, etag: "e" + G.seq, metadata: { sources: [{ updateTime: new Date().toISOString() }] } };
@@ -435,5 +445,96 @@ describe("Portal's Admin → Google and Nova Agent's tools", () => {
 		const result = await googleOnSchedule(genv(), Date.parse("2026-11-10T12:05:00Z"));
 		expect(result).toMatchObject({ part: "calendar", ok: true });
 		expect(await googleOnSchedule(genv(), Date.parse("2026-11-10T12:07:00Z"))).toBe(null);
+	});
+});
+
+describe("Within the free Workers plan: small steps, carrying on next run", () => {
+	it("Contacts: a long client list goes over in steps, says how far it got, and nothing is made twice", async () => {
+		await env.DB.prepare("DELETE FROM clients").run();
+		const now = new Date().toISOString();
+		const add = env.DB.prepare("INSERT INTO clients (name, email, source, created_at, updated_at) VALUES (?, ?, 'booking', ?, ?)");
+		await env.DB.batch(Array.from({ length: 25 }, (_, i) => add.bind(`Client ${i}`, `c${i}@example.com`, now, now)));
+		G.groups.push({ resourceName: "contactGroups/nc", name: "Novacane clients", groupType: "USER_CONTACT_GROUP" });
+		const first = await syncContacts(genv(), budget());
+		expect(first.more).toBe(true);
+		expect(first.note).toMatch(/of 25 clients in Google so far · the rest next run/);
+		let guard = 0;
+		let last = first;
+		while (last.more && guard++ < 5) last = await syncContacts(genv(), budget());
+		expect(last.more).toBe(false);
+		expect(last.note).toMatch(/^25 clients in Google Contacts/);
+		const made = [...G.people.values()].filter((p) => /^Client /.test(p.names?.[0]?.unstructuredName || ""));
+		expect(made).toHaveLength(25);
+		// Only the label's people are read (in batches), never the whole Google account
+		expect(G.calls.some((c) => c.includes("/people/me/connections"))).toBe(false);
+		expect(G.batchGets).toBeGreaterThan(0);
+	});
+
+	it("Calendar: many events come in over a few runs, each within its trips to the database", async () => {
+		for (let i = 0; i < 70; i++) {
+			const day = String(1 + (i % 28)).padStart(2, "0");
+			G.calendars.primary.set("m" + i, { id: "m" + i, seq: ++G.seq, status: "confirmed", summary: "Meeting " + i, start: { dateTime: `2026-11-${day}T09:00:00Z` }, end: { dateTime: `2026-11-${day}T10:00:00Z` }, updated: new Date().toISOString() });
+		}
+		const runs = [];
+		let out;
+		do {
+			const b = { left: 40, db: 30 };
+			out = await syncCalendar(genv(), b);
+			expect(b.db).toBeGreaterThanOrEqual(0);
+			runs.push(out);
+		} while (out.more && runs.length < 10);
+		expect(runs.length).toBeGreaterThan(1);
+		expect(out.more).toBe(false);
+		const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM calendar_items WHERE id LIKE 'gp-m%' AND deleted = 0").first();
+		expect(n).toBe(70);
+		// Nothing sent back to Google as new events
+		expect(G.calendars["studio-cal"].size).toBe(0);
+	});
+
+	it("Google busy: the part waits a while (longer each time) and the schedule leaves it alone till then", async () => {
+		vi.restoreAllMocks();
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+			const url = new URL(typeof input === "string" ? input : input.url);
+			if (url.host === "oauth2.googleapis.com") return ok({ access_token: "access", expires_in: 3600 });
+			return ok({ error: { message: "Backend Error" } }, 503);
+		});
+		forgetGoogleToken();
+		const r = await runGooglePart(genv(), "calendar");
+		expect(r.ok).toBe(false);
+		const held = (await readBackoff(env)).calendar;
+		expect(held.n).toBe(1);
+		expect(held.until).toBeGreaterThan(Date.now());
+		expect((await readStatus(env)).calendar.note).toMatch(/Next try/);
+		// The next five-minute mark: left alone
+		// (a five-minute mark that's only Calendar's, before the hold ends)
+		let at = Math.floor(Date.now() / 300_000) * 300_000;
+		while ([10, 20, 35, 50].includes(new Date(at).getUTCMinutes())) at -= 300_000;
+		expect(await googleOnSchedule(genv(), at)).toMatchObject({ part: "calendar", held: true });
+	});
+
+	it("Google turns the connection down: Portal says Connect again, and it's mended by connecting", async () => {
+		vi.restoreAllMocks();
+		vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+			const url = new URL(typeof input === "string" ? input : input.url);
+			if (url.host === "oauth2.googleapis.com") return ok({ error: "invalid_grant" }, 400);
+			return ok({});
+		});
+		forgetGoogleToken();
+		const r = await runGooglePart(genv(), "calendar");
+		expect(r.error).toMatch(/Connect again/);
+		const overview = await (await call("/app/api/google")).json();
+		expect(overview.needsReconnect).toBe(true);
+		// Not held: waiting wouldn't mend it
+		expect((await readBackoff(env)).calendar).toBeUndefined();
+	});
+
+	it("Sync now answers straight away and the sync finishes in the background", async () => {
+		const res = await call("/app/api/google/sync", { method: "POST", body: { part: "calendar" } });
+		const data = await res.json();
+		expect(data).toMatchObject({ ok: true, started: true });
+		// (call() waits for the background work too)
+		const status = (await readStatus(env)).calendar;
+		expect(status.running).toBeUndefined();
+		expect(status.ok).toBe(true);
 	});
 });

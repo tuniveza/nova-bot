@@ -25,7 +25,7 @@
 import { google } from "../nova/google.js";
 import { cleanItem, deleteItem, isAgentItem, saveItem } from "../calendar/items.js";
 import { listBookings, feedTimeToIso } from "../booking-calendar.js";
-import { dropLink, getLink, linkByGoogle, partOn, putLink, readSetting, sha, writeSetting } from "./common.js";
+import { flush, forgetLink, keepLink, later, linkByGoogle, linkOf, links, low, partOn, prep, readSetting, sha, spendDb, writeSetting } from "./common.js";
 
 const API = "https://www.googleapis.com/calendar/v3";
 const TZ = "Europe/London";
@@ -43,11 +43,14 @@ const COLOR_NAMES = Object.fromEntries(Object.entries(COLOR_IDS).map(([k, v]) =>
 // ===== TIMES =====
 
 const pad = (n) => String(n).padStart(2, "0");
-// UTC instant -> UK wall clock "YYYY-MM-DDTHH:MM"
+// UTC instant -> UK wall clock "YYYY-MM-DDTHH:MM" (one formatter, made once: making it each
+// time was most of a run's computer time)
+let ukFormat = null;
 export function ukWall(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(d);
+  ukFormat ||= new Intl.DateTimeFormat("en-GB", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const parts = ukFormat.formatToParts(d);
   const get = (t) => parts.find((p) => p.type === t)?.value ?? "00";
   return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
 }
@@ -204,17 +207,25 @@ const eventsUrl = (calId, path = "") => `${API}/calendars/${encodeURIComponent(c
 
 // ===== NOVA → GOOGLE =====
 
-// Send Nova's changed items (since the last revision sent). Returns how many were written.
+// Send Nova's changed items (since the last revision sent), a few at a time. -> { done, more }
+const PUSH_ROWS = 40;
 export async function pushItems(env, budget, { plan = false } = {}) {
+  prep(budget);
   const calId = await studioCalendar(env, budget);
   const since = Number(await readSetting(env, REV_KEY)) || 0;
-  const { results } = await env.DB.prepare("SELECT * FROM calendar_items WHERE rev > ? ORDER BY rev LIMIT 200").bind(since).all();
+  spendDb(budget);
+  const { results } = await env.DB.prepare("SELECT * FROM calendar_items WHERE rev > ? ORDER BY rev LIMIT ?").bind(since, PUSH_ROWS).all();
+  const L = await links(env, budget, "event");
   let done = 0;
   let reached = since;
+  let stopped = false;
   for (const row of results) {
-    if (budget.left <= 2) break;
+    if (low(budget)) {
+      stopped = true;
+      break;
+    }
     const id = row.id;
-    const link = await getLink(env, "event", id);
+    const link = L.byNova.get(String(id)) || null;
     let item = null;
     try {
       item = row.deleted ? null : { ...JSON.parse(row.data), id, kind: row.kind, updated: row.updated };
@@ -225,7 +236,7 @@ export async function pushItems(env, budget, { plan = false } = {}) {
       if (link) {
         budget.left--;
         await deleteEvent(env, link.extra || calId, link.google_id);
-        await dropLink(env, "event", id).run();
+        forgetLink(env, budget, "event", id);
         done++;
       }
       reached = row.rev;
@@ -246,28 +257,28 @@ export async function pushItems(env, budget, { plan = false } = {}) {
       } catch (err) {
         // Someone else's event (an invitation): Google won't let it change. Nova's copy stays as it is.
         if (err.status === 403) {
-          await putLink(env, "event", id, link.google_id, { extra: link.extra, hash }).run();
+          keepLink(env, budget, "event", id, link.google_id, { extra: link.extra, hash });
           reached = row.rev;
           continue;
         }
         if (err.status !== 404 && err.status !== 410) throw err;
         // Deleted in Google meanwhile: the pull drops it from Nova
-        await dropLink(env, "event", id).run();
+        forgetLink(env, budget, "event", id);
         reached = row.rev;
         continue;
       }
-      await putLink(env, "event", id, link.google_id, { extra: link.extra || calId, hash }).run();
+      keepLink(env, budget, "event", id, link.google_id, { extra: link.extra || calId, hash });
     } else if (/^gp?-/.test(id)) {
       // From Google, but its link is gone (Google deleted it): leave it to the pull
     } else {
       const made = await google(env, "POST", eventsUrl(calId), toEvent(item));
-      await putLink(env, "event", id, made.id, { extra: calId, hash }).run();
+      keepLink(env, budget, "event", id, made.id, { extra: calId, hash });
     }
     done++;
     reached = row.rev;
   }
-  if (reached !== since) await writeSetting(env, REV_KEY, reached).run();
-  return done;
+  if (reached !== since) later(budget, writeSetting(env, REV_KEY, reached));
+  return { done, more: stopped || results.length === PUSH_ROWS };
 }
 
 async function deleteEvent(env, calId, eventId) {
@@ -280,14 +291,17 @@ async function deleteEvent(env, calId, eventId) {
 
 // ===== GOOGLE → NOVA =====
 
-// Read what changed in one calendar ("primary" or the studio's) and bring it into Nova
+// Read what changed in one calendar ("primary" or the studio's) and bring it into Nova, a page
+// (50 events) at a time. A page is only passed once all of it is in. -> { changed, more }
+const PAGE = 50;
 export async function pullCalendar(env, budget, which, calId) {
+  prep(budget);
   let syncToken = await readSetting(env, syncKey(which));
   let pageToken = await readSetting(env, pageKey(which));
   let changed = 0;
   for (;;) {
-    if (budget.left <= 2) break;
-    const params = new URLSearchParams({ maxResults: "100", showDeleted: "true", singleEvents: "false" });
+    if (low(budget)) return { changed, more: true };
+    const params = new URLSearchParams({ maxResults: String(PAGE), showDeleted: "true", singleEvents: "false" });
     if (pageToken) params.set("pageToken", pageToken);
     if (syncToken) params.set("syncToken", syncToken);
     else params.set("timeMin", new Date(Date.now() - PULL_BACK_DAYS * 86400000).toISOString());
@@ -299,42 +313,67 @@ export async function pullCalendar(env, budget, which, calId) {
       // Google forgot where we were: start again from the beginning
       if (err.status === 410) {
         await env.DB.batch([writeSetting(env, syncKey(which), ""), writeSetting(env, pageKey(which), "")]);
+        spendDb(budget);
         syncToken = "";
         pageToken = "";
         continue;
       }
       throw err;
     }
-    for (const event of data.items || []) changed += await takeEvent(env, which, calId, event);
+    const items = data.items || [];
+    // Nova's own items on this page, read in one go
+    const ours = [...new Set(items.map((e) => e.extendedProperties?.private?.novaId).filter(Boolean))];
+    const rows = new Map();
+    if (ours.length) {
+      spendDb(budget);
+      const { results } = await env.DB.prepare(`SELECT id, data, kind, updated, deleted FROM calendar_items WHERE id IN (${ours.map(() => "?").join(",")})`).bind(...ours).all();
+      for (const r of results) rows.set(r.id, r);
+    }
+    let all = true;
+    for (const event of items) {
+      // (each change is a trip to the database: stop in time, and do this page again next run)
+      if (budget.db <= 5 || Date.now() > budget.until) {
+        all = false;
+        break;
+      }
+      changed += await takeEvent(env, which, calId, event, budget, rows);
+    }
+    if (!all) return { changed, more: true };
     if (data.nextPageToken) {
       pageToken = data.nextPageToken;
-      await writeSetting(env, pageKey(which), pageToken).run();
+      later(budget, writeSetting(env, pageKey(which), pageToken));
       continue;
     }
-    await env.DB.batch([writeSetting(env, syncKey(which), data.nextSyncToken || ""), writeSetting(env, pageKey(which), "")]);
-    break;
+    later(budget, writeSetting(env, syncKey(which), data.nextSyncToken || ""));
+    later(budget, writeSetting(env, pageKey(which), ""));
+    return { changed, more: false };
   }
-  return changed;
 }
 
-// One event from Google: into Nova (or out of it). Returns 1 if Nova changed.
-export async function takeEvent(env, which, calId, event) {
+// One event from Google: into Nova (or out of it). Returns 1 if Nova changed. `rows`: Nova's items
+// already read (by id), so each event isn't another trip to the database.
+export async function takeEvent(env, which, calId, event, budget = prep({ left: 0 }), rows = new Map()) {
   const priv = event.extendedProperties?.private || {};
   // A booking we copied in: Acuity's, not Google's (bookings never come back from Google)
   if (priv.novaBooking) return 0;
   // One of Nova's own items (we put it there)
   if (priv.novaId) {
     const id = priv.novaId;
-    const link = await getLink(env, "event", id);
+    const link = await linkOf(env, budget, "event", id);
     if (event.status === "cancelled") {
-      if (link) await dropLink(env, "event", id).run();
+      if (link) forgetLink(env, budget, "event", id);
       // Nova Agent's plan only ever changes from the PC
       if (isAgentItem(id)) return 0;
+      spendDb(budget);
       await deleteItem(env, id, new Date(event.updated || Date.now()).toISOString());
       return 1;
     }
     if (isAgentItem(id)) return 0;
-    const current = await env.DB.prepare("SELECT data, kind, updated, deleted FROM calendar_items WHERE id = ?").bind(id).first();
+    let current = rows.get(id);
+    if (current === undefined) {
+      spendDb(budget);
+      current = await env.DB.prepare("SELECT data, kind, updated, deleted FROM calendar_items WHERE id = ?").bind(id).first();
+    }
     if (!current || current.deleted) return 0;
     let base = {};
     try {
@@ -348,8 +387,9 @@ export async function takeEvent(env, which, calId, event) {
     const merged = { ...base, ...incoming, author: base.author || incoming.author, reminders: base.reminders || [], phones: base.phones || [], art: base.art, color: incoming.color || base.color || "" };
     if (!merged.art) delete merged.art;
     const hash = await itemHash(merged);
+    spendDb(budget);
     const saved = await saveItem(env, merged);
-    if (saved.ok) await putLink(env, "event", id, event.id, { extra: calId, hash }).run();
+    if (saved.ok) keepLink(env, budget, "event", id, event.id, { extra: calId, hash });
     return saved.ok ? 1 : 0;
   }
   // From Google itself
@@ -359,13 +399,15 @@ export async function takeEvent(env, which, calId, event) {
   if (event.recurringEventId) {
     const masterId = await novaIdFor(prefix, event.recurringEventId);
     const day = (event.originalStartTime?.dateTime ? ukWall(event.originalStartTime.dateTime) : event.originalStartTime?.date || "")?.slice(0, 10);
-    if (day) await skipDay(env, masterId, day);
+    if (day) await skipDay(env, masterId, day, budget);
     if (event.status === "cancelled") return 1;
   }
   const id = await novaIdFor(prefix, event.id);
-  const link = await getLink(env, "event", id);
+  const link = await linkOf(env, budget, "event", id);
   if (event.status === "cancelled") {
-    if (link) await dropLink(env, "event", id).run();
+    if (!link) return 0; // never in Nova (or already gone)
+    forgetLink(env, budget, "event", id);
+    spendDb(budget);
     const gone = await deleteItem(env, id, new Date(event.updated || Date.now()).toISOString());
     return gone.ok ? 1 : 0;
   }
@@ -373,14 +415,16 @@ export async function takeEvent(env, which, calId, event) {
   if (!item) return 0;
   const hash = await itemHash(item);
   if (link && link.hash === hash) return 0;
+  spendDb(budget);
   const saved = await saveItem(env, item);
   // Saved (or Nova has a later change, which the push sends back to Google)
-  await putLink(env, "event", id, event.id, { extra: calId, hash: saved.ok ? hash : link?.hash || null }).run();
+  keepLink(env, budget, "event", id, event.id, { extra: calId, hash: saved.ok ? hash : link?.hash || null });
   return saved.ok ? 1 : 0;
 }
 
 // A repeating Nova event (from Google) skips a day
-async function skipDay(env, id, day) {
+async function skipDay(env, id, day, budget) {
+  spendDb(budget);
   const row = await env.DB.prepare("SELECT data, updated, deleted FROM calendar_items WHERE id = ?").bind(id).first();
   if (!row || row.deleted) return;
   let item;
@@ -393,9 +437,10 @@ async function skipDay(env, id, day) {
   item.exdates = [...(item.exdates || []), day].sort();
   item.updated = new Date(Math.max(Date.parse(row.updated) + 1, Date.now())).toISOString();
   item.base = row.updated;
+  spendDb(budget);
   await saveItem(env, item);
-  const link = await getLink(env, "event", id);
-  if (link) await putLink(env, "event", id, link.google_id, { extra: link.extra, hash: await itemHash(item) }).run();
+  const link = await linkOf(env, budget, "event", id);
+  if (link) keepLink(env, budget, "event", id, link.google_id, { extra: link.extra, hash: await itemHash(item) });
 }
 
 // ===== BOOKINGS: ACUITY → GOOGLE (copies only) =====
@@ -415,7 +460,9 @@ export function bookingEvent(b) {
 }
 
 export async function pushBookings(env, budget) {
+  prep(budget);
   const calId = await studioCalendar(env, budget);
+  budget.left--; // (the booking feed is a call too)
   const all = (await listBookings(env)) || [];
   const now = Date.now();
   const wanted = all.filter((b) => {
@@ -423,58 +470,82 @@ export async function pushBookings(env, budget) {
     return t > now - 7 * 86400000 && t < now + BOOKING_DAYS * 86400000;
   });
   const ids = new Set(wanted.map((b) => String(b.id)));
+  const L = await links(env, budget, "booking");
   let done = 0;
+  let stopped = false;
   for (const b of wanted) {
-    if (budget.left <= 2) break;
+    if (low(budget)) {
+      stopped = true;
+      break;
+    }
     const event = bookingEvent(b);
     if (!event) continue;
     const hash = await sha(JSON.stringify([event.summary, event.start, event.end]));
-    const link = await getLink(env, "booking", b.id);
+    const link = L.byNova.get(String(b.id)) || null;
     if (link && link.hash === hash) continue;
     budget.left--;
     if (link) {
       try {
         await google(env, "PATCH", eventsUrl(calId, `/${encodeURIComponent(link.google_id)}`), event);
-        await putLink(env, "booking", b.id, link.google_id, { extra: calId, hash }).run();
+        keepLink(env, budget, "booking", b.id, link.google_id, { extra: calId, hash });
       } catch (err) {
         if (err.status !== 404 && err.status !== 410) throw err;
-        await dropLink(env, "booking", b.id).run();
+        forgetLink(env, budget, "booking", b.id);
       }
     } else {
       const made = await google(env, "POST", eventsUrl(calId), event);
-      await putLink(env, "booking", b.id, made.id, { extra: calId, hash }).run();
+      keepLink(env, budget, "booking", b.id, made.id, { extra: calId, hash });
     }
     done++;
   }
   // Bookings no longer in the feed (cancelled), still ahead: their copies go
-  const { results } = await env.DB.prepare("SELECT nova_id, google_id, extra FROM google_links WHERE kind = 'booking'").all();
-  for (const l of results) {
-    if (ids.has(l.nova_id) || budget.left <= 2) continue;
-    const b = all.find((x) => String(x.id) === l.nova_id);
+  for (const l of [...L.byNova.values()]) {
+    if (ids.has(String(l.nova_id))) continue;
+    if (low(budget)) {
+      stopped = true;
+      break;
+    }
+    const b = all.find((x) => String(x.id) === String(l.nova_id));
     if (b && Date.parse(feedTimeToIso(b.start) || "") < now) continue; // just in the past: leave it
     budget.left--;
     await deleteEvent(env, l.extra || calId, l.google_id);
-    await dropLink(env, "booking", l.nova_id).run();
+    forgetLink(env, budget, "booking", l.nova_id);
     done++;
   }
-  return done;
+  return { done, more: stopped };
 }
 
 // ===== ONE RUN =====
 
-// Pull from Google, push to it, copy the bookings: as far as the budget goes
+// Pull from Google, push to it, copy the bookings: as far as the budget goes. -> { note, more }
 export async function syncCalendar(env, budget) {
-  const calId = await studioCalendar(env, budget);
-  const plan = await partOn(env, "calendarPlan");
-  const pulled = (await pullCalendar(env, budget, "primary", "primary")) + (await pullCalendar(env, budget, "studio", calId));
-  const pushed = await pushItems(env, budget, { plan });
-  const bookings = (await partOn(env, "bookings")) && budget.left > 4 ? await pushBookings(env, budget).catch((err) => {
-    // The feed failing doesn't stop the calendar
-    if (err?.status) throw err;
-    return 0;
-  }) : 0;
-  const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM google_links WHERE kind IN ('event', 'booking')").first();
-  return `${n} event${n === 1 ? "" : "s"} in step${pulled + pushed + bookings ? ` (${pulled} in, ${pushed + bookings} out just now)` : ""}`;
+  prep(budget);
+  try {
+    const calId = await studioCalendar(env, budget);
+    const plan = await partOn(env, "calendarPlan");
+    const primary = await pullCalendar(env, budget, "primary", "primary");
+    const studio = await pullCalendar(env, budget, "studio", calId);
+    const pushed = await pushItems(env, budget, { plan });
+    let bookings = { done: 0, more: false };
+    if ((await partOn(env, "bookings")) && !low(budget, 4)) {
+      bookings = await pushBookings(env, budget).catch((err) => {
+        // The feed failing doesn't stop the calendar
+        if (err?.status) throw err;
+        return { done: 0, more: false };
+      });
+    }
+    await flush(env, budget);
+    const L = await links(env, budget, "event");
+    const B = await links(env, budget, "booking");
+    const n = L.byNova.size + B.byNova.size;
+    const pulled = primary.changed + studio.changed;
+    const out = pushed.done + bookings.done;
+    const more = primary.more || studio.more || pushed.more || bookings.more;
+    const note = `${n} event${n === 1 ? "" : "s"} in step${pulled + out ? ` (${pulled} in, ${out} out just now)` : ""}${more ? " · more next run" : ""}`;
+    return { note, more };
+  } finally {
+    await flush(env, budget).catch(() => {});
+  }
 }
 
 // The studio's busy times, from both calendars (for Agent's google_calendar_busy)

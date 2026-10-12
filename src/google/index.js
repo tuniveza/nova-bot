@@ -29,7 +29,7 @@
 import { connectedAccount, disconnect, googleReady, grantedScopes, offline, FEATURE_SCOPES } from "../nova/google.js";
 import { clientProblem, googleClient, keyProblemWithGoogle, removeClient, saveClient } from "../nova/google-keys.js";
 import { publicUrl } from "../nova/booking.js";
-import { OPTIONS, partOn, readOptions, readSetting, readStatus, runPart, setOptions } from "./common.js";
+import { OPTIONS, needsReconnect, newBudget, noteStatus, onHold, partOn, readBackoff, readOptions, readSetting, readStatus, runPart, setOptions } from "./common.js";
 import { busyBetween, syncCalendar } from "./calendar.js";
 import { pullReplies, searchGmail } from "./gmail.js";
 import { findContacts, syncContacts } from "./contacts.js";
@@ -38,7 +38,6 @@ import { refreshSheet, sheetStatus } from "./sheets.js";
 
 const PC_ORIGIN = "http://localhost:4545";
 const MAX_FILE = 100 * 1024 * 1024;
-const BUDGET = 40;
 
 // ===== THE PARTS =====
 
@@ -46,14 +45,21 @@ const PARTS = {
   calendar: { label: "Calendar", option: "calendar", run: (env, budget) => syncCalendar(env, budget) },
   replies: { label: "Replies", option: "replies", run: (env, budget) => pullReplies(env, budget) },
   contacts: { label: "Contacts", option: "contacts", run: (env, budget) => syncContacts(env, budget) },
-  sheets: { label: "Money sheet", option: "sheets", run: async (env) => ((await refreshSheet(env)).written ? "Brought up to date · " : "Up to date · ") + (await sheetStatus(env)) },
+  sheets: {
+    label: "Money sheet",
+    option: "sheets",
+    run: async (env) => {
+      const r = await refreshSheet(env);
+      return (r.written ? "Brought up to date · " : "Up to date · ") + (await sheetStatus(env, r.counts));
+    },
+  },
   backups: { label: "Backups", option: "backups", run: (env) => backupIndex(env) },
 };
 
-export async function runGooglePart(env, name) {
+export async function runGooglePart(env, name, budget = newBudget()) {
   const part = PARTS[name];
   if (!part || !(await partOn(env, part.option))) return { ok: false, skipped: true };
-  return runPart(env, name, () => part.run(env, { left: BUDGET }));
+  return runPart(env, name, () => part.run(env, budget));
 }
 
 const ukClock = (at) => {
@@ -61,12 +67,21 @@ const ukClock = (at) => {
   return { h: Number(parts.find((p) => p.type === "hour").value), m: Number(parts.find((p) => p.type === "minute").value) };
 };
 
-// Every minute: at most one part, at its own time
+// Every minute: at most one part, at its own time. A part that stopped part-way (it keeps within
+// the free plan's limits) carries on at the next free minute (2, 7, 12… past the hour), and a part
+// Google asked to wait is left alone until its time.
 export async function googleOnSchedule(env, at = Date.now()) {
   if (offline(env) || !(await googleReady(env).catch(() => false))) return null;
   const { h, m } = ukClock(at);
-  const name = h === 3 && m === 10 ? "backups" : m === 20 ? "replies" : m === 35 ? "contacts" : m === 50 ? "sheets" : m % 5 === 0 ? "calendar" : null;
+  let name = h === 3 && m === 10 ? "backups" : m === 20 ? "replies" : m === 35 ? "contacts" : m === 50 ? "sheets" : m % 5 === 0 ? "calendar" : null;
+  if (!name && m % 5 === 2) {
+    const status = await readStatus(env);
+    const unfinished = Object.keys(PARTS).filter((p) => status[p]?.more);
+    // In turn, so one big part doesn't keep the others waiting
+    name = unfinished.length ? unfinished[Math.floor(at / 300_000) % unfinished.length] : null;
+  }
   if (!name) return null;
+  if (await onHold(env, name, at)) return { part: name, held: true };
   return { part: name, ...(await runGooglePart(env, name)) };
 }
 
@@ -137,6 +152,8 @@ export async function googleOverview(env, me) {
     options,
     parts: Object.entries(OPTIONS).map(([k, o]) => ({ id: k, label: o.label, help: o.help, on: options[k], allowed: Boolean(has[o.needs]) })),
     status: await readStatus(env),
+    held: await readBackoff(env),
+    needsReconnect: Boolean(ready && (await needsReconnect(env))),
     folderUrl: ready ? await folderUrl(env) : null,
     sheetUrl: ready ? await readSetting(env, "google_sheet_url") : null,
     steps: setupSteps(origin),
@@ -145,7 +162,7 @@ export async function googleOverview(env, me) {
 }
 
 // Portal's /app/api/google… (app-page.js has checked the sign-in and the Origin). -> a Response, or null
-export async function handleGoogleForStaff(request, env, me, route) {
+export async function handleGoogleForStaff(request, env, me, route, ctx = null) {
   if (route === "/google" && request.method === "GET") return json(await googleOverview(env, me));
   if (request.method !== "POST") return null;
   // Anyone signed in: a note to Docs, Money's sheet
@@ -207,8 +224,16 @@ export async function handleGoogleForStaff(request, env, me, route) {
   if (route === "/google/sync") {
     const name = String(body.part || "");
     if (!PARTS[name]) return json({ error: "Which part? calendar, replies, contacts, sheets or backups." }, 400);
+    if (!(await partOn(env, PARTS[name].option))) return json({ error: "That part is off, or Google isn't connected with its permission." }, 409);
+    // In the background (the answer comes straight back; Portal watches the part's status), so a
+    // big sync never keeps the studio PC's link waiting
+    if (ctx?.waitUntil) {
+      const before = (await readStatus(env))[name] || {};
+      await noteStatus(env, name, before.ok !== false, "Syncing now…", { running: true, more: before.more });
+      ctx.waitUntil(runGooglePart(env, name).catch(() => {}));
+      return json({ ok: true, started: true, message: `${PARTS[name].label}: syncing now. This page shows how it went in a moment.` });
+    }
     const result = await runGooglePart(env, name);
-    if (result.skipped) return json({ error: "That part is off, or Google isn't connected with its permission." }, 409);
     return answer(result.ok ? { note: result.note } : { error: result.error, status: 502 });
   }
   return null;

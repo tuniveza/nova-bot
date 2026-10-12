@@ -21,7 +21,7 @@
 import { buildMime, base64Url, connectedAccount, google, GoogleError } from "../nova/google.js";
 import { sendEmail as resendEmail } from "../enquiries.js";
 import { notifyPhones } from "../push.js";
-import { getLink, partOn, putLink, readSetting, writeSetting } from "./common.js";
+import { flush, getLink, keepLink, later, links, low, partOn, prep, putLink, readSetting, spendDb, writeSetting } from "./common.js";
 
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 const THREAD_DAYS = 45;
@@ -123,12 +123,29 @@ const header = (msg, name) => (msg.payload?.headers || []).find((h) => h.name.to
 const fromAddress = (value) => (String(value).match(/<([^>]+)>/)?.[1] || String(value)).trim().toLowerCase();
 const fromName = (value) => String(value).replace(/<[^>]+>/, "").replace(/"/g, "").trim();
 
+// What a run reads once: the messages already seen (the last 60 days: older ones are never asked
+// for again) and each email address's latest enquiry
+async function readContext(env, budget) {
+  if (budget.gmail) return budget.gmail;
+  const seen = await links(env, budget, "gmail-in", { since: new Date(Date.now() - 60 * 86400000).toISOString() });
+  spendDb(budget);
+  const { results } = await env.DB.prepare("SELECT id, email FROM enquiries WHERE status != 'spam' AND email LIKE '%@%' ORDER BY id").all();
+  const byEmail = new Map(results.map((e) => [String(e.email).toLowerCase(), e.id]));
+  budget.gmail = { seen, byEmail };
+  return budget.gmail;
+}
+
 // A message from them, not from us, not seen before -> where it goes. Returns 1 if added.
-async function takeMessage(env, msg, { ref = null, account }) {
-  if (await getLink(env, "gmail-in", msg.id)) return 0;
+async function takeMessage(env, msg, { ref = null, account, budget }) {
+  const { seen, byEmail } = await readContext(env, budget);
+  if (seen.byNova.has(msg.id)) return 0;
+  const markSeen = (extra) => {
+    keepLink(env, budget, "gmail-in", msg.id, msg.threadId || "", { extra });
+    seen.byNova.set(msg.id, { nova_id: msg.id, extra });
+  };
   const from = fromAddress(header(msg, "From"));
   if (!from || from === account.toLowerCase() || (msg.labelIds || []).includes("SENT")) {
-    await putLink(env, "gmail-in", msg.id, msg.threadId || "", { extra: "ours" }).run();
+    markSeen("ours");
     return 0;
   }
   const body = messageText(msg.payload) || String(msg.snippet || "").slice(0, 500);
@@ -136,86 +153,127 @@ async function takeMessage(env, msg, { ref = null, account }) {
   const now = new Date().toISOString();
   let enquiryId = null;
   if (ref?.kind === "enquiry") enquiryId = Number(ref.id);
-  if (!enquiryId) {
-    const e = await env.DB.prepare("SELECT id FROM enquiries WHERE email = ? AND status != 'spam' ORDER BY id DESC LIMIT 1").bind(from).first();
-    if (e && !ref) enquiryId = e.id;
-  }
+  if (!enquiryId && !ref) enquiryId = byEmail.get(from) || null;
   const subject = header(msg, "Subject").slice(0, 200);
   if (!enquiryId) {
     // A reply about a one-to-one email or an invoice (or someone new): a new enquiry, so the team sees it
     const what = ref?.kind === "outreach" ? "Reply to a one-to-one email" : ref?.kind === "invoice" ? "Reply about an invoice" : "Email";
+    spendDb(budget);
     const row = await env.DB.prepare(
       `INSERT INTO enquiries (created_at, name, email, subject, details, page, status, state_at, state_by) VALUES (?, ?, ?, ?, ?, 'gmail', 'new', ?, 'gmail') RETURNING id`
     )
       .bind(at, fromName(header(msg, "From")) || from, from, subject || what, `${what}:\n\n${body}`, now)
       .first();
     enquiryId = row.id;
+    byEmail.set(from, enquiryId);
   } else {
-    await env.DB.batch([
+    later(
+      budget,
       env.DB.prepare(
         `INSERT INTO enquiry_messages (enquiry_id, direction, channel, body, status, created_by, created_at, updated_at) VALUES (?, 'in', 'email', ?, NULL, 'customer', ?, ?)`
-      ).bind(enquiryId, body || "(no text)", at, now),
-      // Their reply needs looking at: Waiting on them / Done -> Open
-      env.DB.prepare("UPDATE enquiries SET status = 'open', state_at = ?, state_by = 'gmail' WHERE id = ? AND status IN ('replied', 'done', 'new')").bind(now, enquiryId),
-    ]);
+      ).bind(enquiryId, body || "(no text)", at, now)
+    );
+    // Their reply needs looking at: Waiting on them / Done -> Open
+    later(budget, env.DB.prepare("UPDATE enquiries SET status = 'open', state_at = ?, state_by = 'gmail' WHERE id = ? AND status IN ('replied', 'done', 'new')").bind(now, enquiryId));
   }
-  await putLink(env, "gmail-in", msg.id, msg.threadId || "", { extra: `enquiry:${enquiryId}` }).run();
+  markSeen(`enquiry:${enquiryId}`);
   return 1;
 }
 
-// Every hour: replies in the threads we started, and emails from people with open enquiries
+// Threads looked at each run (in turn), and people searched for
+const THREADS_PER_RUN = 8;
+
+// Every hour: replies in the threads we started, and emails from people with open enquiries.
+// Threads are read small (only which messages they have), and only new messages are read whole.
 export async function pullReplies(env, budget) {
-  const account = await connectedAccount(env);
-  if (!account) return "Not connected";
-  let added = 0;
-  const since = new Date(Date.now() - THREAD_DAYS * 86400000).toISOString();
-  const { results: threads } = await env.DB.prepare("SELECT nova_id, google_id FROM google_links WHERE kind = 'gmail-thread' AND synced_at >= ? ORDER BY synced_at DESC LIMIT 25").bind(since).all();
-  for (const t of threads) {
-    if (budget.left <= 3) break;
-    budget.left--;
-    let data;
-    try {
-      data = await google(env, "GET", `${GMAIL}/threads/${encodeURIComponent(t.google_id)}?format=full`);
-    } catch (err) {
-      if (err.status === 404) continue;
-      throw err;
-    }
-    const [kind, id] = t.nova_id.split(":");
-    for (const msg of data.messages || []) added += await takeMessage(env, msg, { ref: { kind, id }, account });
-  }
-  // Open enquiries' people, a few each hour (in turn)
-  const offset = Number(await readSetting(env, "google_replies_offset")) || 0;
-  const { results: people } = await env.DB.prepare(
-    "SELECT DISTINCT email FROM enquiries WHERE status IN ('new', 'open', 'replied') AND email LIKE '%@%' AND created_at >= ? ORDER BY email LIMIT ? OFFSET ?"
-  )
-    .bind(new Date(Date.now() - 60 * 86400000).toISOString(), SEARCH_PER_RUN, offset)
-    .all();
-  await writeSetting(env, "google_replies_offset", people.length < SEARCH_PER_RUN ? 0 : offset + people.length).run();
-  for (const p of people) {
-    if (budget.left <= 3) break;
-    budget.left--;
-    const q = `from:${p.email} newer_than:30d -in:sent -in:spam -in:trash`;
-    const list = await google(env, "GET", `${GMAIL}/messages?${new URLSearchParams({ q, maxResults: "5" })}`);
-    for (const m of list.messages || []) {
-      if (budget.left <= 2) break;
-      if (await getLink(env, "gmail-in", m.id)) continue;
+  prep(budget);
+  try {
+    const account = await connectedAccount(env);
+    if (!account) return "Not connected";
+    let added = 0;
+    let more = false;
+    const { seen } = await readContext(env, budget);
+    const since = new Date(Date.now() - THREAD_DAYS * 86400000).toISOString();
+    spendDb(budget);
+    const { results: allThreads } = await env.DB.prepare("SELECT nova_id, google_id FROM google_links WHERE kind = 'gmail-thread' AND synced_at >= ? ORDER BY synced_at DESC LIMIT 60").bind(since).all();
+    const tAt = Number(await readSetting(env, "google_replies_thread_at")) || 0;
+    const start = tAt < allThreads.length ? tAt : 0;
+    const threads = allThreads.slice(start, start + THREADS_PER_RUN);
+    later(budget, writeSetting(env, "google_replies_thread_at", start + threads.length >= allThreads.length ? 0 : start + threads.length));
+    for (const t of threads) {
+      if (low(budget, 3)) {
+        more = true;
+        break;
+      }
       budget.left--;
-      const msg = await google(env, "GET", `${GMAIL}/messages/${encodeURIComponent(m.id)}?format=full`);
-      added += await takeMessage(env, msg, { account });
+      let data;
+      try {
+        data = await google(env, "GET", `${GMAIL}/threads/${encodeURIComponent(t.google_id)}?format=minimal&fields=messages(id,labelIds)`);
+      } catch (err) {
+        if (err.status === 404) continue;
+        throw err;
+      }
+      const [kind, id] = t.nova_id.split(":");
+      for (const m of data.messages || []) {
+        if (seen.byNova.has(m.id)) continue;
+        if ((m.labelIds || []).includes("SENT")) {
+          keepLink(env, budget, "gmail-in", m.id, t.google_id, { extra: "ours" });
+          seen.byNova.set(m.id, { nova_id: m.id });
+          continue;
+        }
+        if (low(budget, 2)) {
+          more = true;
+          break;
+        }
+        budget.left--;
+        const msg = await google(env, "GET", `${GMAIL}/messages/${encodeURIComponent(m.id)}?format=full`);
+        added += await takeMessage(env, msg, { ref: { kind, id }, account, budget });
+      }
     }
+    // Open enquiries' people, a few each run (in turn)
+    const offset = Number(await readSetting(env, "google_replies_offset")) || 0;
+    spendDb(budget);
+    const { results: people } = await env.DB.prepare(
+      "SELECT DISTINCT email FROM enquiries WHERE status IN ('new', 'open', 'replied') AND email LIKE '%@%' AND created_at >= ? ORDER BY email LIMIT ? OFFSET ?"
+    )
+      .bind(new Date(Date.now() - 60 * 86400000).toISOString(), SEARCH_PER_RUN, offset)
+      .all();
+    later(budget, writeSetting(env, "google_replies_offset", people.length < SEARCH_PER_RUN ? 0 : offset + people.length));
+    for (const p of people) {
+      if (low(budget, 3)) {
+        more = true;
+        break;
+      }
+      budget.left--;
+      const q = `from:${p.email} newer_than:30d -in:sent -in:spam -in:trash`;
+      const list = await google(env, "GET", `${GMAIL}/messages?${new URLSearchParams({ q, maxResults: "5" })}`);
+      for (const m of list.messages || []) {
+        if (seen.byNova.has(m.id)) continue;
+        if (low(budget, 2)) {
+          more = true;
+          break;
+        }
+        budget.left--;
+        const msg = await google(env, "GET", `${GMAIL}/messages/${encodeURIComponent(m.id)}?format=full`);
+        added += await takeMessage(env, msg, { account, budget });
+      }
+    }
+    await flush(env, budget);
+    if (added) {
+      try {
+        await notifyPhones(env, {
+          title: added === 1 ? "A customer replied" : `${added} customer replies`,
+          body: "In Portal → Enquiries.",
+          url: "/portal/?view=enquiries",
+          style: { source: "portal", kind: "enquiry", tag: "gmail-replies", ttl: 6 * 3600, urgent: false },
+        });
+      } catch {}
+    }
+    const n = [...seen.byNova.values()].filter((l) => l.extra && l.extra !== "ours").length;
+    return { note: `${n} repl${n === 1 ? "y" : "ies"} brought in (last 60 days)${added ? ` · ${added} new just now` : ""}${more ? " · more next run" : ""}`, more };
+  } finally {
+    await flush(env, budget).catch(() => {});
   }
-  if (added) {
-    try {
-      await notifyPhones(env, {
-        title: added === 1 ? "A customer replied" : `${added} customer replies`,
-        body: "In Portal → Enquiries.",
-        url: "/portal/?view=enquiries",
-        style: { source: "portal", kind: "enquiry", tag: "gmail-replies", ttl: 6 * 3600, urgent: false },
-      });
-    } catch {}
-  }
-  const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM google_links WHERE kind = 'gmail-in' AND extra != 'ours'").first();
-  return `${n} repl${n === 1 ? "y" : "ies"} brought in${added ? ` (${added} new just now)` : ""}`;
 }
 
 // ===== FOR AGENT (read-only) =====

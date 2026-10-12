@@ -105,6 +105,8 @@ export async function finishConnecting(env, origin, code) {
     setting(env, "google_account", email || ""),
     setting(env, "google_connected_at", new Date().toISOString()),
     setting(env, "google_scopes", granted.join(" ")),
+    // Connected again: no more "Connect again" in Portal, nothing on hold
+    env.DB.prepare("DELETE FROM settings WHERE key IN ('google_reconnect', 'google_reconnect_pinged', 'google_backoff')"),
   ]);
   accessCache = null;
   return email;
@@ -170,12 +172,15 @@ async function accessToken(env) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.access_token) {
     // invalid_grant: the access was removed, or the OAuth app is still in "testing" (tokens last 7 days)
-    throw new GoogleError(
+    const err = new GoogleError(
       data.error === "invalid_grant"
         ? "Google turned down the saved connection (invalid_grant). Press Connect Google again (Admin → Google)."
         : `Couldn't get a Google access token (${data.error || res.status}).`,
       res.status
     );
+    // Only connecting again mends this (src/google/common.js asks an admin, once a day)
+    if (data.error === "invalid_grant" || data.error === "unauthorized_client") err.reconnect = true;
+    throw err;
   }
   accessCache = { token: data.access_token, until: Date.now() + (Number(data.expires_in) || 3600) * 1000 - 60_000 };
   return data.access_token;
@@ -195,15 +200,27 @@ export async function googleFetch(env, method, url, { body, headers = {}, timeou
   return fetch(url, { method, headers: { Authorization: `Bearer ${token}`, ...headers }, body, signal: AbortSignal.timeout(timeout) });
 }
 
+// Google busy or briefly down (429, 500, 502, 503, 504): one more try after a short wait. Longer
+// waits are the caller's (src/google/common.js holds the part for a while).
+const PASSING = new Set([429, 500, 502, 503, 504]);
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // Call a Google API. Returns the JSON answer, or throws GoogleError.
 export async function google(env, method, url, body) {
   const token = await accessToken(env);
-  const res = await fetch(url, {
-    method,
-    headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+  const send = () =>
+    fetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  let res = await send();
+  // (a write is only tried again when Google said it was too busy to take it: 429 or 503)
+  if (PASSING.has(res.status) && (method === "GET" || res.status === 429 || res.status === 503)) {
+    await pause(Number(res.headers.get("Retry-After")) > 0 ? Math.min(Number(res.headers.get("Retry-After")) * 1000, 3000) : 800);
+    res = await send();
+  }
   if (res.status === 204) return {};
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

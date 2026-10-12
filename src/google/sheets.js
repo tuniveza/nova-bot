@@ -42,9 +42,10 @@ export async function refreshSheet(env, { force = false } = {}) {
     data.push({ range: `'${title}'!A1`, values: out.rows || [] });
   }
   const hash = await sha(JSON.stringify(data));
+  const counts = data.map((d) => Math.max(0, d.values.length - 1));
   let id = await readSetting(env, "google_sheet_id");
   if (!id) id = await makeSheet(env);
-  if (!force && hash === (await readSetting(env, "google_sheet_hash"))) return { url: await readSetting(env, "google_sheet_url"), written: false };
+  if (!force && hash === (await readSetting(env, "google_sheet_hash"))) return { url: await readSetting(env, "google_sheet_url"), written: false, counts };
   try {
     await google(env, "POST", `${SHEETS}/${encodeURIComponent(id)}/values:batchClear`, { ranges: TABS.map(([, t]) => `'${t}'`) });
   } catch (err) {
@@ -54,11 +55,15 @@ export async function refreshSheet(env, { force = false } = {}) {
   }
   await google(env, "POST", `${SHEETS}/${encodeURIComponent(id)}/values:batchUpdate`, { valueInputOption: "RAW", data });
   await writeSetting(env, "google_sheet_hash", hash).run();
-  return { url: await readSetting(env, "google_sheet_url"), written: true };
+  return { url: await readSetting(env, "google_sheet_url"), written: true, counts };
 }
 
-export async function sheetStatus(env) {
-  const rows = [];
-  for (const [what] of TABS) rows.push(Math.max(0, ((await exportRows(env, { what, ...ALL })).rows || []).length - 1));
+// "3 invoices, 2 payments, 5 expenses in the sheet" (from refreshSheet's counts, or read again)
+export async function sheetStatus(env, counts = null) {
+  let rows = counts;
+  if (!rows) {
+    rows = [];
+    for (const [what] of TABS) rows.push(Math.max(0, ((await exportRows(env, { what, ...ALL })).rows || []).length - 1));
+  }
   return `${rows[0]} invoices, ${rows[1]} payments, ${rows[2]} expenses in the sheet`;
 }
