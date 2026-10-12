@@ -21,6 +21,11 @@ const ALL_SCOPES = [
 	"https://www.googleapis.com/auth/gmail.readonly",
 	"https://www.googleapis.com/auth/contacts",
 	"https://www.googleapis.com/auth/drive.file",
+	"https://www.googleapis.com/auth/gmail.modify",
+	"https://www.googleapis.com/auth/tasks",
+	"https://www.googleapis.com/auth/drive.readonly",
+	"https://www.googleapis.com/auth/youtube.readonly",
+	"https://www.googleapis.com/auth/youtube.upload",
 ].join(" ");
 // Connected: the test env's client, plus a refresh token
 const genv = () => ({ ...env, GOOGLE_REFRESH_TOKEN: "test-refresh" });
@@ -86,6 +91,7 @@ function fakeFetch() {
 				}
 				if (!eid && method === "POST") {
 					const e = { ...(await bodyOf(init)), id: "ev" + ++G.seq, seq: G.seq, status: "confirmed", updated: new Date().toISOString() };
+					if (e.conferenceData?.createRequest) e.hangoutLink = "https://meet.google.com/abc-defg-hij";
 					cal.set(e.id, e);
 					return ok(e);
 				}
@@ -163,7 +169,10 @@ function fakeFetch() {
 				G.people.set(person.resourceName, person);
 				return ok(person);
 			}
-			if (p === "/v1/people:searchContacts") return ok({ results: [] });
+			if (p === "/v1/people:searchContacts") {
+				const q = String(url.searchParams.get("query") || "").toLowerCase();
+				return ok({ results: [...G.people.values()].filter((x) => q && JSON.stringify([x.names, x.emailAddresses]).toLowerCase().includes(q)).map((person) => ({ person })) });
+			}
 			const u = p.match(/^\/v1\/(people\/[^:]+):updateContact$/);
 			if (u) {
 				const person = G.people.get(u[1]);
@@ -210,6 +219,7 @@ function fakeFetch() {
 			return ok({ id });
 		}
 		if (url.host === "www.googleapis.com" && p === "/youtube/v3/videos") return ok({ items: (url.searchParams.get("id") || "").split(",").filter((id) => G.videos.has(id)).map((id) => ({ id, statistics: G.videos.get(id) })) });
+		if (url.host === "www.googleapis.com" && p === "/youtube/v3/playlistItems") return ok({ items: [...G.videos.keys()].map((id) => ({ snippet: { title: "A video", publishedAt: "2026-10-01T00:00:00Z", resourceId: { videoId: id } } })) });
 		if (url.host === "www.googleapis.com" && p === "/youtube/v3/channels") return ok({ items: [{ id: "ch1", snippet: { title: "Novacane Studios" }, statistics: { subscriberCount: "321", viewCount: "9000", videoCount: "14" }, contentDetails: { relatedPlaylists: { uploads: "UU1" } } }] });
 		// ---- Drive extras (Docs kept in step, invoices) ----
 		const exp = url.host === "www.googleapis.com" && p.match(/^\/drive\/v3\/files\/([^/]+)\/export$/);
@@ -624,5 +634,151 @@ describe("Within the free Workers plan: small steps, carrying on next run", () =
 		const status = (await readStatus(env)).calendar;
 		expect(status.running).toBeUndefined();
 		expect(status.ok).toBe(true);
+	});
+});
+
+describe("Google where it fits", () => {
+	const mail = (id, from, subject, text, extraHeaders = [], labels = ["INBOX"]) => {
+		const data = btoa(text).replace(/\+/g, "-").replace(/\//g, "_");
+		const msg = { id, threadId: "th-" + id, labelIds: labels, internalDate: String(Date.now()), payload: { headers: [{ name: "From", value: from }, { name: "Subject", value: subject }, { name: "Message-ID", value: `<${id}@mail>` }, ...extraHeaders], mimeType: "text/plain", body: { data } } };
+		G.messages.set(id, msg);
+		return msg;
+	};
+
+	it("Gmail as the inbox: a customer's email becomes an enquiry (labelled Nova), automatic mail stays out, spam goes to Spam, Done archives it", async () => {
+		mail("c1", "Kai Francis <kai@example.com>", "Session on Friday?", "Hi, can I book two hours on Friday afternoon for vocals?");
+		mail("n1", "Studio Weekly <hello@studioweekly.com>", "This week's news", "Lots of news", [{ name: "List-Unsubscribe", value: "<https://x>" }]);
+		mail("s1", "Stripe <noreply@stripe.com>", "Your receipt", "Paid £10");
+		mail("x1", "Win Big <win@example.org>", "Claim your prize", "Congratulations you have won, click here http://a.b http://c.d http://e.f");
+		const r = await runGooglePart(genv(), "inbox");
+		expect(r.ok).toBe(true);
+		const rows = (await env.DB.prepare("SELECT email, status, page FROM enquiries WHERE page = 'gmail' ORDER BY id").all()).results;
+		expect(rows).toEqual([
+			{ email: "kai@example.com", status: "new", page: "gmail" },
+			{ email: "win@example.org", status: "spam", page: "gmail" },
+		]);
+		expect(G.labels.map((l) => l.name)).toEqual(["Nova"]);
+		expect(G.modified.some((m) => m.what === "messages" && m.id === "c1" && m.addLabelIds?.length)).toBe(true);
+		// Again: nothing twice
+		await runGooglePart(genv(), "inbox");
+		expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM enquiries WHERE page = 'gmail'").first()).n).toBe(2);
+		// Done in Enquiries: archived in Gmail
+		await env.DB.prepare("UPDATE enquiries SET status = 'done' WHERE email = 'kai@example.com'").run();
+		await runGooglePart(genv(), "inbox");
+		expect(G.modified.some((m) => m.what === "threads" && m.id === "th-c1" && m.removeLabelIds?.includes("INBOX"))).toBe(true);
+	});
+
+	it("Google Meet: an event with Meet ticked gets a link, shown in Nova's Calendar", async () => {
+		await saveItem(env, { kind: "event", id: "ev-meet", title: "Call with label", start: "2026-11-05T15:00", end: "2026-11-05T15:30", meet: true, updated: new Date().toISOString() });
+		await syncCalendar(genv(), budget());
+		const sent = [...G.calendars["studio-cal"].values()][0];
+		expect(sent.conferenceData.createRequest.conferenceSolutionKey.type).toBe("hangoutsMeet");
+		const row = await env.DB.prepare("SELECT data FROM calendar_items WHERE id = 'ev-meet'").first();
+		expect(JSON.parse(row.data).meetUrl).toBe("https://meet.google.com/abc-defg-hij");
+		// The next run: not sent again (the link doesn't count as a change)
+		const before = G.calls.length;
+		await syncCalendar(genv(), budget());
+		expect(G.calls.slice(before).filter((c) => c.startsWith("PATCH") || c.startsWith("POST"))).toEqual([]);
+	});
+
+	it("Today: today's events (Nova's and Google's) for Portal, without Nova Agent's plan", async () => {
+		const day = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" });
+		await saveItem(env, { kind: "event", id: "gp-today", title: "Dentist", author: "Google Calendar", start: `${day}T10:00`, end: `${day}T11:00`, updated: new Date().toISOString() });
+		await saveItem(env, { kind: "event", id: "quest-x", title: "✦ Mix", start: `${day}T12:00`, end: `${day}T13:00`, updated: new Date().toISOString() });
+		const data = await (await call("/app/api/google/today")).json();
+		expect(data.events.map((e) => [e.title, e.start, e.from])).toEqual([["Dentist", "10:00", "Google Calendar"]]);
+	});
+
+	it("Google Tasks: quests become tasks, ticked off in Google comes back, removed in Nova goes", async () => {
+		const sync = async (quests) => (await agent("/nova-agent/google/tasks/sync", { quests })).json();
+		const first = await sync([{ id: "q1", title: "Mix the EP", due: "2026-11-01" }, { id: "q2", title: "Already done", done: true }]);
+		expect(first.ok).toBe(true);
+		expect([...G.tasks.values()].map((t) => [t.title, t.due, t.status])).toEqual([["Mix the EP", "2026-11-01T00:00:00.000Z", "needsAction"]]);
+		[...G.tasks.values()][0].status = "completed";
+		const second = await sync([{ id: "q1", title: "Mix the EP", due: "2026-11-01" }]);
+		expect(second.completed).toEqual(["q1"]);
+		await sync([]);
+		expect(G.tasks.size).toBe(0);
+	});
+
+	it("Notes ⇄ Google Docs: kept in step both ways, and the older side kept as a copy when both changed", async () => {
+		const now = new Date().toISOString();
+		await env.DB.prepare("INSERT INTO shared_notes (id, title, html, meta, created_at, updated_at, created_by, rev, size) VALUES ('n1', 'Plan', '<p>One</p>', '{}', ?, ?, 'tuniveza', 1, 10)").bind(now, now).run();
+		const kept = await (await call("/app/api/google/docs/keep", { method: "POST", body: { noteId: "n1" } })).json();
+		expect(kept.kept).toBe(true);
+		const docId = (await env.DB.prepare("SELECT google_id FROM google_links WHERE kind = 'notedoc' AND nova_id = 'n1'").first()).google_id;
+		expect(G.files.get(docId).html).toContain("<p>One</p>");
+		// Changed in the Doc: comes into the note
+		Object.assign(G.files.get(docId), { html: '<p><span style="font-weight:700">Two</span></p>', modifiedTime: new Date(Date.now() + 60000).toISOString() });
+		await runGooglePart(genv(), "docs");
+		expect((await env.DB.prepare("SELECT html FROM shared_notes WHERE id = 'n1'").first()).html).toBe("<p><strong>Two</strong></p>");
+		// Changed in Notes: goes to the Doc
+		await env.DB.prepare("UPDATE shared_notes SET html = '<p>Three</p>', updated_at = ? WHERE id = 'n1'").bind(new Date(Date.now() + 120000).toISOString()).run();
+		await runGooglePart(genv(), "docs");
+		expect(G.files.get(docId).html).toContain("<p>Three</p>");
+		// Both: the newer (Notes') wins and the Doc's version is kept as a copy in Drive
+		const files = G.files.size;
+		Object.assign(G.files.get(docId), { html: "<p>Doc four</p>", modifiedTime: new Date(Date.now() + 180000).toISOString() });
+		await env.DB.prepare("UPDATE shared_notes SET html = '<p>Note four</p>', updated_at = ? WHERE id = 'n1'").bind(new Date(Date.now() + 240000).toISOString()).run();
+		await runGooglePart(genv(), "docs");
+		expect(G.files.get(docId).html).toContain("Note four");
+		expect(G.files.size).toBe(files + 1);
+	});
+
+	it("Opens a Google Doc into Notes; one Nova can't change only comes in", async () => {
+		G.files.set("1234567890abcdefghijklmnop", { id: "1234567890abcdefghijklmnop", name: "Lyrics", mimeType: "application/vnd.google-apps.document", html: "<p>Verse</p>", modifiedTime: "2026-10-01T00:00:00.000Z", readOnly: true });
+		const out = await (await call("/app/api/google/docs/import", { method: "POST", body: { url: "https://docs.google.com/document/d/1234567890abcdefghijklmnop/edit" } })).json();
+		expect(out).toMatchObject({ ok: true, oneWay: true });
+		const note = await env.DB.prepare("SELECT title, html FROM shared_notes WHERE id = ?").bind(out.noteId).first();
+		expect(note).toEqual({ title: "Lyrics", html: "<p>Verse</p>" });
+	});
+
+	it("Sent invoices are kept as Docs in Drive's Invoices folder", async () => {
+		const now = new Date().toISOString();
+		await env.DB.prepare(
+			`INSERT INTO invoices (seq, token, bill_name, bill_email, bill_address, lines, vat_rate, subtotal_pence, vat_pence, total_pence, issue_date, due_date, status, created_by, created_at, updated_at)
+			 VALUES (1, 'tok1', 'Kai Francis', 'kai@example.com', '', '[{"description":"Mixing","qty":1,"unit_pence":15000}]', 0, 15000, 0, 15000, '2026-10-12', '2026-10-26', 'sent', 'tuniveza', ?, ?)`
+		).bind(now, now).run();
+		const r = await runGooglePart(genv(), "files");
+		expect(r.ok).toBe(true);
+		const doc = [...G.files.values()].find((f) => /^Invoice NS-0001/.test(f.name || ""));
+		expect(doc).toBeTruthy();
+		expect(doc.html).toContain("Mixing");
+	});
+
+	it("YouTube: a video post goes up only after an admin's Approve, and its numbers come back", async () => {
+		const bytes = new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 1, 2, 3, 4]);
+		const id = "c".repeat(32);
+		await agent(`/nova-agent/google/drive/put?kind=media&id=${id}&name=clip.mp4&type=video%2Fmp4`, bytes, { "Content-Type": "video/mp4" });
+		// A picture can't go to YouTube
+		const bad = await call("/app/api/social", { method: "POST", body: { caption: "Hi", platforms: ["youtube"], media: [{ id: "d".repeat(32), ext: "jpg" }] } });
+		expect(bad.status).toBe(400);
+		const made = await (await call("/app/api/social", { method: "POST", body: { caption: "New single: Night Drive\nOut now everywhere #Shorts", platforms: ["youtube"], media: [{ id, ext: "mp4" }] } })).json();
+		expect(G.uploads).toHaveLength(0);
+		const approved = await (await call(`/app/api/social/${made.post.id}/approve`, { method: "POST", body: {} })).json();
+		expect(G.uploads).toHaveLength(1);
+		expect(G.uploads[0].meta.snippet.title).toBe("New single: Night Drive");
+		expect(G.uploads[0].bytes).toBe(bytes.byteLength);
+		expect(approved.post.status).toBe("posted");
+		expect(approved.post.targets.youtube.url).toMatch(/^https:\/\/youtube\.com\/shorts\/vid/);
+		const { refreshResults } = await import("../src/social.js");
+		await refreshResults(genv());
+		const row = await env.DB.prepare("SELECT stats FROM social_posts WHERE id = ?").bind(made.post.id).first();
+		expect(JSON.parse(row.stats).youtube).toEqual({ views: 120, likes: 9, comments: 2 });
+	});
+
+	it("Contacts search for the write forms, and Agent's read-only Drive, Docs, Tasks and YouTube", async () => {
+		G.people.set("people/p9", { resourceName: "people/p9", names: [{ displayName: "Sam Venue" }], emailAddresses: [{ value: "sam@thewindmill.co.uk" }] });
+		const found = await (await call("/app/api/google/contacts?q=windmill")).json();
+		expect(found.contacts).toEqual([{ name: "Sam Venue", email: "sam@thewindmill.co.uk", phone: null }]);
+		G.files.set("doc12345678901234567890", { id: "doc12345678901234567890", name: "Rider", mimeType: "application/vnd.google-apps.document", html: "<p>Two vocal mics</p>" });
+		expect((await (await agent("/nova-agent/google/drive/search", { q: "Rider" })).json()).files[0]).toMatchObject({ name: "Rider", kind: "Google Doc" });
+		expect((await (await agent("/nova-agent/google/doc/read", { id: "doc12345678901234567890" })).json()).text).toBe("Two vocal mics");
+		const yt = await (await agent("/nova-agent/google/youtube/stats", {})).json();
+		expect(yt.channel).toMatchObject({ subscribers: 321, videos: 14 });
+		expect((await agent("/nova-agent/google/tasks/list", {})).status).toBe(200);
+		// Without the permission: not available
+		await env.DB.prepare("UPDATE settings SET value = 'https://www.googleapis.com/auth/calendar' WHERE key = 'google_scopes'").run();
+		expect((await agent("/nova-agent/google/drive/search", { q: "Rider" })).status).toBe(409);
 	});
 });
