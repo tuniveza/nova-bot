@@ -17,7 +17,8 @@
 // or a retried request can't send the same reply twice. Email goes only to the enquiry's own
 // address. Times are stored in UTC; emails show dates in UK time.
 
-import { dialNumber, emailIsSetUp, emailRecipients, mobileNumber, sendEmail } from "./enquiries.js";
+import { dialNumber, emailIsSetUp, emailRecipients, mobileNumber } from "./enquiries.js";
+import { sendStudioEmail } from "./google/gmail.js";
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
 
@@ -462,14 +463,15 @@ async function sendByEmail(env, m, attempt) {
   const to = String(m.email || "").trim().toLowerCase();
   if (!to) return { ok: false, message: "This enquiry has no email address." };
   const mail = replyEmail(env, m, await stopLink(env, m.enquiry_id));
-  const result = await sendEmail(env, {
+  // (from the studio's Gmail when that's switched on: src/google/gmail.js; otherwise Resend)
+  const result = await sendStudioEmail(env, {
     ...mail,
     to: [to],
     from: env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || "Novacane Studios <onboarding@resend.dev>",
     replyTo: env.ENQUIRY_REPLY_TO || emailRecipients(env)[0],
     // Resend sends a request with the same key at most once (a retry after a failure gets a new one)
     idempotencyKey: `enquiry-reply-${m.id}-${attempt}`,
-  });
+  }, { kind: "enquiry", id: m.enquiry_id });
   return result.ok ? { ok: true, id: result.id, to } : result;
 }
 

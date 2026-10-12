@@ -38,6 +38,7 @@
 // Logs say ids and counts only, never anyone's words, names or a key. Times are UTC; Portal shows
 // UK time.
 
+import { fileFromDrive } from "./google/drive.js";
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
 import { readTime } from "./acuity/api.js";
@@ -241,6 +242,9 @@ function sameText(a, b) {
 
 // A file, from wherever they're kept: the VPS (SOCIAL_MEDIA_BASE) or the studio computer
 export async function fetchMedia(env, file, range) {
+  // A copy in the studio's Google Drive (src/google/drive.js): no need for the studio computer
+  const drive = await fileFromDrive(env, "media", file.split(".")[0], range).catch(() => null);
+  if (drive) return drive;
   const headers = {};
   if (range) headers.Range = range;
   const base = String(env.SOCIAL_MEDIA_BASE || "").trim().replace(/\/+$/, "");

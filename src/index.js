@@ -68,6 +68,8 @@ import { sendCalendarReminders } from "./calendar/reminders.js";
 import { syncClientsOnSchedule } from "./clients.js";
 import { campaignsOnSchedule } from "./campaigns.js";
 import { handleSocialMedia, socialOnSchedule } from "./social.js";
+import { googleOnSchedule } from "./google/index.js";
+import { relayWithDrive } from "./google/relay.js";
 import { handleInvoicePage } from "./money.js";
 import { handleJoin } from "./fans.js";
 import { handleNoThanks } from "./outreach.js";
@@ -731,6 +733,9 @@ export default {
         // Social posts (src/social.js): approved ones whose time has come go out (Instagram videos
         // carry on until they're ready); every hour, results, followers and new comments from Meta
         socialOnSchedule(env, at).catch((err) => console.log("Social cron failed:", err?.name)),
+        // Google (src/google/): Calendar both ways every 5 minutes, customers' replies, Contacts and the
+        // Money sheet hourly, backups at night: one part a minute at most
+        googleOnSchedule(env, at).catch((err) => console.log("Google cron failed:", err?.name)),
       ])
     );
   },
@@ -763,7 +768,8 @@ export default {
     if (moved) return moved;
     // Nova Agent online: its own addresses (chat, Missions, Quests, Calendar's data, the Visualizer's
     // feeds) go to the studio PC over its link (src/agent-relay.js)
-    if (isRelayed(pathname)) return handleRelay(request, env, ctx);
+    // (a social post's picture or a receipt comes from Google Drive when the PC is off: src/google/relay.js)
+    if (isRelayed(pathname)) return relayWithDrive(request, env, ctx, handleRelay);
     // Lossless audio: its page is in public/lossless/; signalling and the relay setup are here
     if (pathname === "/lossless/ws" || pathname === "/lossless/ice") return lossless.fetch(request, env);
     // Observatory's projects and media (the studio's own work) are for signed-in staff

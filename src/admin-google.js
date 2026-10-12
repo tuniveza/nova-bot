@@ -36,7 +36,7 @@ export async function googleSetupPage(env, url, page) {
     {
       title: "Switch on Google's features",
       body: `<p>Press the button, pick (or make) a project called <b>Nova Agent</b>, then press <b>Next</b> and <b>Enable</b>.</p>
-        <p>${open("https://console.cloud.google.com/flows/enableapi?apiid=calendar-json.googleapis.com,gmail.googleapis.com,drive.googleapis.com", "Open Google Cloud")}</p>`,
+        <p>${open("https://console.cloud.google.com/flows/enableapi?apiid=calendar-json.googleapis.com,gmail.googleapis.com,drive.googleapis.com,people.googleapis.com,sheets.googleapis.com,docs.googleapis.com", "Open Google Cloud")}</p>`,
     },
     {
       title: "Set up Google's permission screen",

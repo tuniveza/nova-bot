@@ -22,9 +22,26 @@ const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 export const SCOPES = [
   "https://www.googleapis.com/auth/calendar",
   "https://www.googleapis.com/auth/gmail.send",
+  // Reading customers' replies to emails the studio sent (src/google/gmail.js); never changes mail
+  "https://www.googleapis.com/auth/gmail.readonly",
+  // Clients ⇄ Google Contacts (src/google/contacts.js)
+  "https://www.googleapis.com/auth/contacts",
+  // Only the files Nova Agent makes itself (its "Nova Agent" folder, the Money sheet, Notes' docs)
+  "https://www.googleapis.com/auth/drive.file",
   "openid",
   "email",
 ];
+// Each Google feature and the permission it needs (an older connection may lack some: Portal
+// says "Connect again to switch on: …")
+export const FEATURE_SCOPES = {
+  calendar: "https://www.googleapis.com/auth/calendar",
+  send: "https://www.googleapis.com/auth/gmail.send",
+  replies: "https://www.googleapis.com/auth/gmail.readonly",
+  contacts: "https://www.googleapis.com/auth/contacts",
+  drive: "https://www.googleapis.com/auth/drive.file",
+};
+// What a connection made before these were added was given
+const OLD_SCOPES = ["https://www.googleapis.com/auth/calendar", "https://www.googleapis.com/auth/gmail.send"];
 const TIMEOUT_MS = 10_000;
 
 // ===== CONNECTION =====
@@ -79,25 +96,43 @@ export async function finishConnecting(env, origin, code) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.refresh_token) throw new Error(data.error_description || data.error || `Google answered ${res.status}`);
   const email = emailFromIdToken(data.id_token);
-  const missing = SCOPES.filter((s) => s.startsWith("https://") && !String(data.scope || "").includes(s));
-  if (missing.length) throw new Error("Google didn't grant everything Nova Bot needs (tick every box on Google's page): " + missing.join(", "));
+  // What Google granted (someone can untick boxes on Google's page): each feature checks for its
+  // own permission, and Portal says which are missing
+  const granted = SCOPES.filter((s) => s.startsWith("https://") && String(data.scope || "").split(/\s+/).includes(s));
+  if (!granted.length) throw new Error("Google didn't grant anything Nova Agent needs. Press Connect Google again and tick every box.");
   await env.DB.batch([
     ...(await keepRefreshToken(env, data.refresh_token)),
     setting(env, "google_account", email || ""),
     setting(env, "google_connected_at", new Date().toISOString()),
+    setting(env, "google_scopes", granted.join(" ")),
   ]);
   accessCache = null;
   return email;
 }
 
 export async function disconnect(env) {
-  await env.DB.prepare(`DELETE FROM settings WHERE key IN ('${REFRESH_KEYS.join("', '")}', 'google_account', 'google_connected_at')`).run();
+  await env.DB.prepare(`DELETE FROM settings WHERE key IN ('${REFRESH_KEYS.join("', '")}', 'google_account', 'google_connected_at', 'google_scopes')`).run();
   accessCache = null;
 }
 
 // The connected account's email (for the admin page and the From: line)
 export async function connectedAccount(env) {
   return (await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_account'").first("value")) || env.GOOGLE_ACCOUNT || "";
+}
+
+// The permissions the studio's connection has (a connection from before they were saved: the
+// two it was always asked for)
+export async function grantedScopes(env) {
+  if (offline(env)) return SCOPES.filter((s) => s.startsWith("https://"));
+  const saved = await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_scopes'").first("value").catch(() => null);
+  if (saved) return saved.split(/\s+/).filter(Boolean);
+  return (await refreshToken(env)) ? OLD_SCOPES : [];
+}
+
+// Is Google connected with the permission this feature needs? (feature: a FEATURE_SCOPES key)
+export async function canUse(env, feature) {
+  if (!(await googleReady(env))) return false;
+  return (await grantedScopes(env)).includes(FEATURE_SCOPES[feature]);
 }
 
 function setting(env, key, value) {
@@ -153,8 +188,15 @@ export class GoogleError extends Error {
   }
 }
 
+// Call a Google API and get its raw answer (for downloads and uploads). `body` is sent as it is,
+// with `headers`; the caller reads the Response. Throws GoogleError only when there's no token.
+export async function googleFetch(env, method, url, { body, headers = {}, timeout = TIMEOUT_MS } = {}) {
+  const token = await accessToken(env);
+  return fetch(url, { method, headers: { Authorization: `Bearer ${token}`, ...headers }, body, signal: AbortSignal.timeout(timeout) });
+}
+
 // Call a Google API. Returns the JSON answer, or throws GoogleError.
-async function google(env, method, url, body) {
+export async function google(env, method, url, body) {
   const token = await accessToken(env);
   const res = await fetch(url, {
     method,
@@ -166,7 +208,8 @@ async function google(env, method, url, body) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const reason = data?.error?.message || data?.error || res.status;
-    console.log(`Google ${method} ${url.split("?")[0]} answered ${res.status}:`, String(reason).slice(0, 300));
+    // (the address without its query: a search can have someone's email address in it)
+    console.log(`Google ${method} ${url.split("?")[0].replace(/\/(users|people|threads|messages)\/[^/]+/g, "/$1/…")} answered ${res.status}:`, String(reason).slice(0, 300));
     throw new GoogleError(`Google ${res.status}: ${String(reason).slice(0, 200)}`, res.status);
   }
   return data;
@@ -245,7 +288,8 @@ export async function sendEmail(env, { to, subject, text, html, attachments = []
 }
 
 // An email in the format Gmail's API takes (RFC 2822, UTF-8 throughout)
-export function buildMime({ from, to, subject, text, html, attachments = [], replyTo }) {
+// `headers`: more header lines (List-Unsubscribe, In-Reply-To, References, Message-ID)
+export function buildMime({ from, to, subject, text, html, attachments = [], replyTo, headers = {} }) {
   const boundary = (tag) => `nova-${tag}-${crypto.randomUUID()}`;
   const mixed = boundary("mixed");
   const alt = boundary("alt");
@@ -254,6 +298,7 @@ export function buildMime({ from, to, subject, text, html, attachments = [], rep
     `To: ${headerSafe(to)}`,
     ...(replyTo ? [`Reply-To: ${headerSafe(replyTo)}`] : []),
     `Subject: ${encodeHeader(subject)}`,
+    ...Object.entries(headers || {}).filter(([k, v]) => /^[A-Za-z][A-Za-z0-9-]{1,40}$/.test(k) && v).map(([k, v]) => `${k}: ${headerSafe(v)}`),
     "MIME-Version: 1.0",
     `Content-Type: multipart/mixed; boundary="${mixed}"`,
     "",
@@ -304,7 +349,7 @@ function base64(text) {
   return btoa(binary);
 }
 
-const base64Url = (text) => base64(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+export const base64Url = (text) => base64(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const wrap = (b64) => b64.replace(/.{76}/g, "$&\r\n");
 
 // ===== HEALTH =====

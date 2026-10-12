@@ -35,6 +35,7 @@
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
 import { emailRecipients, sendEmail } from "./enquiries.js";
+import { sendStudioEmail } from "./google/gmail.js";
 import { campaignFrom } from "./campaigns.js";
 
 export const KINDS = ["business", "client", "reply"];
@@ -471,7 +472,8 @@ export async function sendApproved(env, id) {
   if (!meta.changes) return getOutreach(env, id);
 
   const email = outreachEmail(env, row);
-  const result = await sendEmail(env, {
+  // (from the studio's Gmail when that's switched on: src/google/gmail.js; otherwise Resend)
+  const result = await sendStudioEmail(env, {
     to: [row.to_name ? `${row.to_name.replace(/["<>]/g, "")} <${row.to_email}>` : row.to_email],
     from: outreachFrom(env),
     replyTo: replyTo(env),
@@ -480,12 +482,12 @@ export async function sendApproved(env, id) {
     html: email.html,
     headers: { "List-Unsubscribe": `<${optoutUrl(env, row)}>` },
     idempotencyKey: `outreach-${id}-${row.approved_hash.slice(0, 16)}`,
-  });
+  }, { kind: "outreach", id });
   if (!result.ok) return failWith(result.message || "Resend didn't send it.");
   const now = nowIso();
   await env.DB.batch([
     env.DB.prepare("UPDATE outreach_emails SET status = 'sent', resend_id = ?, sent_at = ?, error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'").bind(result.id || null, now, now, id),
-    logEntry(env, id, "sent", "nova", "Sent through Resend"),
+    logEntry(env, id, "sent", "nova", result.via === "gmail" ? "Sent from the studio's Gmail" : "Sent through Resend"),
   ]);
   console.log(`Outreach ${id}: sent`);
   return getOutreach(env, id);

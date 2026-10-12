@@ -34,6 +34,7 @@
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
 import { emailRecipients, sendEmail } from "./enquiries.js";
+import { sendStudioEmail } from "./google/gmail.js";
 import { pounds as poundsText, toPence } from "./clients.js";
 import { createInvoiceCheckout, stripeOffline } from "./nova/stripe.js";
 
@@ -610,7 +611,8 @@ export async function sendApprovedInvoice(env, id) {
   if (!emailReady(env)) return failWith(NOT_READY);
   const settings = await readSettings(env);
   const email = invoiceEmail(env, settings, row);
-  const result = await sendEmail(env, {
+  // (from the studio's Gmail when that's switched on: src/google/gmail.js; otherwise Resend)
+  const result = await sendStudioEmail(env, {
     to: [row.bill_email],
     from: invoiceFrom(env),
     replyTo: replyTo(env, settings),
@@ -618,7 +620,7 @@ export async function sendApprovedInvoice(env, id) {
     text: email.text,
     html: email.html,
     idempotencyKey: `invoice-${id}-${row.approved_hash.slice(0, 24)}`,
-  });
+  }, { kind: "invoice", id });
   if (!result.ok) return failWith(result.message);
   const now = nowIso();
   const statements = [
@@ -793,7 +795,7 @@ export async function decideReminder(env, me, { id, approve }) {
   const paragraphs = approved.body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   const greeting = paragraphs.length > 1 && /^(hi|hello|dear)\b/i.test(paragraphs[0]) ? paragraphs.shift() : "Hello,";
   const email = emailParts(env, settings, { greeting, paragraphs, link, linkText: "See and pay the invoice" });
-  const result = await sendEmail(env, {
+  const result = await sendStudioEmail(env, {
     to: [invoice.bill_email],
     from: invoiceFrom(env),
     replyTo: replyTo(env, settings),
@@ -801,7 +803,7 @@ export async function decideReminder(env, me, { id, approve }) {
     text: email.text,
     html: email.html,
     idempotencyKey: `invoice-reminder-${rid}`,
-  });
+  }, { kind: "invoice", id: invoice.id });
   const done = nowIso();
   if (!result.ok) {
     await env.DB.batch([
@@ -976,33 +978,39 @@ function cell(value) {
 const csv = (rows) => rows.map((r) => r.map(cell).join(",")).join("\r\n") + "\r\n";
 const pnd = (p) => poundsText(p);
 
-export async function exportCsv(env, { what, from, to }) {
+// The accountant's rows (a header row first): for the CSV, and for the Google Sheet (src/google/sheets.js)
+export async function exportRows(env, { what, from, to }) {
   if (!isDay(from) || !isDay(to) || to < from) return fail(400, "from and to: days, YYYY-MM-DD, from first.");
   if (what === "invoices") {
     const { results } = await env.DB.prepare("SELECT * FROM invoices WHERE issue_date BETWEEN ? AND ? AND status IN ('sent', 'part_paid', 'paid', 'void') ORDER BY seq").bind(from, to).all();
     return {
       name: `invoices-${from}-to-${to}.csv`,
-      body: csv([
+      rows: [
         ["Number", "Issued", "Due", "Client", "Subtotal (£)", "VAT %", "VAT (£)", "Total (£)", "Paid (£)", "Balance (£)", "Status", "Sent"],
         ...results.map((r) => [invoiceNumber(r.seq), r.issue_date, r.due_date, r.bill_name, pnd(r.subtotal_pence), r.vat_rate, pnd(r.vat_pence), pnd(r.total_pence), pnd(r.paid_pence), pnd(Math.max(0, r.total_pence - r.paid_pence)), r.status, r.sent_at ? r.sent_at.slice(0, 10) : ""]),
-      ]),
+      ],
     };
   }
   if (what === "payments") {
     const { results } = await env.DB.prepare("SELECT p.*, i.seq, i.bill_name FROM invoice_payments p JOIN invoices i ON i.id = p.invoice_id WHERE p.removed_at IS NULL AND p.paid_on BETWEEN ? AND ? ORDER BY p.paid_on, p.id").bind(from, to).all();
     return {
       name: `payments-${from}-to-${to}.csv`,
-      body: csv([["Paid on", "Amount (£)", "Method", "Invoice", "Client", "Note"], ...results.map((r) => [r.paid_on, pnd(r.amount_pence), METHOD_NAMES[r.method] || r.method, invoiceNumber(r.seq), r.bill_name, r.note || ""])]),
+      rows: [["Paid on", "Amount (£)", "Method", "Invoice", "Client", "Note"], ...results.map((r) => [r.paid_on, pnd(r.amount_pence), METHOD_NAMES[r.method] || r.method, invoiceNumber(r.seq), r.bill_name, r.note || ""])],
     };
   }
   if (what === "expenses") {
     const { results } = await env.DB.prepare("SELECT * FROM expenses WHERE deleted_at IS NULL AND status = 'confirmed' AND spent_on BETWEEN ? AND ? ORDER BY spent_on, id").bind(from, to).all();
     return {
       name: `expenses-${from}-to-${to}.csv`,
-      body: csv([["Date", "Amount (£)", "Category", "Supplier", "Note", "Receipt kept"], ...results.map((r) => [r.spent_on, pnd(r.amount_pence), r.category, r.supplier || "", r.note || "", r.receipt_id ? "Yes" : "No"])]),
+      rows: [["Date", "Amount (£)", "Category", "Supplier", "Note", "Receipt kept"], ...results.map((r) => [r.spent_on, pnd(r.amount_pence), r.category, r.supplier || "", r.note || "", r.receipt_id ? "Yes" : "No"])],
     };
   }
   return fail(400, "what: invoices, payments or expenses.");
+}
+
+export async function exportCsv(env, query) {
+  const out = await exportRows(env, query);
+  return out.error ? out : { name: out.name, body: csv(out.rows) };
 }
 
 // ===== THE CLIENT'S INVOICE PAGE (/invoice/<token>) =====

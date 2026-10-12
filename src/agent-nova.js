@@ -107,6 +107,7 @@ import { handleCampaignsForAgent } from "./campaigns.js";
 import { handleOutreachForAgent } from "./outreach.js";
 import { handleSocialForAgent } from "./social.js";
 import { handleMoneyForAgent } from "./money.js";
+import { handleGoogleForAgent } from "./google/index.js";
 import { tidyForAgent } from "./tidy.js";
 import { feedTimeToIso, listBookings } from "./booking-calendar.js";
 
@@ -162,12 +163,16 @@ export async function handleAgentNova(request, env, pathname) {
   if (request.method !== "POST" || !env.AGENT_NOVA_KEY || !(await sameText(key, env.AGENT_NOVA_KEY))) {
     return Response.json({ error: "Not allowed" }, { status: 401 });
   }
+  // A file for Google Drive: its bytes are the body (src/google/index.js)
+  if (pathname === "/nova-agent/google/drive/put") return handleGoogleForAgent(request, env, pathname, {});
   let body = {};
   try {
     body = await request.json();
   } catch {
     // An empty body is fine
   }
+  // Google: read-only tools for the AI, and the PC's file copies (src/google/index.js)
+  if (pathname.startsWith("/nova-agent/google/")) return handleGoogleForAgent(request, env, pathname, body);
 
   if (pathname === "/nova-agent/next") {
     const job = await nextJob(env, body);

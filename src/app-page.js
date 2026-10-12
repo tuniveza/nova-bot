@@ -132,6 +132,7 @@ import { handleOutreachForStaff } from "./outreach.js";
 import { STATES as INBOX_STATES, handleInboxForStaff, labelsInUse, stateCounts, team } from "./inbox.js";
 import { handleSocialForStaff } from "./social.js";
 import { handleMoneyForStaff } from "./money.js";
+import { handleGoogleForStaff } from "./google/index.js";
 import { handleTidyForStaff } from "./tidy.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
 import { usesNova } from "./mode.js";
@@ -198,6 +199,11 @@ export async function handleApp(request, env, ctx, answer) {
   // Money (src/money.js): invoices, payments and expenses; approving, voiding and settings are for an admin in a browser
   if (route === "/money" || route.startsWith("/money/")) {
     const answer = await handleMoneyForStaff(request, env, me, route);
+    if (answer) return answer;
+  }
+  // Google (src/google/): the setup and options are for admins; a note to Docs, Money's sheet for anyone
+  if (route === "/google" || route.startsWith("/google/")) {
+    const answer = await handleGoogleForStaff(request, env, me, route);
     if (answer) return answer;
   }
   // Test stuff (src/tidy.js): what looks like tests or copies, with Delete and "Not a test" (admins only)
