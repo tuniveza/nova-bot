@@ -71,6 +71,10 @@ export async function pullContacts(env, budget, group) {
   let token = await readSetting(env, SYNC_KEY);
   let pageToken = "";
   let changed = 0;
+  // Every contact already linked, read once (a big Google account has thousands of contacts, and
+  // asking the database about each one went over the worker's time)
+  const { results } = await env.DB.prepare("SELECT * FROM google_links WHERE kind = 'contact'").all();
+  const links = new Map(results.map((l) => [l.google_id, l]));
   for (;;) {
     if (budget.left <= 2) break;
     const params = new URLSearchParams({ personFields: FIELDS, pageSize: "200", requestSyncToken: "true" });
@@ -89,7 +93,12 @@ export async function pullContacts(env, budget, group) {
       }
       throw err;
     }
-    for (const p of data.connections || []) changed += await takePerson(env, p, group);
+    for (const p of data.connections || []) {
+      // Not one of the studio's (not linked, not in the "Novacane clients" label): nothing to do
+      const linked = links.get(p.resourceName) || null;
+      if (!linked && !p.metadata?.deleted && !(p.memberships || []).some((m) => m.contactGroupMembership?.contactGroupResourceName === group)) continue;
+      changed += await takePerson(env, p, group, linked);
+    }
     if (data.nextPageToken) {
       pageToken = data.nextPageToken;
       continue;
@@ -101,8 +110,8 @@ export async function pullContacts(env, budget, group) {
 }
 
 // One contact from Google. Returns 1 if a client changed or was added.
-export async function takePerson(env, p, group) {
-  const link = await linkByGoogle(env, "contact", p.resourceName);
+export async function takePerson(env, p, group, known) {
+  const link = known === undefined ? await linkByGoogle(env, "contact", p.resourceName) : known;
   if (p.metadata?.deleted) {
     if (link) await dropLink(env, "contact", link.nova_id).run();
     return 0;
