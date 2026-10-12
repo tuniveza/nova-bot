@@ -1688,18 +1688,17 @@ html.nv-site-cursor button:disabled {
 /* The cards (booking, feedback): nebula haze, stars and a sigil in the corner */
 .nv-card {
   background:
-    var(--nv-sigil-faint) no-repeat right -46px top -46px / 170px 170px padding-box,
     var(--nv-stars-sparse) 0 0 / 220px 220px padding-box,
     var(--nv-grain) 0 0 / 140px 140px padding-box,
     radial-gradient(ellipse at 15% 0%, rgba(255, 95, 168, 0.08), transparent 60%) padding-box,
     radial-gradient(ellipse at 100% 100%, rgba(122, 31, 134, 0.18), transparent 65%) padding-box,
     linear-gradient(160deg, rgba(36, 17, 52, 0.97), rgba(20, 11, 30, 0.97)) padding-box,
     linear-gradient(120deg, rgba(194, 64, 127, 0.55), rgba(90, 26, 106, 0.6), rgba(194, 64, 127, 0.55)) border-box;
-  background-size: 170px 170px, 220px 220px, 140px 140px, 100% 100%, 100% 100%, 100% 100%, 300% 100%;
+  background-size: 220px 220px, 140px 140px, 100% 100%, 100% 100%, 100% 100%, 300% 100%;
 }
 @keyframes nv-card-edge {
-  from { background-position: right -46px top -46px, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0; }
-  to   { background-position: right -46px top -46px, 0 0, 0 0, 0 0, 0 0, 0 0, 300% 0; }
+  from { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0; }
+  to   { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 300% 0; }
 }
 .nv-day, .nv-time:not(.nv-time-loading) {
   background-image: var(--nv-dust);
@@ -2512,3 +2511,20 @@ html.nv-page-locked body {
 #nv-chat-panel.nv-booking .nv-card-foot { padding-top: 12px; border-top: 1px solid rgba(255, 95, 168, 0.16); }
 /* Clear of the chat's rounded bottom corners, so the card's whole border shows */
 #nv-chat-panel.nv-booking #nv-chat-messages { padding-left: 14px; padding-right: 14px; padding-bottom: 26px; }
+/* ----- Booking card: compact (it was spread out with big gaps), so it all fits at once ----- */
+#nv-chat-panel.nv-booking .nv-card { padding: 12px 12px 12px; }
+#nv-chat-panel.nv-booking .nv-card-title { margin-bottom: 8px; font-size: 13px; }
+#nv-chat-panel.nv-booking .nv-card-body { gap: 8px; }
+#nv-chat-panel.nv-booking .nv-card-section { gap: 5px; }
+#nv-chat-panel.nv-booking .nv-card-label { margin-top: 0; }
+#nv-chat-panel.nv-booking .nv-card-select,
+#nv-chat-panel.nv-booking .nv-card-input { padding: 8px 11px; }
+#nv-chat-panel.nv-booking .nv-day { padding: 5px 2px 4px; }
+#nv-chat-panel.nv-booking .nv-day-num { font-size: 17px; }
+#nv-chat-panel.nv-booking .nv-time { padding: 7px 4px; font-size: 13px; }
+#nv-chat-panel.nv-booking .nv-card-foot { margin-top: 8px; padding-top: 8px; gap: 6px; }
+#nv-chat-panel.nv-booking .nv-card-book { padding: 11px 14px; }
+/* The card is as tall as what's in it (no empty gap above the buttons), and only shrinks, with
+   its fields scrolling, when the chat is shorter than that */
+#nv-chat-panel.nv-booking #nv-chat-messages > .nv-card { flex: 0 1 auto; }
+#nv-chat-panel.nv-booking .nv-card-body { flex: 0 1 auto; }
