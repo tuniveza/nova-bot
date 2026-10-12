@@ -2535,3 +2535,20 @@ html.nv-page-locked body {
 .nv-card-book:hover { background-position: 0 0, 0 0, 0 0; }
 .nv-card-book { transition: transform 0.15s, filter 0.2s, box-shadow 0.2s; }
 .nv-card-book:not(.nv-card-self):hover { filter: brightness(1.12); box-shadow: 0 0 18px rgba(208, 42, 125, 0.5); }
+/* ----- Booking card: "Book your session" stays still (no shimmer sliding across it, no
+   twinkling stars beside it) ----- */
+.nv-card-title { animation: none; background-position: 50% 0; }
+.nv-card-title::before,
+.nv-card-title::after { animation: none; opacity: 0.8; }
+/* ----- Booking: the whole card fits without scrolling. A slimmer header while booking, and
+   a little less space round the card ----- */
+#nv-chat-panel.nv-booking .nv-header { padding-top: 10px; padding-bottom: 22px; }
+#nv-chat-panel.nv-booking #nv-chat-messages { padding-top: calc(8px + var(--nv-peaks, 34px)); padding-bottom: 18px; }
+#nv-chat-panel.nv-booking .nv-card-section { gap: 4px; }
+#nv-chat-panel.nv-booking .nv-card-body { gap: 7px; }
+/* While booking on a computer or tablet the chat uses the window's full height (the chat button
+   underneath steps aside meanwhile: the chat's own × still closes it), so the card fits */
+@media (min-width: 521px) {
+  #nv-chat-panel.nv-booking { bottom: 24px; height: calc(100vh - 48px); height: calc(100dvh - 48px); max-height: calc(100dvh - 48px); }
+  #nv-chat:has(#nv-chat-panel.nv-booking) #nv-chat-toggle { opacity: 0; pointer-events: none; }
+}
