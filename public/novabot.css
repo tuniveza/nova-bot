@@ -2464,3 +2464,54 @@ html.nv-page-locked body {
   .nv-tools { grid-area: tools; padding: 0 0 8px; }
   .nv-input-row { grid-area: input; }
 }
+
+/* ----- Send: the same glowing pink-to-violet as "Book a session" (it was a near-black box: a
+   dark layer covered its colours), the grain and specks kept, a soft glow round it ----- */
+#nv-chat-send {
+  color: #fff;
+  background-image: var(--nv-grain), var(--nv-specks),
+    linear-gradient(rgba(23, 14, 34, 0.18), rgba(23, 14, 34, 0.18)),
+    linear-gradient(120deg, #c2407f 0%, #a01c6c 35%, #6e1f86 65%, #c2407f 100%);
+  box-shadow: 0 4px 14px rgba(176, 29, 104, 0.38), inset 0 0 12px rgba(255, 170, 214, 0.12);
+  text-shadow: 0 1px 6px rgba(60, 0, 40, 0.45);
+}
+#nv-chat-send:hover {
+  background-image: var(--nv-grain), var(--nv-specks),
+    linear-gradient(rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.06)),
+    linear-gradient(120deg, #c2407f 0%, #a01c6c 35%, #6e1f86 65%, #c2407f 100%);
+  box-shadow: 0 0 20px rgba(208, 42, 125, 0.6);
+}
+
+/* ----- Booking: the card fits the chat exactly. Its fields scroll inside it, and the Book
+   button stays in sight at the bottom (it used to run past the chat's rounded bottom edge, and
+   the right edge sat under the scrollbar) ----- */
+#nv-chat-panel.nv-booking #nv-chat-messages {
+  overflow: hidden;
+  padding-bottom: 16px;
+}
+#nv-chat-panel.nv-booking #nv-chat-messages > .nv-card {
+  flex: 1 1 auto;
+  min-height: 0;
+  justify-content: flex-start;
+}
+#nv-chat-panel.nv-booking .nv-card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-right: -6px;
+  padding: 2px 6px 0 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 95, 168, 0.45) transparent;
+}
+#nv-chat-panel.nv-booking .nv-card-body::-webkit-scrollbar { width: 6px; }
+#nv-chat-panel.nv-booking .nv-card-body::-webkit-scrollbar-thumb { border-radius: 6px; background: rgba(255, 95, 168, 0.45); }
+/* The Book button (and "Do it myself") stay at the bottom while the fields scroll */
+#nv-chat-panel.nv-booking .nv-card-body > .nv-card-book {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  box-shadow: 0 -14px 18px rgba(20, 11, 30, 0.92), 0 4px 14px rgba(176, 29, 104, 0.35);
+}
+#nv-chat-panel.nv-booking .nv-card-body > .nv-card-book ~ .nv-card-book { bottom: 0; }
