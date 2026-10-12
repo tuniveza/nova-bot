@@ -69,6 +69,9 @@ export function cleanItem(raw) {
     created,
     updated,
   };
+  // A Google Meet link (made by Google when Nova's Calendar syncs: src/google/calendar.js)
+  if (raw.meet === true) item.meet = true;
+  if (typeof raw.meetUrl === "string" && /^https:\/\/meet\.google\.com\/[\w-]{3,60}$/.test(raw.meetUrl)) item.meetUrl = raw.meetUrl;
   const repeat = cleanRepeat(raw.repeat);
   if (repeat) {
     item.repeat = repeat;

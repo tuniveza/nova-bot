@@ -39,13 +39,15 @@
 // UK time.
 
 import { fileFromDrive } from "./google/drive.js";
+import { channelStats, uploadVideo, videoStats, youtubeReadable, youtubeReady } from "./google/youtube.js";
+import { GoogleError } from "./nova/google.js";
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
 import { readTime } from "./acuity/api.js";
 import { askPC } from "./agent-relay.js";
 
-export const PLATFORMS = ["facebook", "instagram"];
-const PLATFORM_NAMES = { facebook: "Facebook", instagram: "Instagram" };
+export const PLATFORMS = ["facebook", "instagram", "youtube"];
+const PLATFORM_NAMES = { facebook: "Facebook", instagram: "Instagram", youtube: "YouTube" };
 export const STATUSES = ["draft", "pending_approval", "approved", "scheduled", "posting", "manual", "posted", "failed", "rejected"];
 const MEDIA_EXT = { jpg: "image", png: "image", webp: "image", gif: "image", mp4: "video", mov: "video" };
 const MEDIA_TYPES = { jpg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", mov: "video/quicktime" };
@@ -55,6 +57,7 @@ const MEDIA_ID = /^[a-f0-9]{32}$/;
 const IG_CAPTION = 2200;
 const IG_HASHTAGS = 30;
 const FB_CAPTION = 63206;
+const YT_DESCRIPTION = 5000;
 const MAX_MEDIA = 10;
 // Posts waiting for approval at once, at most (stops a runaway AI filling the list)
 const MAX_WAITING = 30;
@@ -99,7 +102,7 @@ function parseJson(value, fallback) {
   }
 }
 
-// Platforms: "facebook", "instagram", or both (in that order)
+// Platforms: any of "facebook", "instagram", "youtube" (in that order)
 function readPlatforms(value) {
   const list = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[\s,]+/) : [];
   const picked = PLATFORMS.filter((p) => list.map((x) => String(x).toLowerCase()).includes(p));
@@ -164,6 +167,13 @@ export function metaReady(env, platform) {
   return false;
 }
 export const readyFor = (env) => Object.fromEntries(PLATFORMS.map((p) => [p, metaReady(env, p)]));
+// Each platform posts by itself? (YouTube: Google connected with the upload permission and switched on)
+export async function platformReady(env, p) {
+  return p === "youtube" ? youtubeReady(env) : metaReady(env, p);
+}
+export async function readyForAll(env) {
+  return { ...readyFor(env), youtube: await youtubeReady(env) };
+}
 
 export class MetaError extends Error {
   constructor(message, status = 0, code = null) {
@@ -371,6 +381,11 @@ export async function followerSummary(env) {
     const first = before || (await env.DB.prepare("SELECT followers FROM social_followers WHERE platform = ? ORDER BY day ASC LIMIT 1").bind(p).first());
     out[p] = { followers: latest.followers, day: latest.day, change: first ? latest.followers - first.followers : 0 };
   }
+  // YouTube's subscribers (kept by src/google/youtube.js once a day)
+  try {
+    const yt = JSON.parse((await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_youtube_channel'").first("value")) || "null");
+    if (yt && yt.subscribers !== null && yt.subscribers !== undefined) out.youtube = { followers: yt.subscribers, day: yt.day, change: yt.before?.subscribers != null ? yt.subscribers - yt.before.subscribers : 0, views: yt.views, videos: yt.videos };
+  } catch {}
   return out;
 }
 
@@ -382,7 +397,7 @@ function checkFields(input, base = null) {
   const has = (key) => input && Object.hasOwn(input, key) && input[key] !== undefined;
   const caption = has("caption") ? cleanText(input.caption, FB_CAPTION) : base ? base.caption : "";
   const platforms = has("platforms") ? readPlatforms(input.platforms) : base ? parseJson(base.platforms, []) : null;
-  if (!platforms) return fail(400, "platforms: facebook, instagram, or both.");
+  if (!platforms) return fail(400, "platforms: facebook, instagram and/or youtube.");
   const media = has("media") ? readMedia(input.media) : base ? parseJson(base.media, []) : [];
   if (!media) return fail(400, "media: the pictures and videos, as uploaded (each with its id and ext).");
   if (media.length > MAX_MEDIA) return fail(400, `At most ${MAX_MEDIA} pictures and videos in one post.`);
@@ -392,6 +407,10 @@ function checkFields(input, base = null) {
     if (hashtags(caption) > IG_HASHTAGS) return fail(400, `Instagram allows ${IG_HASHTAGS} hashtags; this has ${hashtags(caption)}.`);
   }
   if (platforms.includes("facebook") && media.some((m) => m.kind === "video") && media.length > 1) return fail(400, "Facebook takes one video on its own, or up to 10 pictures: not a video with other files.");
+  if (platforms.includes("youtube")) {
+    if (media.length > 1 || media.some((m) => m.kind !== "video")) return fail(400, "YouTube takes one video on its own: no pictures, and one video per post.");
+    if (caption.length > YT_DESCRIPTION) return fail(400, `YouTube allows ${YT_DESCRIPTION} characters in a video's description; this is ${caption.length}.`);
+  }
   let post_at = base ? base.post_at ?? null : null;
   if (has("postAt")) {
     const when = readPostAt(input.postAt);
@@ -406,6 +425,7 @@ function notPostable(row) {
   const platforms = parseJson(row.platforms, []);
   const media = parseJson(row.media, []);
   if (platforms.includes("instagram") && !media.length) return "Instagram needs at least one picture or video. Add one with Edit, or untick Instagram.";
+  if (platforms.includes("youtube") && !(media.length === 1 && media[0].kind === "video")) return "YouTube needs one video. Add it with Edit, or untick YouTube.";
   if (row.post_at && Date.parse(row.post_at) < Date.now()) return `Its post time (${ukWhen(row.post_at)}) has passed. Edit the time (or clear it to post now), then approve.`;
   return null;
 }
@@ -595,7 +615,7 @@ async function begin(env, row) {
   const platforms = parseJson(row.platforms, []);
   for (const p of platforms) {
     if (targets[p]?.state === "posted") continue;
-    targets[p] = { mode: metaReady(env, p) ? "auto" : "manual", state: "waiting" };
+    targets[p] = { mode: (await platformReady(env, p)) ? "auto" : "manual", state: "waiting" };
   }
   const auto = platforms.some((p) => targets[p].mode === "auto" && targets[p].state !== "posted");
   const manual = platforms.filter((p) => targets[p].mode === "manual" && targets[p].state !== "posted");
@@ -607,7 +627,7 @@ async function begin(env, row) {
   if (!meta.changes) return getPost(env, row.id);
   const statements = [];
   if (auto) statements.push(logEntry(env, row.id, "posting", "nova", `Posting to ${forPlatforms(platforms.filter((p) => targets[p].mode === "auto" && targets[p].state !== "posted"))}`));
-  if (manual.length) statements.push(logEntry(env, row.id, "manual", "nova", `Waiting for someone to post it on ${forPlatforms(manual)} by hand (Meta isn't connected for ${manual.length === 2 ? "either" : "it"})`));
+  if (manual.length) statements.push(logEntry(env, row.id, "manual", "nova", `Waiting for someone to post it on ${forPlatforms(manual)} by hand (not connected to Nova for ${manual.length === 1 ? "it" : "those"})`));
   if (statements.length) await env.DB.batch(statements);
   if (manual.length && !auto) {
     await pingStaff(env, {
@@ -622,6 +642,16 @@ async function begin(env, row) {
 }
 
 const facebookUrl = (id) => `https://www.facebook.com/${encodeURIComponent(id)}`;
+
+// YouTube: the one video, straight from its copy in Google Drive (or the studio PC) to YouTube
+async function postToYouTube(env, row) {
+  const m = parseJson(row.media, [])[0];
+  if (!m || m.kind !== "video") throw new MetaError("YouTube needs one video.");
+  const source = await fetchMedia(env, `${m.id}.${m.ext}`).catch(() => null);
+  if (!source || !source.ok) throw new MetaError("The video couldn't be read: the studio computer is off and there's no copy in Google Drive. Try again with the PC on.");
+  const r = await uploadVideo(env, { caption: row.caption || "", source, type: MEDIA_TYPES[m.ext] || "video/mp4", size: m.size });
+  return { id: r.id, objectId: r.id, url: r.url };
+}
 
 // Facebook: one call (several pictures: each uploaded unpublished, then one post with them all)
 async function postToFacebook(env, row, t) {
@@ -725,6 +755,12 @@ export async function advance(env, id) {
           t.state = "sending";
           await save();
           Object.assign(t, await postToFacebook(env, row, t), { state: "posted", postedAt: nowIso() });
+        } else if (p === "youtube") {
+          // Stopped half-way last time: it may or may not be on the channel
+          if (t.state === "uploading") throw new MetaError("Nova Bot stopped while uploading to YouTube. Check the channel (YouTube Studio) before posting it again.");
+          t.state = "uploading";
+          await save();
+          Object.assign(t, await postToYouTube(env, row), { state: "posted", postedAt: nowIso() });
         } else {
           if (t.state === "publishing") throw new MetaError("Nova Bot stopped while publishing to Instagram. Check the account before posting it again.");
           if ((await stepInstagram(env, row, t, save)) === "posted") Object.assign(t, { state: "posted", postedAt: nowIso() });
@@ -732,7 +768,7 @@ export async function advance(env, id) {
         if (t.state === "posted") events.push(logEntry(env, id, "posted", "meta", `On ${PLATFORM_NAMES[p]}${t.url ? `: ${t.url}` : ""}`));
       } catch (err) {
         t.state = "failed";
-        t.error = err instanceof MetaError ? err.message : "Something went wrong posting it.";
+        t.error = err instanceof MetaError || err instanceof GoogleError ? err.message : "Something went wrong posting it.";
         events.push(logEntry(env, id, "failed", "meta", `${PLATFORM_NAMES[p]}: ${t.error}`));
         console.log(`Social post ${id}: ${p} failed`);
       }
@@ -779,7 +815,7 @@ async function settle(env, row, targets, events = []) {
 export async function markPosted(env, me, { id, platform, url }) {
   id = positiveId(id);
   if (!id) return fail(400, "Which post?");
-  if (!PLATFORMS.includes(platform)) return fail(400, "Which platform: facebook or instagram?");
+  if (!PLATFORMS.includes(platform)) return fail(400, "Which platform: facebook, instagram or youtube?");
   const link = cleanText(url, 600);
   if (link && !/^https:\/\/[^\s]+$/.test(link)) return fail(400, "The link should be the post's address (https://…), or leave it empty.");
   const row = await readRow(env, id);
@@ -1021,19 +1057,39 @@ async function platformStats(env, p, t) {
 export async function refreshResults(env, at = Date.now()) {
   const since = new Date(at - RESULTS_DAYS * 86400000).toISOString();
   const { results } = await env.DB.prepare("SELECT id, targets FROM social_posts WHERE posted_at >= ? OR (status IN ('failed', 'manual') AND updated_at >= ?) ORDER BY id").bind(since, since).all();
+  const youtubeIds = []; // [post id, video id]
+  const pending = new Map(); // post id -> Meta's numbers, to be written with YouTube's
   for (const post of results) {
     const targets = parseJson(post.targets, {});
     const stats = {};
     for (const p of PLATFORMS) {
       const t = targets[p];
+      if (p === "youtube") {
+        if (t?.mode === "auto" && t.state === "posted" && t.objectId) youtubeIds.push([post.id, t.objectId]);
+        continue;
+      }
       if (t?.mode === "auto" && t.state === "posted" && t.objectId && metaReady(env, p)) stats[p] = await platformStats(env, p, t);
     }
-    if (!Object.keys(stats).length) continue;
+    if (youtubeIds.length && youtubeIds[youtubeIds.length - 1][0] === post.id) pending.set(post.id, stats);
+    if (!Object.keys(stats).length || pending.has(post.id)) continue;
     await env.DB.prepare("UPDATE social_posts SET stats = ? WHERE id = ?").bind(JSON.stringify({ ...stats, fetchedAt: nowIso() }), post.id).run();
   }
+  // YouTube's numbers, for all its videos at once
+  if (youtubeIds.length && (await youtubeReadable(env))) {
+    try {
+      const yt = await videoStats(env, youtubeIds.map(([, v]) => v));
+      for (const [postId, videoId] of youtubeIds) {
+        const stats = { ...(pending.get(postId) || {}), ...(yt[videoId] ? { youtube: yt[videoId] } : {}) };
+        if (Object.keys(stats).length) await env.DB.prepare("UPDATE social_posts SET stats = ? WHERE id = ?").bind(JSON.stringify({ ...stats, fetchedAt: nowIso() }), postId).run();
+      }
+    } catch (err) {
+      console.log(`Social: YouTube's numbers couldn't be read (${err?.name})`);
+    }
+  }
+  if (await youtubeReadable(env)) await channelStats(env).catch(() => null);
   const day = ukDate(at);
   for (const p of PLATFORMS) {
-    if (!metaReady(env, p)) continue;
+    if (p === "youtube" || !metaReady(env, p)) continue;
     try {
       const id = p === "facebook" ? env.META_PAGE_ID : env.META_IG_USER_ID;
       const r = await graph(env, "GET", `/${String(id).trim()}`, { fields: "followers_count" });
@@ -1075,7 +1131,7 @@ export async function socialOnSchedule(env, at = Date.now()) {
   await env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(HOURLY_KEY, now).run();
   // Dealt-with comments go after 90 days
   await env.DB.prepare("DELETE FROM social_comments WHERE handled = 1 AND (reply_status IS NULL OR reply_status IN ('sent', 'rejected')) AND commented_at < ?").bind(new Date(at - KEEP_COMMENTS_DAYS * 86400000).toISOString()).run();
-  if (!PLATFORMS.some((p) => metaReady(env, p))) return { due: results.length, hourly: true };
+  if (!PLATFORMS.some((p) => metaReady(env, p)) && !(await youtubeReadable(env))) return { due: results.length, hourly: true };
   await refreshResults(env, at).catch((err) => console.log("Social: results failed:", err?.name));
   await pullComments(env, at).catch((err) => console.log("Social: comments failed:", err?.name));
   return { due: results.length, hourly: true };
@@ -1086,7 +1142,7 @@ export async function socialOnSchedule(env, at = Date.now()) {
 export async function socialContext(env) {
   const [recent, followers, comments] = await Promise.all([env.DB.prepare(`${SELECT} ORDER BY p.id DESC LIMIT 6`).all(), followerSummary(env), listComments(env, { open: true, limit: 20 })]);
   return {
-    connected: readyFor(env),
+    connected: await readyForAll(env),
     recent: recent.results.map((row) => publicPost(env, row)),
     followers,
     openComments: comments.length,
@@ -1105,7 +1161,7 @@ const canDecide = (me) => me.role === "admin" && me.session_kind === "cookie";
 export async function handleSocialForStaff(request, env, me, route) {
   if (route === "/social" && request.method === "GET") {
     const [posts, comments, followers] = await Promise.all([listPosts(env), listComments(env), followerSummary(env)]);
-    return json({ posts, comments, followers, connected: readyFor(env), canDecide: canDecide(me), adsUrl: ADS_URL, limits: { instagramCaption: IG_CAPTION, instagramHashtags: IG_HASHTAGS, facebookCaption: FB_CAPTION, media: MAX_MEDIA } });
+    return json({ posts, comments, followers, connected: await readyForAll(env), canDecide: canDecide(me), adsUrl: ADS_URL, limits: { instagramCaption: IG_CAPTION, instagramHashtags: IG_HASHTAGS, facebookCaption: FB_CAPTION, youtubeTitle: 100, youtubeDescription: YT_DESCRIPTION, media: MAX_MEDIA } });
   }
   const one = route.match(/^\/social\/(\d{1,12})$/);
   if (one && request.method === "GET") {

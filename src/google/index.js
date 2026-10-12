@@ -30,8 +30,12 @@ import { connectedAccount, disconnect, googleReady, grantedScopes, offline, FEAT
 import { clientProblem, googleClient, keyProblemWithGoogle, removeClient, saveClient } from "../nova/google-keys.js";
 import { publicUrl } from "../nova/booking.js";
 import { OPTIONS, needsReconnect, newBudget, noteStatus, onHold, partOn, readBackoff, readOptions, readSetting, readStatus, runPart, setOptions } from "./common.js";
-import { busyBetween, syncCalendar } from "./calendar.js";
-import { pullReplies, searchGmail } from "./gmail.js";
+import { busyBetween, syncCalendar, todayEvents } from "./calendar.js";
+import { importDoc, keepNoteInDocs, readDocText, searchDrive, syncDocs } from "./docs.js";
+import { keepInvoices } from "./invoices.js";
+import { listTasks, syncTasks } from "./tasks.js";
+import { youtubeSummary } from "./youtube.js";
+import { pullInbox, pullReplies, searchGmail } from "./gmail.js";
 import { findContacts, syncContacts } from "./contacts.js";
 import { backupIndex, dropFile, folderUrl, keepFile, makeDoc } from "./drive.js";
 import { refreshSheet, sheetStatus } from "./sheets.js";
@@ -44,6 +48,16 @@ const MAX_FILE = 100 * 1024 * 1024;
 const PARTS = {
   calendar: { label: "Calendar", option: "calendar", run: (env, budget) => syncCalendar(env, budget) },
   replies: { label: "Replies", option: "replies", run: (env, budget) => pullReplies(env, budget) },
+  inbox: { label: "Inbox", option: "inbox", run: (env, budget) => pullInbox(env, budget) },
+  docs: { label: "Notes in Docs", option: "docs", run: (env, budget) => syncDocs(env, budget) },
+  files: {
+    label: "Invoices in Drive",
+    option: "files",
+    run: async (env, budget) => {
+      const r = await keepInvoices(env, budget);
+      return { note: `${r.total} sent invoice${r.total === 1 ? "" : "s"} in Drive${r.done ? ` (${r.done} saved just now)` : ""}${r.more ? " · more next run" : ""}`, more: r.more };
+    },
+  },
   contacts: { label: "Contacts", option: "contacts", run: (env, budget) => syncContacts(env, budget) },
   sheets: {
     label: "Money sheet",
@@ -73,7 +87,8 @@ const ukClock = (at) => {
 export async function googleOnSchedule(env, at = Date.now()) {
   if (offline(env) || !(await googleReady(env).catch(() => false))) return null;
   const { h, m } = ukClock(at);
-  let name = h === 3 && m === 10 ? "backups" : m === 20 ? "replies" : m === 35 ? "contacts" : m === 50 ? "sheets" : m % 5 === 0 ? "calendar" : null;
+  let name =
+    h === 3 && m === 10 ? "backups" : m === 20 ? "replies" : m === 35 ? "contacts" : m === 50 ? "sheets" : m % 5 === 0 ? "calendar" : m % 15 === 3 ? "inbox" : m % 15 === 8 ? "files" : m % 15 === 13 ? "docs" : null;
   if (!name && m % 5 === 2) {
     const status = await readStatus(env);
     const unfinished = Object.keys(PARTS).filter((p) => status[p]?.more);
@@ -93,7 +108,7 @@ function setupSteps(origin) {
     {
       title: "Switch on Google's features",
       text: "Press the button, pick (or make) a project called Nova Agent, then press Next and Enable.",
-      open: { href: "https://console.cloud.google.com/flows/enableapi?apiid=calendar-json.googleapis.com,gmail.googleapis.com,drive.googleapis.com,people.googleapis.com,sheets.googleapis.com,docs.googleapis.com", label: "Open Google Cloud" },
+      open: { href: "https://console.cloud.google.com/flows/enableapi?apiid=calendar-json.googleapis.com,gmail.googleapis.com,drive.googleapis.com,people.googleapis.com,sheets.googleapis.com,docs.googleapis.com,tasks.googleapis.com,youtube.googleapis.com", label: "Open Google Cloud" },
       copy: [],
     },
     {
@@ -164,6 +179,19 @@ export async function googleOverview(env, me) {
 // Portal's /app/api/google… (app-page.js has checked the sign-in and the Origin). -> a Response, or null
 export async function handleGoogleForStaff(request, env, me, route, ctx = null) {
   if (route === "/google" && request.method === "GET") return json(await googleOverview(env, me));
+  // Today's calendar (Nova's and Google's events), for Portal's Today: no Google call
+  if (route === "/google/today" && request.method === "GET") return json({ events: await todayEvents(env) });
+  // Find someone in Google Contacts (Campaigns' one-to-one email form, and the like)
+  if (route === "/google/contacts" && request.method === "GET") {
+    const q = String(new URL(request.url).searchParams.get("q") || "").trim().slice(0, 100);
+    if (q.length < 2) return json({ contacts: [] });
+    if (!(await partOn(env, "contacts").catch(() => false))) return json({ contacts: [], off: true });
+    try {
+      return json({ contacts: (await findContacts(env, q)).filter((c) => c.name || c.email).slice(0, 8) });
+    } catch (err) {
+      return json({ error: "Google Contacts didn't answer: " + String(err.message || err).slice(0, 120) }, 502);
+    }
+  }
   if (request.method !== "POST") return null;
   // Anyone signed in: a note to Docs, Money's sheet
   if (route === "/google/docs") {
@@ -177,6 +205,17 @@ export async function handleGoogleForStaff(request, env, me, route, ctx = null) 
       return json({ ok: true, ...(await makeDoc(env, { title: String(body.title || "Note").slice(0, 200), html })) });
     } catch (err) {
       return json({ error: "Google Docs didn't take it: " + String(err.message || err).slice(0, 160) }, 502);
+    }
+  }
+  // Notes: keep a shared note in step with a Google Doc, or open a Google Doc into Notes
+  if (route === "/google/docs/keep" || route === "/google/docs/import") {
+    if (!(await partOn(env, "docs").catch(() => false))) return json({ error: "Notes in Google Docs is off, or Google isn't connected (Portal → Admin → Google)." }, 409);
+    const body = await readJson(request);
+    try {
+      const out = route === "/google/docs/keep" ? await keepNoteInDocs(env, me, { noteId: String(body.noteId || ""), on: body.on !== false }) : await importDoc(env, me, { url: String(body.url || "") });
+      return out.error ? json({ error: out.error }, out.status || 400) : json(out);
+    } catch (err) {
+      return json({ error: "Google Docs didn't answer: " + String(err.message || err).slice(0, 160) }, 502);
     }
   }
   if (route === "/google/sheet") {
@@ -223,7 +262,7 @@ export async function handleGoogleForStaff(request, env, me, route, ctx = null) 
   if (route === "/google/options") return json({ ok: true, options: await setOptions(env, body.changes) });
   if (route === "/google/sync") {
     const name = String(body.part || "");
-    if (!PARTS[name]) return json({ error: "Which part? calendar, replies, contacts, sheets or backups." }, 400);
+    if (!PARTS[name]) return json({ error: `Which part? ${Object.keys(PARTS).join(", ")}.` }, 400);
     if (!(await partOn(env, PARTS[name].option))) return json({ error: "That part is off, or Google isn't connected with its permission." }, 409);
     // In the background (the answer comes straight back; Portal watches the part's status), so a
     // big sync never keeps the studio PC's link waiting
@@ -245,14 +284,20 @@ export async function handleGoogleForStaff(request, env, me, route, ctx = null) 
 export async function handleGoogleForAgent(request, env, pathname, body) {
   if (pathname === "/nova-agent/google/status") {
     const ready = await googleReady(env).catch(() => false);
-    return json({ connected: ready && !offline(env), drive: await partOn(env, "drive").catch(() => false), backups: await partOn(env, "backups").catch(() => false) });
+    return json({
+      connected: ready && !offline(env),
+      drive: await partOn(env, "drive").catch(() => false),
+      backups: await partOn(env, "backups").catch(() => false),
+      files: await partOn(env, "files").catch(() => false),
+      tasks: await partOn(env, "tasks").catch(() => false),
+    });
   }
   if (pathname === "/nova-agent/google/drive/put") {
     const url = new URL(request.url);
     const kind = url.searchParams.get("kind");
     const id = String(url.searchParams.get("id") || "");
-    if (!["media", "receipt", "backup"].includes(kind) || !/^[\w.:/-]{1,120}$/.test(id) || id.includes("..")) return json({ error: "kind (media, receipt or backup) and id, please." }, 400);
-    if (!(await partOn(env, kind === "backup" ? "backups" : "drive"))) return json({ skipped: true, reason: "Google Drive is off or not connected." });
+    if (!["media", "receipt", "backup", "file"].includes(kind) || !/^[\w.:/-]{1,120}$/.test(id) || id.includes("..")) return json({ error: "kind (media, receipt, backup or file) and id, please." }, 400);
+    if (!(await partOn(env, kind === "backup" ? "backups" : kind === "file" ? "files" : "drive"))) return json({ skipped: true, reason: "Google Drive is off or not connected." });
     const size = Number(request.headers.get("Content-Length") || 0);
     if (size > MAX_FILE) return json({ error: "That's too big for Drive here (100 MB at most)." }, 413);
     const bytes = new Uint8Array(await request.arrayBuffer());
@@ -266,12 +311,31 @@ export async function handleGoogleForAgent(request, env, pathname, body) {
     }
   }
   if (pathname === "/nova-agent/google/drive/drop") {
-    if (!["media", "receipt", "backup"].includes(body?.kind) || typeof body?.id !== "string") return json({ error: "kind and id, please." }, 400);
+    if (!["media", "receipt", "backup", "file"].includes(body?.kind) || typeof body?.id !== "string") return json({ error: "kind and id, please." }, 400);
     if (!(await googleReady(env).catch(() => false))) return json({ skipped: true });
     return json({ ok: true, dropped: await dropFile(env, body.kind, body.id) });
   }
+  // Quests ⇄ Google Tasks: the PC sends its quests, and hears which were ticked off in Google
+  if (pathname === "/nova-agent/google/tasks/sync") {
+    if (!(await partOn(env, "tasks").catch(() => false))) return json({ skipped: true, reason: "Quests in Google Tasks is off, or Google isn't connected with Tasks." });
+    if (await onHold(env, "tasks")) return json({ skipped: true, reason: "Google asked Nova to wait a while." });
+    let out = null;
+    const r = await runPart(env, "tasks", async () => {
+      out = await syncTasks(env, newBudget(), body?.quests);
+      return out;
+    });
+    return json(r.ok ? { ok: true, completed: out?.completed || [], unlinked: out?.unlinked || [], note: r.note } : { error: r.error }, r.ok ? 200 : 502);
+  }
   // The AI's read tools
-  const need = { "/nova-agent/google/busy": "calendar", "/nova-agent/google/gmail/search": "replies", "/nova-agent/google/contacts/find": "contacts" }[pathname];
+  const need = {
+    "/nova-agent/google/busy": "calendar",
+    "/nova-agent/google/gmail/search": "replies",
+    "/nova-agent/google/contacts/find": "contacts",
+    "/nova-agent/google/tasks/list": "tasks",
+    "/nova-agent/google/drive/search": "driveRead",
+    "/nova-agent/google/doc/read": "driveRead",
+    "/nova-agent/google/youtube/stats": "youtube",
+  }[pathname];
   if (!need) return json({ error: "Not found" }, 404);
   if (!(await googleReady(env).catch(() => false)) || !(await grantedScopes(env)).includes(FEATURE_SCOPES[need])) {
     return json({ error: "Google isn't connected for that yet (Portal → Admin → Google)." }, 409);
@@ -288,6 +352,17 @@ export async function handleGoogleForAgent(request, env, pathname, body) {
       if (!q) return json({ error: "What to search for (q)?" }, 400);
       return json({ messages: await searchGmail(env, q, Number(body?.max) || 8) });
     }
+    if (need === "tasks") return json({ tasks: await listTasks(env, { max: Number(body?.max) || 30 }) });
+    if (pathname === "/nova-agent/google/drive/search") {
+      const q = String(body?.q || "").trim();
+      if (!q) return json({ error: "What to look for (q)?" }, 400);
+      return json({ files: await searchDrive(env, q, Number(body?.max) || 10) });
+    }
+    if (pathname === "/nova-agent/google/doc/read") {
+      if (!body?.id) return json({ error: "Which Doc (its id or link)?" }, 400);
+      return json(await readDocText(env, String(body.id)));
+    }
+    if (need === "youtube") return json(await youtubeSummary(env, { max: Number(body?.max) || 10 }));
     const q = String(body?.q || "").trim();
     if (!q) return json({ error: "Who to look for (q)?" }, 400);
     return json({ contacts: await findContacts(env, q) });

@@ -40,6 +40,12 @@ function freshGoogle() {
 		sheets: new Map(),
 		resend: [],
 		calls: [],
+		labels: [],
+		modified: [],
+		lists: [],
+		tasks: new Map(),
+		videos: new Map(),
+		uploads: [],
 	};
 }
 const ok = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", ...headers } });
@@ -97,6 +103,20 @@ function fakeFetch() {
 		}
 		// ---- Gmail ----
 		if (url.host === "gmail.googleapis.com") {
+			if (p.endsWith("/labels") && method === "GET") return ok({ labels: G.labels });
+			if (p.endsWith("/labels") && method === "POST") {
+				const l = { id: "Label_" + ++G.seq, ...(await bodyOf(init)) };
+				G.labels.push(l);
+				return ok(l);
+			}
+			const mod = p.match(/\/(messages|threads)\/([^/]+)\/modify$/);
+			if (mod) {
+				G.modified.push({ what: mod[1], id: decodeURIComponent(mod[2]), ...(await bodyOf(init)) });
+				return ok({});
+			}
+			if (p.endsWith("/messages") && (url.searchParams.get("q") || "").startsWith("in:inbox")) {
+				return ok({ messages: [...G.messages.values()].filter((m) => (m.labelIds || []).includes("INBOX")).map((m) => ({ id: m.id, threadId: m.threadId })).reverse() });
+			}
 			if (p.endsWith("/messages/send")) {
 				const b = await bodyOf(init);
 				const threadId = b.threadId || "t" + ++G.seq;
@@ -151,6 +171,70 @@ function fakeFetch() {
 				return ok(person);
 			}
 		}
+		// ---- Tasks ----
+		if (url.host === "tasks.googleapis.com") {
+			if (p === "/tasks/v1/users/@me/lists" && method === "GET") return ok({ items: G.lists });
+			if (p === "/tasks/v1/users/@me/lists" && method === "POST") {
+				const l = { id: "list" + ++G.seq, ...(await bodyOf(init)) };
+				G.lists.push(l);
+				return ok(l);
+			}
+			const tm = p.match(/^\/tasks\/v1\/lists\/([^/]+)\/tasks(?:\/([^/]+))?$/);
+			if (tm) {
+				const tid = tm[2] && decodeURIComponent(tm[2]);
+				if (!tid && method === "GET") return ok({ items: [...G.tasks.values()] });
+				if (!tid && method === "POST") {
+					const t = { id: "task" + ++G.seq, ...(await bodyOf(init)), updated: new Date().toISOString() };
+					G.tasks.set(t.id, t);
+					return ok(t);
+				}
+				const t = G.tasks.get(tid);
+				if (!t) return ok({ error: { message: "Not Found" } }, 404);
+				if (method === "PATCH") return ok(Object.assign(t, await bodyOf(init)));
+				if (method === "DELETE") {
+					G.tasks.delete(tid);
+					return new Response(null, { status: 204 });
+				}
+			}
+		}
+		// ---- YouTube ----
+		if (url.host === "www.googleapis.com" && p === "/upload/youtube/v3/videos") {
+			G.ytMeta = await bodyOf(init);
+			return new Response(null, { status: 200, headers: { Location: "https://www.googleapis.com/upload/yt-session/1" } });
+		}
+		if (url.host === "www.googleapis.com" && p.startsWith("/upload/yt-session/")) {
+			const bytes = new Uint8Array(await new Response(init.body).arrayBuffer());
+			const id = "vid" + ++G.seq;
+			G.uploads.push({ id, bytes: bytes.byteLength, meta: G.ytMeta });
+			G.videos.set(id, { viewCount: "120", likeCount: "9", commentCount: "2" });
+			return ok({ id });
+		}
+		if (url.host === "www.googleapis.com" && p === "/youtube/v3/videos") return ok({ items: (url.searchParams.get("id") || "").split(",").filter((id) => G.videos.has(id)).map((id) => ({ id, statistics: G.videos.get(id) })) });
+		if (url.host === "www.googleapis.com" && p === "/youtube/v3/channels") return ok({ items: [{ id: "ch1", snippet: { title: "Novacane Studios" }, statistics: { subscriberCount: "321", viewCount: "9000", videoCount: "14" }, contentDetails: { relatedPlaylists: { uploads: "UU1" } } }] });
+		// ---- Drive extras (Docs kept in step, invoices) ----
+		const exp = url.host === "www.googleapis.com" && p.match(/^\/drive\/v3\/files\/([^/]+)\/export$/);
+		if (exp) {
+			const file = G.files.get(decodeURIComponent(exp[1]));
+			if (!file) return ok({ error: { message: "Not Found" } }, 404);
+			return new Response(url.searchParams.get("mimeType") === "text/plain" ? String(file.html || "").replace(/<[^>]+>/g, "") : `<html><head><style>p{}</style></head><body>${file.html || ""}</body></html>`, { headers: { "Content-Type": "text/html" } });
+		}
+		const cp = url.host === "www.googleapis.com" && p.match(/^\/drive\/v3\/files\/([^/]+)\/copy$/);
+		if (cp) {
+			const id = "f" + ++G.seq;
+			G.files.set(id, { ...G.files.get(decodeURIComponent(cp[1])), id, ...(await bodyOf(init)) });
+			return ok({ id });
+		}
+		const up = url.host === "www.googleapis.com" && p.match(/^\/upload\/drive\/v3\/files\/([^/]+)$/);
+		if (up && method === "PATCH") {
+			const file = G.files.get(decodeURIComponent(up[1]));
+			if (!file) return ok({ error: { message: "Not Found" } }, 404);
+			if (file.readOnly) return ok({ error: { message: "Forbidden" } }, 403);
+			const text = typeof init.body === "string" ? init.body : new TextDecoder().decode(init.body);
+			file.html = (text.match(/<body>([\s\S]*)<\/body>/) || [, text])[1];
+			file.modifiedTime = new Date(Date.now() + ++G.seq).toISOString();
+			return ok({ id: file.id, modifiedTime: file.modifiedTime });
+		}
+		if (url.host === "www.googleapis.com" && p === "/drive/v3/files" && method === "GET") return ok({ files: [...G.files.values()].filter((f) => f.name).map((f) => ({ id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modifiedTime, webViewLink: "https://docs.google.com/document/d/" + f.id })) });
 		// ---- Drive and Sheets ----
 		if (url.host === "www.googleapis.com" && p.startsWith("/drive/v3/files")) {
 			const f = p.match(/^\/drive\/v3\/files\/([^/]+)$/);
@@ -165,7 +249,7 @@ function fakeFetch() {
 				if (!file) return ok({ error: { message: "Not Found" } }, 404);
 				if (url.searchParams.get("alt") === "media") return new Response(file.bytes, { headers: { "Content-Type": file.type || "image/jpeg", "Content-Length": String(file.bytes.byteLength) } });
 				if (method === "PATCH") Object.assign(file, await bodyOf(init));
-				return ok({ id: file.id, trashed: Boolean(file.trashed) });
+				return ok({ id: file.id, trashed: Boolean(file.trashed), name: file.name, mimeType: file.mimeType || (file.doc ? "application/vnd.google-apps.document" : undefined), modifiedTime: file.modifiedTime || "2026-10-01T00:00:00.000Z", webViewLink: "https://docs.google.com/document/d/" + file.id + "/edit", capabilities: { canEdit: !file.readOnly } });
 			}
 		}
 		if (url.host === "www.googleapis.com" && p === "/upload/drive/v3/files") {
@@ -176,8 +260,12 @@ function fakeFetch() {
 				return new Response(null, { status: 200, headers: { Location: `https://www.googleapis.com/upload/session/${id}` } });
 			}
 			const id = "f" + ++G.seq;
-			G.files.set(id, { id, doc: true });
-			return ok({ id, webViewLink: `https://docs.google.com/document/d/${id}/edit` });
+			const text = typeof init.body === "string" ? init.body : "";
+			const meta = JSON.parse((text.match(/\r\n\r\n(\{[^\r]*\})\r\n/) || [, "{}"])[1]);
+			const html = (text.match(/<body>([\s\S]*)<\/body>/) || [, ""])[1];
+			const modifiedTime = new Date(Date.now() + ++G.seq).toISOString();
+			G.files.set(id, { id, doc: true, name: meta.name, mimeType: meta.mimeType, parents: meta.parents, html, modifiedTime });
+			return ok({ id, webViewLink: `https://docs.google.com/document/d/${id}/edit`, modifiedTime });
 		}
 		if (url.host === "www.googleapis.com" && p.startsWith("/upload/session/")) {
 			const id = p.split("/").pop();

@@ -110,7 +110,7 @@ export function itemHash(raw) {
   const item = cleanItem(raw) || raw;
   const r = item.kind === "day"
     ? ["day", item.date, item.title || item.preset || "", item.info || "", item.location || ""]
-    : ["event", item.title || "", item.body || "", item.start, item.end, Boolean(item.allDay), item.location || "", item.color || "", item.repeat || null, item.exdates || []];
+    : ["event", item.title || "", item.body || "", item.start, item.end, Boolean(item.allDay), item.location || "", item.color || "", item.repeat || null, item.exdates || [], ...(item.meet ? ["meet"] : [])];
   return sha(JSON.stringify(r));
 }
 
@@ -132,7 +132,15 @@ export function toEvent(item) {
   if (item.color && COLOR_IDS[item.color]) event.colorId = COLOR_IDS[item.color];
   const recurrence = toRecurrence(item);
   event.recurrence = recurrence || [];
+  // "Google Meet" ticked: Google makes the link (sent with conferenceDataVersion=1)
+  if (item.meet && !item.meetUrl) event.conferenceData = { createRequest: { requestId: `nova-${item.id}`.slice(0, 64), conferenceSolutionKey: { type: "hangoutsMeet" } } };
   return event;
+}
+
+// A Google Meet link from Google's answer (an event with a Meet conference)
+export function meetLinkOf(event) {
+  const link = event?.hangoutLink || (event?.conferenceData?.entryPoints || []).find((e) => e.entryPointType === "video")?.uri || "";
+  return /^https:\/\/meet\.google\.com\/[\w-]{3,60}$/.test(link) ? link : "";
 }
 
 // A Google event as a Nova item (null if it can't be one). `id` is the Nova id it's kept under.
@@ -168,6 +176,11 @@ export function fromEvent(event, id) {
     item.repeat = rec.repeat;
     item.exdates = rec.exdates;
   }
+  const meet = meetLinkOf(event);
+  if (meet) {
+    item.meet = true;
+    item.meetUrl = meet;
+  }
   return item;
 }
 
@@ -175,7 +188,7 @@ export function fromEvent(event, id) {
 // of ours was changed in Google (Google writes times back its own way, so compare like this)
 export function itemSig(item) {
   const end = item.end > item.start ? item.end : item.allDay ? item.end : addMinutes(item.start, 30);
-  return JSON.stringify([item.title || "(no title)", item.body || "", item.location || "", item.start, end, Boolean(item.allDay), item.repeat || null, item.exdates || []]);
+  return JSON.stringify([item.title || "(no title)", item.body || "", item.location || "", item.start, end, Boolean(item.allDay), item.repeat || null, item.exdates || [], Boolean(item.meet)]);
 }
 export function eventSig(event) {
   const item = fromEvent(event, "x");
@@ -204,6 +217,8 @@ async function studioCalendar(env, budget) {
 }
 
 const eventsUrl = (calId, path = "") => `${API}/calendars/${encodeURIComponent(calId)}/events${path}`;
+// (with Meet links: Google only makes or keeps one when told it may)
+const withMeet = (url) => url + (url.includes("?") ? "&" : "?") + "conferenceDataVersion=1";
 
 // ===== NOVA → GOOGLE =====
 
@@ -216,6 +231,7 @@ export async function pushItems(env, budget, { plan = false } = {}) {
   spendDb(budget);
   const { results } = await env.DB.prepare("SELECT * FROM calendar_items WHERE rev > ? ORDER BY rev LIMIT ?").bind(since, PUSH_ROWS).all();
   const L = await links(env, budget, "event");
+  const meetOk = await partOn(env, "meet").catch(() => false);
   let done = 0;
   let reached = since;
   let stopped = false;
@@ -252,8 +268,9 @@ export async function pushItems(env, budget, { plan = false } = {}) {
       // An event from Google keeps its own calendar and Google's id
       const event = toEvent(item);
       if (/^gp?-/.test(id)) delete event.extendedProperties;
+      let answer;
       try {
-        await google(env, "PATCH", eventsUrl(link.extra || calId, `/${encodeURIComponent(link.google_id)}`), event);
+        answer = await google(env, "PATCH", meetOk ? withMeet(eventsUrl(link.extra || calId, `/${encodeURIComponent(link.google_id)}`)) : eventsUrl(link.extra || calId, `/${encodeURIComponent(link.google_id)}`), meetOk ? event : withoutMeet(event));
       } catch (err) {
         // Someone else's event (an invitation): Google won't let it change. Nova's copy stays as it is.
         if (err.status === 403) {
@@ -268,17 +285,35 @@ export async function pushItems(env, budget, { plan = false } = {}) {
         continue;
       }
       keepLink(env, budget, "event", id, link.google_id, { extra: link.extra || calId, hash });
+      await keepMeetLink(env, budget, item, answer);
     } else if (/^gp?-/.test(id)) {
       // From Google, but its link is gone (Google deleted it): leave it to the pull
     } else {
-      const made = await google(env, "POST", eventsUrl(calId), toEvent(item));
+      const event = toEvent(item);
+      const made = await google(env, "POST", meetOk ? withMeet(eventsUrl(calId)) : eventsUrl(calId), meetOk ? event : withoutMeet(event));
       keepLink(env, budget, "event", id, made.id, { extra: calId, hash });
+      await keepMeetLink(env, budget, item, made);
     }
     done++;
     reached = row.rev;
   }
   if (reached !== since) later(budget, writeSetting(env, REV_KEY, reached));
   return { done, more: stopped || results.length === PUSH_ROWS };
+}
+
+// "Google Meet" off (or not allowed): the event goes without asking for a link
+function withoutMeet(event) {
+  const { conferenceData, ...rest } = event;
+  return rest;
+}
+
+// Google made a Meet link for one of Nova's events: Nova's Calendar shows it too (the change goes
+// back to the PC like any other; its hash is the same, so it isn't sent to Google again)
+async function keepMeetLink(env, budget, item, answer) {
+  const link = meetLinkOf(answer);
+  if (!link || !item.meet || item.meetUrl === link || isAgentItem(item.id)) return;
+  spendDb(budget);
+  await saveItem(env, { ...item, meetUrl: link, base: item.updated, updated: new Date(Math.max(Date.parse(item.updated) + 1, Date.now())).toISOString() });
 }
 
 async function deleteEvent(env, calId, eventId) {
@@ -445,11 +480,16 @@ async function skipDay(env, id, day, budget) {
 
 // ===== BOOKINGS: ACUITY → GOOGLE (copies only) =====
 
-export function bookingEvent(b) {
+// An online session (its type says so): a Google Meet link, if Meet links are switched on
+export const isOnlineSession = (b) => /\b(online|remote|zoom|video ?call|google meet|meet)\b/i.test(String(b?.session || ""));
+
+export function bookingEvent(b, { meet = false } = {}) {
   const start = feedTimeToIso(b.start);
   const end = feedTimeToIso(b.end) || start;
   if (!start) return null;
+  const conference = meet && isOnlineSession(b) ? { conferenceData: { createRequest: { requestId: `nova-booking-${b.id}`.slice(0, 64), conferenceSolutionKey: { type: "hangoutsMeet" } } } } : {};
   return {
+    ...conference,
     summary: `Booking: ${b.session || "Session"}${b.name ? ` · ${b.name}` : ""}`,
     description: "A copy of the booking in Acuity. Book, move or cancel it in Acuity (changes here are put back).",
     start: { dateTime: start, timeZone: TZ },
@@ -471,6 +511,7 @@ export async function pushBookings(env, budget) {
   });
   const ids = new Set(wanted.map((b) => String(b.id)));
   const L = await links(env, budget, "booking");
+  const meet = await partOn(env, "meet").catch(() => false);
   let done = 0;
   let stopped = false;
   for (const b of wanted) {
@@ -478,22 +519,22 @@ export async function pushBookings(env, budget) {
       stopped = true;
       break;
     }
-    const event = bookingEvent(b);
+    const event = bookingEvent(b, { meet });
     if (!event) continue;
-    const hash = await sha(JSON.stringify([event.summary, event.start, event.end]));
+    const hash = await sha(JSON.stringify([event.summary, event.start, event.end, Boolean(event.conferenceData)]));
     const link = L.byNova.get(String(b.id)) || null;
     if (link && link.hash === hash) continue;
     budget.left--;
     if (link) {
       try {
-        await google(env, "PATCH", eventsUrl(calId, `/${encodeURIComponent(link.google_id)}`), event);
+        await google(env, "PATCH", withMeet(eventsUrl(calId, `/${encodeURIComponent(link.google_id)}`)), event);
         keepLink(env, budget, "booking", b.id, link.google_id, { extra: calId, hash });
       } catch (err) {
         if (err.status !== 404 && err.status !== 410) throw err;
         forgetLink(env, budget, "booking", b.id);
       }
     } else {
-      const made = await google(env, "POST", eventsUrl(calId), event);
+      const made = await google(env, "POST", withMeet(eventsUrl(calId)), event);
       keepLink(env, budget, "booking", b.id, made.id, { extra: calId, hash });
     }
     done++;
@@ -546,6 +587,67 @@ export async function syncCalendar(env, budget) {
   } finally {
     await flush(env, budget).catch(() => {});
   }
+}
+
+// ===== TODAY (Portal's Today, Agent's what_now) =====
+
+// What's in the calendar today (UK): Nova's own events and the ones from Google, soonest first.
+// Read from Nova's Calendar (kept in step with Google), so it costs no Google call. Nova Agent's
+// plan (quests, music time) is left out: Quests shows that.
+export async function todayEvents(env, at = Date.now()) {
+  const day = ukWall(new Date(at).toISOString()).slice(0, 10);
+  const { results } = await env.DB.prepare(
+    "SELECT id, kind, data FROM calendar_items WHERE deleted = 0 AND kind = 'event' AND start <= ? AND start >= ? ORDER BY start LIMIT 300"
+  )
+    .bind(`${day}T23:59`, addDays(day, -400))
+    .all();
+  const out = [];
+  for (const r of results) {
+    if (isAgentItem(r.id)) continue;
+    let it;
+    try {
+      it = JSON.parse(r.data);
+    } catch {
+      continue;
+    }
+    const on = (d) => (it.start.slice(0, 10) <= d && (it.end || it.start).slice(0, 10) >= d) || repeatsOn(it, d);
+    if (!on(day)) continue;
+    out.push({
+      id: r.id,
+      title: it.title || "(no title)",
+      start: it.allDay ? null : it.start.slice(11, 16),
+      end: it.allDay ? null : (it.end || it.start).slice(11, 16),
+      allDay: Boolean(it.allDay),
+      location: it.location || "",
+      meetUrl: it.meetUrl || "",
+      from: /^gp?-/.test(r.id) ? "Google Calendar" : it.author || "Nova",
+    });
+  }
+  out.sort((a, b) => (a.allDay === b.allDay ? String(a.start).localeCompare(String(b.start)) : a.allDay ? -1 : 1));
+  return out;
+}
+
+// Does a repeating event happen on this day? (daily, weekly on its days, monthly on its date,
+// yearly; its end date or count and skipped days respected roughly)
+function repeatsOn(it, day) {
+  const r = it.repeat;
+  if (!r || day < it.start.slice(0, 10)) return false;
+  if (r.until && day > r.until) return false;
+  if ((it.exdates || []).includes(day)) return false;
+  const first = Date.parse(it.start.slice(0, 10) + "T00:00:00Z");
+  const d = Date.parse(day + "T00:00:00Z");
+  const days = Math.round((d - first) / 86400000);
+  const every = Math.max(1, Number(r.interval) || 1);
+  const dt = new Date(d);
+  const ft = new Date(first);
+  if (r.freq === "daily") return days % every === 0;
+  if (r.freq === "weekly") {
+    const byDay = r.byDay?.length ? r.byDay : [ft.getUTCDay()];
+    return byDay.includes(dt.getUTCDay()) && Math.floor(days / 7) % every === 0;
+  }
+  if (r.freq === "monthly") return dt.getUTCDate() === ft.getUTCDate() && ((dt.getUTCFullYear() - ft.getUTCFullYear()) * 12 + dt.getUTCMonth() - ft.getUTCMonth()) % every === 0;
+  if (r.freq === "yearly") return dt.getUTCDate() === ft.getUTCDate() && dt.getUTCMonth() === ft.getUTCMonth() && (dt.getUTCFullYear() - ft.getUTCFullYear()) % every === 0;
+  return false;
 }
 
 // The studio's busy times, from both calendars (for Agent's google_calendar_busy)

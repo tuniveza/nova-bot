@@ -18,10 +18,11 @@
 //
 // Logs say counts only, never addresses or what anyone wrote.
 
-import { buildMime, base64Url, connectedAccount, google, GoogleError } from "../nova/google.js";
+import { buildMime, base64Url, canUse, connectedAccount, google, GoogleError } from "../nova/google.js";
+import { spamCheck, spamReason } from "../inbox.js";
 import { sendEmail as resendEmail } from "../enquiries.js";
 import { notifyPhones } from "../push.js";
-import { flush, getLink, keepLink, later, links, low, partOn, prep, putLink, readSetting, spendDb, writeSetting } from "./common.js";
+import { flush, forgetLink, getLink, keepLink, later, links, low, partOn, prep, putLink, readSetting, spendDb, writeSetting } from "./common.js";
 
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
 const THREAD_DAYS = 45;
@@ -274,6 +275,170 @@ export async function pullReplies(env, budget) {
   } finally {
     await flush(env, budget).catch(() => {});
   }
+}
+
+// ===== THE STUDIO'S GMAIL AS ENQUIRIES' INBOX =====
+//
+// Every 15 minutes, new emails to the studio's Gmail (its Primary inbox, the last 3 days) come into
+// Enquiries, like the website's enquiry form: newsletters, notifications, mailing lists and other
+// automatic email stay out, and likely spam goes to Enquiries' Spam folder (src/inbox.js's check).
+// A reply in a thread that's already an enquiry joins that enquiry instead. With the gmail.modify
+// permission, each one gets a "Nova" label in Gmail, and an enquiry marked Done is archived in Gmail
+// (back in the inbox if it's opened again). Nothing is ever sent from here.
+
+const INBOX_PER_RUN = 10;
+const ARCHIVE_PER_RUN = 5;
+const LABEL_KEY = "google_gmail_label";
+const AUTO_FROM = /(^|[._+-])(no-?reply|do-?not-?reply|notifications?|notify|alerts?|mailer-daemon|postmaster|bounces?|newsletters?|news|marketing|updates?|digest|receipts?|billing|invoices?)([._+-]|@)/i;
+const AUTO_DOMAINS = /@([\w-]+\.)*(google\.com|googlemail\.com|youtube\.com|facebookmail\.com|facebook\.com|instagram\.com|linkedin\.com|x\.com|twitter\.com|tiktok\.com|stripe\.com|paypal\.(com|co\.uk)|acuityscheduling\.com|squarespace\.com|mailchimp\.com|mailerlite\.com|resend\.(com|dev)|cloudflare\.com|github\.com|apple\.com|amazon\.(com|co\.uk)|soundcloud\.com|spotify\.com|distrokid\.com|canva\.com|zoom\.us|eventbrite\.(com|co\.uk))>?$/i;
+
+// Sent by a machine (a newsletter, a notification, a mailing list, an auto-reply)?
+export function looksAutomated(msg) {
+  const h = (name) => header(msg, name);
+  if (h("List-Id") || h("List-Unsubscribe") || h("List-Post")) return true;
+  if (/^(bulk|list|junk|auto_reply)$/i.test(h("Precedence").trim())) return true;
+  const auto = h("Auto-Submitted").trim().toLowerCase();
+  if (auto && auto !== "no") return true;
+  if (h("X-Auto-Response-Suppress") || h("X-Autoreply") || h("X-Autorespond")) return true;
+  const from = fromAddress(h("From"));
+  return AUTO_FROM.test(from) || AUTO_DOMAINS.test(from);
+}
+
+// Gmail's "Nova" label (made once), or null without the permission
+async function novaLabel(env, budget) {
+  const saved = await readSetting(env, LABEL_KEY);
+  if (saved) return saved;
+  budget.left--;
+  const list = await google(env, "GET", `${GMAIL}/labels`);
+  let id = (list.labels || []).find((l) => l.name === "Nova")?.id;
+  if (!id) {
+    budget.left--;
+    id = (await google(env, "POST", `${GMAIL}/labels`, { name: "Nova", labelListVisibility: "labelShow", messageListVisibility: "show" })).id;
+  }
+  later(budget, writeSetting(env, LABEL_KEY, id));
+  return id;
+}
+
+const META_HEADERS = ["From", "Subject", "Message-ID", "List-Id", "List-Unsubscribe", "List-Post", "Precedence", "Auto-Submitted", "X-Auto-Response-Suppress", "X-Autoreply", "X-Autorespond"];
+
+export async function pullInbox(env, budget) {
+  prep(budget);
+  try {
+    const account = await connectedAccount(env);
+    if (!account) return "Not connected";
+    const { seen } = await readContext(env, budget);
+    const threads = await links(env, budget, "gmail-thread");
+    const modify = await canUse(env, "modify").catch(() => false);
+    const label = modify ? await novaLabel(env, budget) : null;
+    budget.left--;
+    const list = await google(env, "GET", `${GMAIL}/messages?${new URLSearchParams({ q: "in:inbox category:primary -from:me newer_than:3d -in:chats", maxResults: "25" })}`);
+    const fresh = (list.messages || []).filter((m) => !seen.byNova.has(m.id)).reverse(); // oldest first
+    let added = 0;
+    let spam = 0;
+    let skipped = 0;
+    let more = fresh.length > INBOX_PER_RUN;
+    const newOnes = [];
+    for (const m of fresh.slice(0, INBOX_PER_RUN)) {
+      if (low(budget, 4)) {
+        more = true;
+        break;
+      }
+      budget.left--;
+      const params = new URLSearchParams({ format: "metadata" });
+      for (const h of META_HEADERS) params.append("metadataHeaders", h);
+      const meta = await google(env, "GET", `${GMAIL}/messages/${encodeURIComponent(m.id)}?${params}`);
+      const from = fromAddress(header(meta, "From"));
+      if (!from || from === account.toLowerCase()) {
+        keepLink(env, budget, "gmail-in", m.id, meta.threadId || "", { extra: "ours" });
+        seen.byNova.set(m.id, { extra: "ours" });
+        continue;
+      }
+      if (looksAutomated(meta)) {
+        keepLink(env, budget, "gmail-in", m.id, meta.threadId || "", { extra: "skipped" });
+        seen.byNova.set(m.id, { extra: "skipped" });
+        skipped++;
+        continue;
+      }
+      budget.left--;
+      const msg = await google(env, "GET", `${GMAIL}/messages/${encodeURIComponent(m.id)}?format=full`);
+      // A reply in a thread that's already an enquiry: it joins that one
+      const thread = threads.byGoogle.get(String(meta.threadId || ""));
+      if (thread && /^enquiry:\d+$/.test(thread.nova_id)) {
+        added += await takeMessage(env, msg, { ref: { kind: "enquiry", id: thread.nova_id.split(":")[1] }, account, budget });
+        continue;
+      }
+      const body = messageText(msg.payload) || String(msg.snippet || "").slice(0, 500);
+      const name = fromName(header(meta, "From")) || from;
+      const subject = header(meta, "Subject").slice(0, 200) || "Email";
+      const check = spamCheck({ name, email: from, subject, details: body });
+      const at = new Date(Number(msg.internalDate) || Date.now()).toISOString();
+      const now = new Date().toISOString();
+      spendDb(budget);
+      const row = await env.DB.prepare(
+        `INSERT INTO enquiries (created_at, name, email, subject, details, page, consent_at, consent_source, status, spam_reason, state_at, state_by)
+         VALUES (?, ?, ?, ?, ?, 'gmail', ?, 'Emailed the studio (Gmail)', ?, ?, ?, 'gmail') RETURNING id`
+      )
+        .bind(at, name.slice(0, 100), from, subject, body || "(no text)", at, check.spam ? "spam" : "new", check.spam ? spamReason(check) : null, now)
+        .first();
+      // So a reply from Enquiries joins this Gmail thread, and their next email lands here too
+      keepLink(env, budget, "gmail-thread", `enquiry:${row.id}`, msg.threadId || meta.threadId, { extra: header(meta, "Message-ID") || null });
+      keepLink(env, budget, "gmail-in", m.id, msg.threadId || "", { extra: `enquiry:${row.id}` });
+      seen.byNova.set(m.id, { extra: `enquiry:${row.id}` });
+      if (label && !low(budget, 2)) {
+        budget.left--;
+        await google(env, "POST", `${GMAIL}/messages/${encodeURIComponent(m.id)}/modify`, { addLabelIds: [label] }).catch(() => {});
+      }
+      if (check.spam) spam++;
+      else {
+        added++;
+        newOnes.push(name);
+      }
+    }
+    const archived = modify ? await archiveDone(env, budget) : 0;
+    await flush(env, budget);
+    if (newOnes.length) {
+      try {
+        await notifyPhones(env, {
+          title: newOnes.length === 1 ? `New email: ${newOnes[0]}` : `${newOnes.length} new emails`,
+          body: "In Portal → Enquiries.",
+          url: "/portal/?view=enquiries",
+          style: { source: "portal", kind: "enquiry", tag: "gmail-inbox", ttl: 12 * 3600, urgent: false },
+        });
+      } catch {}
+    }
+    const parts = [added && `${added} new`, spam && `${spam} to Spam`, skipped && `${skipped} automatic left out`, archived && `${archived} archived in Gmail`].filter(Boolean);
+    return { note: `Inbox checked${parts.length ? ` · ${parts.join(", ")}` : " · nothing new"}${more ? " · more next run" : ""}`, more };
+  } finally {
+    await flush(env, budget).catch(() => {});
+  }
+}
+
+// Enquiries from Gmail marked Done: archived in Gmail; opened again: back in the inbox
+async function archiveDone(env, budget) {
+  const done = await links(env, budget, "gmail-archived");
+  spendDb(budget);
+  const { results } = await env.DB.prepare(
+    `SELECT e.id, e.status, l.google_id AS thread FROM enquiries e JOIN google_links l ON l.kind = 'gmail-thread' AND l.nova_id = 'enquiry:' || e.id
+     WHERE e.page = 'gmail' AND (e.status = 'done' OR e.id IN (SELECT CAST(nova_id AS INTEGER) FROM google_links WHERE kind = 'gmail-archived'))
+     ORDER BY e.id DESC LIMIT 50`
+  ).all();
+  let n = 0;
+  for (const e of results) {
+    if (n >= ARCHIVE_PER_RUN || low(budget, 2)) break;
+    const archived = done.byNova.has(String(e.id));
+    if (e.status === "done" && !archived) {
+      budget.left--;
+      await google(env, "POST", `${GMAIL}/threads/${encodeURIComponent(e.thread)}/modify`, { removeLabelIds: ["INBOX"] }).catch(() => {});
+      keepLink(env, budget, "gmail-archived", e.id, e.thread);
+      n++;
+    } else if (e.status !== "done" && archived) {
+      budget.left--;
+      await google(env, "POST", `${GMAIL}/threads/${encodeURIComponent(e.thread)}/modify`, { addLabelIds: ["INBOX"] }).catch(() => {});
+      forgetLink(env, budget, "gmail-archived", e.id);
+      n++;
+    }
+  }
+  return n;
 }
 
 // ===== FOR AGENT (read-only) =====

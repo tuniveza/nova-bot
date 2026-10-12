@@ -18,7 +18,9 @@ import { getLink, putLink, dropLink, readSetting, writeSetting } from "./common.
 const DRIVE = "https://www.googleapis.com/drive/v3";
 const UPLOAD = "https://www.googleapis.com/upload/drive/v3";
 const FOLDER_TYPE = "application/vnd.google-apps.folder";
-const FOLDERS = { root: "Nova Agent", media: "Social", receipt: "Receipts", backup: "Backups", docs: "Docs" };
+const FOLDERS = { root: "Nova Agent", media: "Social", receipt: "Receipts", backup: "Backups", docs: "Docs", file: "Files", invoice: "Invoices" };
+// Kept up to date in place (one copy each); the others never change once made
+const UPDATED_IN_PLACE = new Set(["backup", "file", "invoice"]);
 const KEEP_INDEX_BACKUPS = 14;
 
 // ===== FOLDERS =====
@@ -76,13 +78,13 @@ async function replaceFile(env, id, { type, bytes }) {
   return true;
 }
 
-// Keep one of Nova's files in Drive. kind: "media" | "receipt" | "backup"; novaId: its id in
+// Keep one of Nova's files in Drive. kind: "media" | "receipt" | "backup" | "file"; novaId: its id in
 // Nova (a backup: its name). A backup with that name already there is updated in place; the
 // others never change once made (a new picture is a new id). -> the Drive file's id
 export async function keepFile(env, { kind, novaId, name, type, bytes }) {
   const link = await getLink(env, kind, novaId);
   if (link) {
-    if (kind !== "backup") return link.google_id;
+    if (!UPDATED_IN_PLACE.has(kind)) return link.google_id;
     if (await replaceFile(env, link.google_id, { type, bytes })) {
       await putLink(env, kind, novaId, link.google_id, { extra: name }).run();
       return link.google_id;
