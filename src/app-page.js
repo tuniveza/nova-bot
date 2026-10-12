@@ -82,6 +82,10 @@
 //        /money/payments/:id/remove, /money/invoices/test-send { id }, /money/settings (admins in a browser)
 //   POST /app/api/money/expenses        { spentOn, amount, category, supplier, note, receiptId? }
 //   POST /app/api/money/expenses/:id/edit | confirm | delete
+//   GET  /app/api/tidy                  -> { items, real, recent, counts } what looks like test stuff (admins;
+//                                       see src/tidy.js)
+//   POST /app/api/tidy/delete           { items: [{ key, title, together, linked }] } -> { done, failed }
+//   POST /app/api/tidy/restore { binId } | /tidy/real { key, title } | /tidy/unreal { key }
 //   GET  /app/api/outreach?status=…     -> { outreach, canDecide, ready, optouts, sentToday, perDay }
 //                                       one-to-one emails (see src/outreach.js)
 //   GET  /app/api/outreach/:id          -> { outreach, log, email } (email: the text as it goes, with its footer)
@@ -128,6 +132,7 @@ import { handleOutreachForStaff } from "./outreach.js";
 import { STATES as INBOX_STATES, handleInboxForStaff, labelsInUse, stateCounts, team } from "./inbox.js";
 import { handleSocialForStaff } from "./social.js";
 import { handleMoneyForStaff } from "./money.js";
+import { handleTidyForStaff } from "./tidy.js";
 // With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
 import { usesNova } from "./mode.js";
 import { handleCalendarItems } from "./calendar/items.js";
@@ -193,6 +198,11 @@ export async function handleApp(request, env, ctx, answer) {
   // Money (src/money.js): invoices, payments and expenses; approving, voiding and settings are for an admin in a browser
   if (route === "/money" || route.startsWith("/money/")) {
     const answer = await handleMoneyForStaff(request, env, me, route);
+    if (answer) return answer;
+  }
+  // Test stuff (src/tidy.js): what looks like tests or copies, with Delete and "Not a test" (admins only)
+  if (route === "/tidy" || route.startsWith("/tidy/")) {
+    const answer = await handleTidyForStaff(request, env, me, route);
     if (answer) return answer;
   }
   if (route === "/services" && request.method === "GET") return json({ services: await servicesStatus(env), admin: me.role === "admin" });

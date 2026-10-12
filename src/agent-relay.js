@@ -46,6 +46,9 @@ export const RELAYED = [
   { methods: ["GET"], path: /^\/calendar-api\/events$/ },
   { methods: ["GET"], path: /^\/(events|cache|tasks)$/, admin: true },
   { methods: ["POST"], path: /^\/actions\/(run\/[\w-]+|forget)$/, admin: true },
+  // Test stuff on the PC (quests, calendar notes, Fixer jobs, files that look like tests): admins only
+  { methods: ["GET"], path: /^\/tidy-api\/state$/, admin: true },
+  { methods: ["POST"], path: /^\/actions\/tidy\/(delete|restore|real|unreal)$/, admin: true },
   // The Fixer: its state, pictures and taps (Approve, Reject, Ask for a tweak...) are for admins
   { methods: ["GET"], path: /^\/fixer-api\/(state|jobs\/[\w-]+|shots\/[\w-]+\/[\w-]+\.png)$/, admin: true },
   { methods: ["POST"], path: /^\/actions\/fixer\/(check|settings|quests|(quests|suggestions|issues|jobs)\/[\w-]+)$/, admin: true },

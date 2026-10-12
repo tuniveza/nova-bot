@@ -66,6 +66,8 @@
 //   POST /nova-agent/money/expenses   { spentOn, amount, category, supplier, note } -> { expense } 'unconfirmed'
 //                            (the AI can only write and edit: nothing here approves, sends, schedules or
 //                            test-sends; see src/campaigns.js)
+//   POST /nova-agent/tidy             {}         -> { counts, items } what looks like test stuff, and why (read
+//                            only: deleting is for an admin in Portal → Test stuff; see src/tidy.js)
 //   POST /nova-agent/outreach/draft   { kind, toEmail, toName?, organisation?, clientId?, aboutBooking?, subject, body }
 //                            -> { outreach } a one-to-one email waiting for an admin's approval in Portal →
 //                            Campaigns (refused, with the reason, if that person can't be emailed)
@@ -105,6 +107,7 @@ import { handleCampaignsForAgent } from "./campaigns.js";
 import { handleOutreachForAgent } from "./outreach.js";
 import { handleSocialForAgent } from "./social.js";
 import { handleMoneyForAgent } from "./money.js";
+import { tidyForAgent } from "./tidy.js";
 import { feedTimeToIso, listBookings } from "./booking-calendar.js";
 
 // A job Nova Agent took but never reported on (e.g. it was restarted) is
@@ -195,6 +198,8 @@ export async function handleAgentNova(request, env, pathname) {
   // Money: read, write and edit invoices (an admin approves and sends them in Portal), and log
   // expenses as unconfirmed (a person confirms them). No payments, sending or settings.
   if (pathname.startsWith("/nova-agent/money/")) return handleMoneyForAgent(env, pathname, body);
+  // Test stuff: read only (what looks like a test, and why). Deleting is for an admin in Portal.
+  if (pathname === "/nova-agent/tidy") return tidyForAgent(env);
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
