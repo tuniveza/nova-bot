@@ -41,6 +41,7 @@ function out(row) {
     named: meta.named === true,
     gdocId: typeof meta.gdocId === "string" ? meta.gdocId : "",
     gdocUrl: typeof meta.gdocUrl === "string" ? meta.gdocUrl : "",
+    gdocKeep: meta.gdocKeep === true,
     by: row.updated_by_name || row.created_by_name || "",
     deleted: Boolean(row.deleted_at),
     rev: row.rev,
@@ -75,6 +76,8 @@ function noteFrom(body, now) {
       named: body.named === true,
       gdocId: typeof body.gdocId === "string" ? body.gdocId.slice(0, 200) : "",
       gdocUrl: typeof body.gdocUrl === "string" && body.gdocUrl.startsWith("https://") ? body.gdocUrl.slice(0, 500) : "",
+      // Kept in step with its Google Doc (src/google/docs.js keeps the link itself; this is for Notes to show)
+      ...(body.gdocKeep === true ? { gdocKeep: true } : {}),
     }),
     created: iso(body.created) || now,
     updated: iso(body.updated) || now,
