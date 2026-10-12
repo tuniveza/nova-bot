@@ -215,7 +215,7 @@ export async function runTestBooking(env, admin, options = {}) {
   const alert = { title: `TEST · New booking: ${b.first_name} ${b.last_name}`, body: ["Test booking from Portal (not real).", ...bookingLines(b)].join("\n") };
   try {
     if (options.alertMe) {
-      const delivered = await notifyPhones(env, { ...alert, url: "/portal/?view=admin&page=%2Fadmin%2Ftest-booking", save: false, to: { staff: [admin.id] } });
+      const delivered = await notifyPhones(env, { ...alert, url: "/portal/?view=manage&page=%2Fadmin%2Ftest-booking", save: false, to: { staff: [admin.id] } });
       if (delivered > 0) pass("alerts", `Sent to your ${delivered === 1 ? "phone" : `${delivered} phones`} only. No other staff were told.`);
       else skip("alerts", "None of your phones have alerts turned on (or alerts aren't set up), so nothing was sent. Preview below. No other staff were told.");
     } else {

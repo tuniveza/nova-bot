@@ -127,7 +127,7 @@ async function ping(env, event) {
   if (test || info?.name === TEST_NAME) {
     const asked = Boolean(test?.alertMe);
     const testTitle = "TEST · " + title;
-    const delivered = asked ? await notifyPhones(env, { title: testTitle, body: lines.join("\n"), url: "/portal/?view=admin&page=%2Fadmin%2Ftest-booking", save: false, to: { staff: [test.by] } }) : 0;
+    const delivered = asked ? await notifyPhones(env, { title: testTitle, body: lines.join("\n"), url: "/portal/?view=manage&page=%2Fadmin%2Ftest-booking", save: false, to: { staff: [test.by] } }) : 0;
     if (test) await noteTestAlert(env, test.id, event.action, { title: testTitle, body: lines.join("\n"), delivered, asked });
     return;
   }

@@ -1489,7 +1489,7 @@ const PANEL_NAMES = { portal: "/portal/", calendar: "/calendar/", notes: "/notes
 const AGENT = "/agent/";
 // Admin lives inside Portal: an admin page's address opens Portal's Admin section showing it
 function opened(panel, search) {
-  if (panel === "/admin" || panel.startsWith("/admin/")) return "/portal/?view=admin&page=" + encodeURIComponent(panel);
+  if (panel === "/admin" || panel.startsWith("/admin/")) return "/portal/?view=manage&page=" + encodeURIComponent(panel);
   return panel + search;
 }
 function novaAgentPage(request, env, pathname) {
