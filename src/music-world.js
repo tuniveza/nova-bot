@@ -9,7 +9,9 @@
 //   GET /music-world/art?q=<artist and song>   album art (Apple's public music search)
 const MARKETS = ["us", "gb", "br", "mx", "de", "fr", "jp", "kr", "in", "ng", "au", "es"];
 const HOURS = 3600;
-// Wikipedia slow to answer: give up and say "no photo" (well before Nova Agent stops waiting)
+// An outside site slow to answer: give up and say "no picture" (well before Nova Agent stops
+// waiting). One limit for the whole of each picture, lookup and download together, so the front
+// page's pictures never keep Nova Agent's page loading for long
 const WAIT = 8000;
 // Apple's chart feed turns away requests that don't look like a browser
 const BROWSER = { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36", Accept: "application/json" };
@@ -71,13 +73,14 @@ export async function handleMusicWorld(request, env, ctx, pathname) {
   if (m) {
     return cached(request, ctx, async () => {
       try {
-        const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${m[1]}`, { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" }, signal: AbortSignal.timeout(WAIT) });
+        const signal = AbortSignal.timeout(WAIT);
+        const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${m[1]}`, { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" }, signal });
         const data = r.ok ? await r.json() : null;
         const src = data && data.thumbnail && data.thumbnail.source;
         // Served from here (not a link to Wikipedia's image server), so nothing in the browser
         // blocks it; without Wikipedia's tracking tags
         if (src && /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(src)) {
-          const img = await fetch(src.split("?")[0], { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" }, signal: AbortSignal.timeout(WAIT) });
+          const img = await fetch(src.split("?")[0], { headers: { "User-Agent": "NovaAgent/1.0 (Novacane Studios; music front page)" }, signal });
           if (img.ok && /^image\//.test(img.headers.get("Content-Type") || ""))
             return new Response(img.body, { headers: { "Content-Type": img.headers.get("Content-Type"), "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${7 * 24 * HOURS}` } });
         }
@@ -107,7 +110,7 @@ export async function handleMusicWorld(request, env, ctx, pathname) {
     if (!/^https:\/\/is\d-ssl\.mzstatic\.com\/image\/thumb\/[\w/.,%-]+$/.test(u)) return new Response("Not a cover", { status: 400 });
     return cached(request, ctx, async () => {
       try {
-        const img = await fetch(u);
+        const img = await fetch(u, { signal: AbortSignal.timeout(WAIT) });
         if (img.ok && /^image\//.test(img.headers.get("Content-Type") || ""))
           return new Response(img.body, { headers: { "Content-Type": img.headers.get("Content-Type"), "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${30 * 24 * HOURS}` } });
       } catch (err) {}
@@ -121,11 +124,12 @@ export async function handleMusicWorld(request, env, ctx, pathname) {
     if (!q) return json({ error: "Say what to look for" }, 400, 0);
     return cached(request, ctx, async () => {
       try {
-        const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=1`, { headers: BROWSER });
+        const signal = AbortSignal.timeout(WAIT);
+        const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=1`, { headers: BROWSER, signal });
         const data = r.ok ? await r.json() : null;
         const art = data && data.results && data.results[0] && data.results[0].artworkUrl100;
         if (art && /^https:\/\/[\w.-]+\.mzstatic\.com\//.test(art)) {
-          const img = await fetch(art.replace(/100x100bb/, "200x200bb"));
+          const img = await fetch(art.replace(/100x100bb/, "200x200bb"), { signal });
           if (img.ok) return new Response(img.body, { headers: { "Content-Type": img.headers.get("Content-Type") || "image/jpeg", "Cache-Control": `public, max-age=${24 * HOURS}, s-maxage=${7 * 24 * HOURS}` } });
         }
       } catch (err) {}
