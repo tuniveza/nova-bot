@@ -2,12 +2,18 @@
 // Worker name, Durable Objects and migrations as wrangler.jsonc (so Cloudflare keeps their saved
 // state for a switch back), but its own entry, no panels to upload, and no timed jobs (they run on
 // the VPS from the switch-over on).
-// Usage: node vps/make-passthrough-config.mjs [https://<the VPS's address>] > wrangler.passthrough.jsonc
+// Usage: node vps/make-passthrough-config.mjs [https://<the VPS's address>] [https://<new address>] > wrangler.passthrough.jsonc
+// With a new address (vps/retire-old-address.sh), people are sent on there (MOVED_TO, src/passthrough.js).
 import { readFileSync } from "node:fs";
 
 const vps = (process.argv[2] || "https://185-185-126-195.sslip.io").replace(/\/+$/, "");
 if (!/^https:\/\/[a-z0-9.-]+$/i.test(vps)) {
   console.error("Usage: node vps/make-passthrough-config.mjs https://<the VPS's address>");
+  process.exit(1);
+}
+const moved = (process.argv[3] || "").replace(/\/+$/, "");
+if (moved && !/^https:\/\/[a-z0-9.-]+$/i.test(moved)) {
+  console.error("The new address must look like https://nova.novacane.co.uk");
   process.exit(1);
 }
 const text = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
@@ -35,5 +41,5 @@ delete config.build;
 delete config.assets;
 delete config.env;
 config.triggers = { crons: [] };
-config.vars = { ...(config.vars || {}), VPS_ORIGIN: vps };
+config.vars = { ...(config.vars || {}), VPS_ORIGIN: vps, ...(moved ? { MOVED_TO: moved } : {}) };
 process.stdout.write(JSON.stringify(config, null, 2) + "\n");

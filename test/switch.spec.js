@@ -5,7 +5,7 @@ import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHmac } from "node:crypto";
 import worker from "../src";
-import passthrough, { passOn } from "../src/passthrough.js";
+import passthrough, { movedTo, passOn } from "../src/passthrough.js";
 import { vpsFront } from "../src/vps-front.js";
 import { derivedKey, passSignature } from "../src/pass-sign.js";
 import { STAFF_COOKIE } from "./sign-in.js";
@@ -109,6 +109,24 @@ describe("the pass-through", () => {
 		const own = await passOn(new Request(`${LIVE}/quests/state`), ptEnv());
 		expect(own.status).toBe(502);
 		expect(await own.json()).toMatchObject({ error: expect.stringContaining("studio computer") });
+	});
+
+	it("once the old address is retired, sends people on to the same page at the new address, but still passes Acuity's two doors on", async () => {
+		const env = ptEnv({ MOVED_TO: "https://nova.novacane.co.uk/" });
+		const page = movedTo(new Request(`${LIVE}/agent/?view=notes#x`), env);
+		expect(page.status).toBe(308);
+		expect(page.headers.get("Location")).toBe("https://nova.novacane.co.uk/agent/?view=notes");
+		expect(movedTo(new Request(`${LIVE}/chat`, { method: "POST", body: "{}" }), env).status).toBe(308);
+		expect(movedTo(new Request(`${LIVE}/acuity/webhook?key=k`, { method: "POST", body: "a=1" }), env)).toBe(null);
+		expect(movedTo(new Request(`${LIVE}/acuity/email`, { method: "POST", body: "{}" }), env)).toBe(null);
+		// Not retired (or a bad address): everything is passed on as before
+		expect(movedTo(new Request(`${LIVE}/agent/`), ptEnv())).toBe(null);
+		expect(movedTo(new Request(`${LIVE}/agent/`), ptEnv({ MOVED_TO: "javascript:alert(1)" }))).toBe(null);
+		const sent = capture();
+		const res = await passthrough.fetch(new Request(`${LIVE}/acuity/email`, { method: "POST", body: "{}" }), env);
+		expect(await res.text()).toBe("ok");
+		expect(sent[0].url).toBe("https://vps.test/acuity/email");
+		expect((await passthrough.fetch(new Request(`${LIVE}/portal/`), env)).status).toBe(308);
 	});
 
 	it("has no timed jobs of its own", () => {

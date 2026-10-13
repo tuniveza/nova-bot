@@ -13,6 +13,11 @@
 // did. Acuity's webhook key and the Google script's email key are Cloudflare's old ones: checked here
 // and swapped for the VPS's own (made from AGENT_NOVA_KEY), so nothing changes in Acuity.
 // The VPS can't be reached (restarting, or down): a calm page, or JSON for the apps.
+//
+// Retiring the old address (vps/retire-old-address.sh sets MOVED_TO=https://nova.novacane.co.uk):
+// people and apps are sent on to the same page at the new address (308, so a POST stays a POST);
+// only Acuity's webhook and the Google script's emails are still passed on as above, so nothing has
+// to change in Acuity or the script while the old address lasts.
 
 import { PASS_HEADERS, derivedKey, passSignature, sameHex } from "./pass-sign.js";
 
@@ -71,8 +76,20 @@ export async function passOn(request, env, now = Date.now()) {
   return res;
 }
 
+// The machine doors that keep their old address (with the old keys) until the old address is gone
+const KEEP_PASSING = ["/acuity/webhook", "/acuity/email"];
+
+// MOVED_TO set: the same page at the new address, except the machine doors
+export function movedTo(request, env) {
+  const to = String(env.MOVED_TO || "").replace(/\/+$/, "");
+  if (!/^https:\/\/[a-z0-9.-]+$/i.test(to)) return null;
+  const url = new URL(request.url);
+  if (KEEP_PASSING.includes(url.pathname)) return null;
+  return new Response(null, { status: 308, headers: { Location: to + url.pathname + url.search, "Cache-Control": "no-store" } });
+}
+
 export default {
   fetch(request, env) {
-    return passOn(request, env);
+    return movedTo(request, env) || passOn(request, env);
   },
 };
