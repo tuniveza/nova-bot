@@ -14,9 +14,10 @@ cd "$(dirname "$0")/.."
 rehearse=$([ "${1:-}" = --rehearse ] && echo 1 || echo 0)
 
 echo "Before anything changes:"
-vps 'test -f /etc/systemd/system/nova-agent.service && test -s /etc/nova-agent/agent.env && test -d /srv/nova-agent/na/node_modules' \
+# (these leave stdin alone: the yes below is read from it)
+vps 'test -f /etc/systemd/system/nova-agent.service && test -s /etc/nova-agent/agent.env && test -d /srv/nova-agent/na/node_modules' </dev/null \
   || { echo "  The server isn't set up for Nova Agent yet: run vps/agent-setup.sh first"; exit 1; }
-vps 'grep -q X-Nova-Agent-Where /srv/nova/app/src/agent-relay.js' \
+vps 'grep -q X-Nova-Agent-Where /srv/nova/app/src/agent-relay.js' </dev/null \
   || { echo "  Nova Bot on the server is from before 'only one Nova Agent': deploy it first (vps/deploy-live.sh)"; exit 1; }
 busy=$(node -e 'const f=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log((f.jobs||[]).filter(j=>["approved","landing","restarting","verifying","rolling-back"].includes(j.status)).length)' "$NA_DIR/data/fixer.json" 2>/dev/null || echo 0)
 [ "$busy" = 0 ] || { echo "  The Fixer is putting a change live right now: wait for it to finish, then run this again"; exit 1; }
