@@ -16,13 +16,23 @@ scp -q "$dump" "$SSH:/srv/nova/import.sql"
 echo "3/3 Replacing the VPS's copy"
 ssh "$SSH" 'bash -s' <<'REMOTE'
 set -euo pipefail
+# Whatever happens, Nova Bot is started again, and the copy file goes
+trap 'rm -f /srv/nova/import.sql; systemctl start nova' EXIT
 systemctl stop nova-cron.timer 2>/dev/null || true
 systemctl stop nova
-rm -rf /srv/nova/state/v3/d1
 cd /srv/nova/app
 chown nova:nova /srv/nova/import.sql
-sudo -u nova -H CI=1 WRANGLER_SEND_METRICS=false npx --no-install wrangler d1 execute novabot -c wrangler.vps.jsonc --local --persist-to /srv/nova/state --file /srv/nova/import.sql >/dev/null
-rm -f /srv/nova/import.sql
+# The new copy is built beside the old one, and only swapped in once it's whole
+rm -rf /srv/nova/state-new && mkdir -p /srv/nova/state-new && chown nova:nova /srv/nova/state-new
+# (an empty database made by the runtime itself, so its file is named the way it expects)
+sudo -u nova -H CI=1 WRANGLER_SEND_METRICS=false npx --no-install wrangler d1 execute novabot -c wrangler.vps.jsonc --local --persist-to /srv/nova/state-new --command "SELECT 1" >/dev/null
+db=$(find /srv/nova/state-new/v3/d1 -name '*.sqlite' ! -name metadata.sqlite | head -1)
+[ -n "$db" ] || { echo "The VPS's database file wasn't made"; exit 1; }
+# sqlite3 itself loads it: the runtime's own loader refuses very long rows (a big note)
+sudo -u nova sqlite3 "$db" < /srv/nova/import.sql
+rm -rf /srv/nova/state/v3/d1
+mv /srv/nova/state-new/v3/d1 /srv/nova/state/v3/d1
+rm -rf /srv/nova/state-new
 date -u +%Y-%m-%dT%H:%M:%SZ > /srv/nova/state/.last-sync
 chown -R nova:nova /srv/nova/state
 systemctl start nova
