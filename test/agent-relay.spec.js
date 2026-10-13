@@ -238,6 +238,42 @@ describe("through to the PC and back", () => {
     pc.ws.close();
   });
 
+  it("a big file (3 MB, in many pieces) comes through whole, every byte", async () => {
+    const size = 3 * 1024 * 1024 + 123;
+    const bytes = new Uint8Array(size);
+    for (let i = 0; i < size; i++) bytes[i] = (i * 31 + 7) & 255;
+    const b64 = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+    const pc = await connectPc((req, pc) => {
+      pc.send({ t: "res", id: req.id, status: 200, headers: { "content-type": "image/png" } });
+      for (let i = 0; i < size; i += 256 * 1024) pc.send({ t: "chunk", id: req.id, d: b64(bytes.subarray(i, i + 256 * 1024)) });
+      pc.send({ t: "done", id: req.id });
+    });
+    const res = await call("/board-files/b-20261013-0123456789ab", { headers: STAFF_AUTH });
+    expect(res.status).toBe(200);
+    const got = new Uint8Array(await res.arrayBuffer());
+    expect(got.byteLength).toBe(size);
+    let same = true;
+    for (let i = 0; i < size; i += 997) if (got[i] !== bytes[i]) same = false;
+    expect(same && got[size - 1] === bytes[size - 1]).toBe(true);
+    pc.ws.close();
+  });
+
+  it("an answer cut off part-way (the PC's link going) is an error, never a quietly shorter file", async () => {
+    let drop;
+    const pc = await connectPc((req, pc) => {
+      pc.send({ t: "res", id: req.id, status: 200, headers: { "content-type": "image/png" } });
+      pc.send({ t: "chunk", id: req.id, d: btoa("x".repeat(1000)) });
+      drop = () => pc.ws.close(1011, "gone");
+    });
+    const res = await call("/board-files/b-20261013-0123456789ab", { headers: STAFF_AUTH });
+    expect(res.status).toBe(200);
+    const reader = res.body.getReader();
+    const first = await reader.read();
+    expect(first.value.byteLength).toBe(1000);
+    drop();
+    await expect((async () => { for (;;) { const r = await reader.read(); if (r.done) return "ended quietly"; } })()).rejects.toBeTruthy();
+  });
+
   it("the PC going away answers what's waiting", async () => {
     let close;
     const pc = await connectPc(() => close());

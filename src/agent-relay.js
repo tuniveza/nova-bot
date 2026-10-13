@@ -88,7 +88,9 @@ export function isRelayed(pathname) {
   return RELAYED.some((r) => r.path.test(pathname));
 }
 
-const MAX_BODY = 25 * 1024 * 1024;
+// The most a request here may carry to the PC: just under what Cloudflare takes in one request
+// (100 MB). (Each route on the PC has its own limit too: a Board's files go up to this.)
+const MAX_BODY = 95 * 1024 * 1024;
 const PIECE = 256 * 1024;
 // Long enough for a chat that uses the Acuity helper
 const ANSWER_WITHIN_MS = 5 * 60_000;
@@ -120,7 +122,7 @@ export async function handleRelay(request, env, ctx) {
     if ((origin && origin !== url.origin) || (site && site !== "same-origin")) return json({ error: "Forbidden" }, 403);
   }
   const size = Number(request.headers.get("Content-Length") || 0);
-  if (size > MAX_BODY) return json({ error: "That's too big to send to the studio computer (25 MB at most)" }, 413);
+  if (size > MAX_BODY) return json({ error: "That's too big to send to the studio computer (95 MB at most)" }, 413);
   if (!env.AGENT_LINK) return json(PC_OFFLINE, 503);
 
   const headers = new Headers();
@@ -272,6 +274,7 @@ export class AgentLink extends DurableObject {
     const id = crypto.randomUUID();
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
+    writer.closed.catch(() => {}); // (cut off part-way: the reader hears it, not the logs)
     let answer;
     const head = new Promise((resolve) => (answer = resolve));
     const entry = { answer, writer, answered: false, timer: 0 };
@@ -297,7 +300,7 @@ export class AgentLink extends DurableObject {
           if (total > MAX_BODY) {
             reader.cancel().catch(() => {});
             this.send({ t: "cancel", id });
-            this.finish(id, json({ error: "That's too big to send to the studio computer (25 MB at most)" }, 413));
+            this.finish(id, json({ error: "That's too big to send to the studio computer (95 MB at most)" }, 413));
             break;
           }
           for (let i = 0; i < value.byteLength; i += PIECE) this.send({ t: "body", id, d: toBase64(value.subarray(i, i + PIECE)) });
@@ -350,9 +353,11 @@ export class AgentLink extends DurableObject {
     for (const [id, entry] of this.waiting) {
       if (!entry.answered) this.finish(id, json(PC_OFFLINE, 503));
       else {
+        // Cut off part-way (the PC's link went): that's an error, never a quietly shorter answer
+        // (a picture that stopped at its first 256 KB looked like it had loaded, and stayed broken)
         clearTimeout(entry.timer);
         this.waiting.delete(id);
-        entry.writer.close().catch(() => {});
+        entry.writer.abort(new Error("The studio computer's link went part-way through")).catch(() => {});
       }
     }
   }

@@ -37,7 +37,7 @@ import { listTasks, syncTasks } from "./tasks.js";
 import { youtubeSummary } from "./youtube.js";
 import { pullInbox, pullReplies, searchGmail } from "./gmail.js";
 import { findContacts, syncContacts } from "./contacts.js";
-import { backupIndex, dropFile, folderUrl, keepFile, makeDoc } from "./drive.js";
+import { backupIndex, dropFile, folderUrl, keepFile, keepUploaded, makeDoc, startUpload } from "./drive.js";
 import { refreshSheet, sheetStatus } from "./sheets.js";
 
 const PC_ORIGIN = "http://localhost:4545";
@@ -296,7 +296,7 @@ export async function handleGoogleForAgent(request, env, pathname, body) {
     const url = new URL(request.url);
     const kind = url.searchParams.get("kind");
     const id = String(url.searchParams.get("id") || "");
-    if (!["media", "receipt", "backup", "file"].includes(kind) || !/^[\w.:/-]{1,120}$/.test(id) || id.includes("..")) return json({ error: "kind (media, receipt, backup or file) and id, please." }, 400);
+    if (!["media", "receipt", "backup", "file", "board"].includes(kind) || !/^[\w.:/-]{1,120}$/.test(id) || id.includes("..")) return json({ error: "kind (media, receipt, backup, file or board) and id, please." }, 400);
     if (!(await partOn(env, kind === "backup" ? "backups" : kind === "file" ? "files" : "drive"))) return json({ skipped: true, reason: "Google Drive is off or not connected." });
     const size = Number(request.headers.get("Content-Length") || 0);
     if (size > MAX_FILE) return json({ error: "That's too big for Drive here (100 MB at most)." }, 413);
@@ -310,8 +310,26 @@ export async function handleGoogleForAgent(request, env, pathname, body) {
       return json({ error: "Google Drive didn't take it: " + String(err.message || err).slice(0, 160) }, 502);
     }
   }
+  // A Board's big files: the PC uploads them to Drive itself (start), then says which file it became (link)
+  if (pathname === "/nova-agent/google/drive/start" || pathname === "/nova-agent/google/drive/link") {
+    if (body?.kind !== "board" || !/^b-\d{8}-[a-f0-9]{12}$/.test(String(body?.id || ""))) return json({ error: "kind board and the file's id, please." }, 400);
+    if (!(await partOn(env, "drive"))) return json({ skipped: true, reason: "Google Drive is off or not connected." });
+    const name = String(body.name || body.id).replace(/[\r\n/\\]/g, " ").slice(0, 200);
+    try {
+      if (pathname.endsWith("/start")) {
+        const type = /^[\w.+-]+\/[\w.+-]+$/.test(String(body.type || "")) ? body.type : "application/octet-stream";
+        const size = Number(body.size);
+        if (!Number.isFinite(size) || size <= 0 || size > 5 * 1024 ** 3) return json({ error: "The file's size, please (5 GB at most)." }, 400);
+        return json({ ok: true, session: await startUpload(env, { kind: "board", name, type, size }) });
+      }
+      if (!/^[\w-]{10,200}$/.test(String(body.driveId || ""))) return json({ error: "Which Drive file?" }, 400);
+      return json({ ok: true, fileId: await keepUploaded(env, { kind: "board", novaId: body.id, driveId: body.driveId, name }) });
+    } catch (err) {
+      return json({ error: "Google Drive didn't take it: " + String(err.message || err).slice(0, 160) }, err.status === 400 ? 400 : 502);
+    }
+  }
   if (pathname === "/nova-agent/google/drive/drop") {
-    if (!["media", "receipt", "backup", "file"].includes(body?.kind) || typeof body?.id !== "string") return json({ error: "kind and id, please." }, 400);
+    if (!["media", "receipt", "backup", "file", "board"].includes(body?.kind) || typeof body?.id !== "string") return json({ error: "kind and id, please." }, 400);
     if (!(await googleReady(env).catch(() => false))) return json({ skipped: true });
     return json({ ok: true, dropped: await dropFile(env, body.kind, body.id) });
   }

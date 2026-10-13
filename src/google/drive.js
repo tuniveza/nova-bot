@@ -18,7 +18,7 @@ import { getLink, putLink, dropLink, readSetting, writeSetting } from "./common.
 const DRIVE = "https://www.googleapis.com/drive/v3";
 const UPLOAD = "https://www.googleapis.com/upload/drive/v3";
 const FOLDER_TYPE = "application/vnd.google-apps.folder";
-const FOLDERS = { root: "Nova Agent", media: "Social", receipt: "Receipts", backup: "Backups", docs: "Docs", file: "Files", invoice: "Invoices" };
+const FOLDERS = { root: "Nova Agent", media: "Social", receipt: "Receipts", backup: "Backups", docs: "Docs", file: "Files", invoice: "Invoices", board: "Board" };
 // Kept up to date in place (one copy each); the others never change once made
 const UPDATED_IN_PLACE = new Set(["backup", "file", "invoice"]);
 const KEEP_INDEX_BACKUPS = 14;
@@ -68,6 +68,29 @@ export async function uploadFile(env, { name, type, bytes, parent }) {
   const data = await put.json().catch(() => ({}));
   if (!put.ok || !data.id) throw new GoogleError(`Google Drive didn't take the file (${put.status}).`, put.status || 502);
   return data.id;
+}
+
+// A resumable upload the studio PC fills in itself (a big file on a Board: it never passes through
+// Nova Bot, so it can be far bigger than a request here may be). -> the session address, which
+// only takes this one file, for about a week. The PC then says which Drive file it became
+// (keepUploaded), and that's what's shown online.
+export async function startUpload(env, { kind, name, type, size }) {
+  const start = await googleFetch(env, "POST", `${UPLOAD}/files?uploadType=resumable&fields=id`, {
+    body: JSON.stringify({ name, parents: [await folder(env, kind)] }),
+    headers: { "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": type, "X-Upload-Content-Length": String(size) },
+  });
+  const session = start.headers.get("Location");
+  if (!start.ok || !session) throw new GoogleError(`Google Drive wouldn't start the upload (${start.status}).`, start.status || 502);
+  return session;
+}
+
+// The PC finished an upload it started with startUpload: remember which Drive file it is (only
+// one Nova Agent made itself, in its own folder)
+export async function keepUploaded(env, { kind, novaId, driveId, name }) {
+  const f = await google(env, "GET", `${DRIVE}/files/${encodeURIComponent(driveId)}?fields=id,parents,trashed`);
+  if (!f || f.trashed || !(f.parents || []).includes(await folder(env, kind))) throw new GoogleError("That isn't one of Nova Agent's uploads.", 400);
+  await putLink(env, kind, novaId, driveId, { extra: name }).run();
+  return driveId;
 }
 
 // Put a file's new content in place (a backup kept up to date)
