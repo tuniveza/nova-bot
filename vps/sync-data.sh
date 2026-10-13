@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Desk: copy the live database from Cloudflare (D1, read-only export) into the VPS's copy,
+# Computer: copy the live database from Cloudflare (D1, read-only export) into the VPS's copy,
 # replacing what's there. Run on the studio PC from the novacane-worker folder: vps/sync-data.sh
 # Nova Bot on the VPS is stopped while the copy goes in, then started again.
 set -euo pipefail

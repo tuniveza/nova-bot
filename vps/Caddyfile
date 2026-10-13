@@ -1,4 +1,4 @@
-# Desk's web address (vps/README.md). To use your own domain later, change the address on the
+# Computer's web address (vps/README.md). To use your own domain later, change the address on the
 # next line (and in /srv/nova/desk.env), then: systemctl reload caddy && systemctl restart nova
 {$DESK_HOSTNAME} {
 	encode zstd gzip
@@ -7,7 +7,7 @@
 	handle @inside {
 		respond 404
 	}
-	# Desk's status service (token only: vps/desk-status/server.mjs)
+	# Computer's status service (token only: vps/desk-status/server.mjs)
 	handle /desk-status/* {
 		reverse_proxy 127.0.0.1:8788
 	}

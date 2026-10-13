@@ -209,7 +209,7 @@ export async function handleApp(request, env, ctx, answer) {
     const answer = await handleGoogleForStaff(request, env, me, route, ctx);
     if (answer) return answer;
   }
-  // Desk (src/desk.js): Nova Bot here and on the VPS, side by side (admins only)
+  // Computer (src/desk.js): Nova Bot here and on the VPS, side by side (admins only)
   if (route === "/desk" || route.startsWith("/desk/")) {
     const answer = await handleDeskForStaff(request, env, me, route);
     if (answer) return answer;

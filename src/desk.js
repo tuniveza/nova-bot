@@ -1,4 +1,4 @@
-// Portal → Admin → Desk (admins): Nova Bot here (on Cloudflare, or on the VPS: DESK_HOST says
+// Portal → Admin → Computer (admins): Nova Bot here (on Cloudflare, or on the VPS: DESK_HOST says
 // which) and the VPS (vps/README.md), side by side, with how each is doing.
 //
 //   GET  /app/api/desk          { here, vps } — here: where this copy of Nova Bot runs, its version,
@@ -133,7 +133,7 @@ async function warnings(env) {
 // Portal's /app/api/desk… (app-page.js has checked the sign-in). -> a Response, or null
 export async function handleDeskForStaff(request, env, me, route) {
   if (route !== "/desk" && !route.startsWith("/desk/")) return null;
-  if (me.role !== "admin") return json({ error: "Desk is for admins." }, 403);
+  if (me.role !== "admin") return json({ error: "Computer is for admins." }, 403);
   if (route === "/desk" && request.method === "GET") {
     const [h, vps] = await Promise.all([here(env), askVps(env, "GET", "/status")]);
     return json({ here: h, vps: vps.ok ? { reachable: true, url: vpsUrl(env), ...vps.data } : { reachable: false, url: vpsUrl(env), reason: vps.reason }, canAct: me.session_kind === "cookie" });
@@ -147,7 +147,7 @@ export async function handleDeskForStaff(request, env, me, route) {
     const what = String(body.do || "");
     if (!["restart", "restart-web", "backup"].includes(what)) return json({ error: "Which? restart, restart-web or backup." }, 400);
     const r = await askVps(env, "POST", "/action", { do: what });
-    console.log(`Desk: ${what} asked by ${me.id}: ${r.ok ? "done" : "refused"}`);
+    console.log(`Computer: ${what} asked by ${me.id}: ${r.ok ? "done" : "refused"}`);
     return r.ok ? json({ ok: true, done: what }) : json({ error: r.reason }, 502);
   }
   return null;

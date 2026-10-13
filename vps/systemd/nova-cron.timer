@@ -1,5 +1,5 @@
 [Unit]
-Description=Every minute: Nova Bot's jobs (Desk)
+Description=Every minute: Nova Bot's jobs (Computer)
 
 [Timer]
 OnCalendar=*:*:00

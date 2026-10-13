@@ -1,7 +1,7 @@
-# Desk's status service (vps/desk-status/server.mjs): how the VPS is doing, for Portal → Admin →
-# Desk (through Nova Bot, with a token made from AGENT_NOVA_KEY). Only on 127.0.0.1:8788.
+# Computer's status service (vps/desk-status/server.mjs): how the VPS is doing, for Portal → Admin →
+# Computer (through Nova Bot, with a token made from AGENT_NOVA_KEY). Only on 127.0.0.1:8788.
 [Unit]
-Description=Desk status (Nova)
+Description=Computer status (Nova)
 After=network-online.target
 
 [Service]

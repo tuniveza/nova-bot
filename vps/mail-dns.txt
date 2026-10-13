@@ -1,4 +1,4 @@
-Desk mail: the DNS records for the VPS's own mail server (send-only), 2026-10-13
+Computer mail: the DNS records for the VPS's own mail server (send-only), 2026-10-13
 =================================================================================
 Add these at Squarespace (Domains → novacane.co.uk → DNS → Custom records). They don't touch
 incoming mail: novacane.co.uk's MX stays Google Workspace, and Resend keeps its own records

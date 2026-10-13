@@ -1,4 +1,4 @@
-// Desk's status service on the VPS (vps/README.md). Portal → Admin → Desk asks Nova Bot, and Nova
+// Computer's status service on the VPS (vps/README.md). Portal → Admin → Computer asks Nova Bot, and Nova
 // Bot asks this, so the page can show how the VPS is doing and an admin can restart a part or
 // back up now. It listens only on 127.0.0.1:8788; Caddy passes /desk-status/* to it.
 //

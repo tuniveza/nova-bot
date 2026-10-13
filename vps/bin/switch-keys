@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Desk, the switch-over (vps/switch.sh runs this on the VPS, as root). Sets the keys Nova Bot on the
+// Computer, the switch-over (vps/switch.sh runs this on the VPS, as root). Sets the keys Nova Bot on the
 // VPS needs once it's the live one, in /srv/nova/secrets.env, never printing them:
 //   - VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY: a new pair for phone notifications, only if there's none
 //     (Cloudflare's pair can't be read back; phones turn notifications on again once, by themselves

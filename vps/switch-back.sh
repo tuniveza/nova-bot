@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Desk: go back to Cloudflare after vps/switch.sh. Nova Bot runs on Cloudflare again (the normal
+# Computer: go back to Cloudflare after vps/switch.sh. Nova Bot runs on Cloudflare again (the normal
 # Worker, its timed jobs included), the VPS stops its timed jobs (so nothing is ever sent twice),
 # and the studio PC's Nova Agent reconnects. The VPS itself keeps running, ready for another switch.
 # Run on the studio PC, from the novacane-worker folder:   vps/switch-back.sh

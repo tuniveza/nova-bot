@@ -1,5 +1,5 @@
 [Unit]
-Description=Nova Bot: back up the database (Desk)
+Description=Nova Bot: back up the database (Computer)
 
 [Service]
 Type=oneshot

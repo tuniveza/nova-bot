@@ -2,7 +2,7 @@
 # through `wrangler dev --local`), its database (D1 → SQLite) and Durable Objects kept on disk in
 # /srv/nova/state. Only Caddy talks to it (127.0.0.1:8787).
 [Unit]
-Description=Nova Bot (Desk)
+Description=Nova Bot (Computer)
 After=network-online.target
 Wants=network-online.target
 

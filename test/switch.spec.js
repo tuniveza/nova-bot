@@ -1,6 +1,6 @@
 // The switch-over to the VPS: the pass-through Worker on Cloudflare (src/passthrough.js), the VPS's
 // front door that trusts only its signature (src/vps-front.js), the keys both make from
-// AGENT_NOVA_KEY (src/pass-sign.js), and what Desk says about which side is live.
+// AGENT_NOVA_KEY (src/pass-sign.js), and what Computer says about which side is live.
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHmac } from "node:crypto";
@@ -160,7 +160,7 @@ describe("the VPS's front door", () => {
 	});
 });
 
-describe("Desk says which side is live", () => {
+describe("Computer says which side is live", () => {
 	async function desk(extraEnv = {}) {
 		const ctx = createExecutionContext();
 		const res = await worker.fetch(new Request("https://novacane-worker.test/app/api/desk", { headers: { Cookie: STAFF_COOKIE } }), { ...env, ...extraEnv }, ctx);

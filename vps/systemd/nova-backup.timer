@@ -1,5 +1,5 @@
 [Unit]
-Description=Nightly: back up Nova Bot's database (Desk)
+Description=Nightly: back up Nova Bot's database (Computer)
 
 [Timer]
 OnCalendar=*-*-* 03:30:00

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Desk: the switch-over. From now on Nova Bot runs on the VPS, 24/7, and Cloudflare's address
+# Computer: the switch-over. From now on Nova Bot runs on the VPS, 24/7, and Cloudflare's address
 # (novacane-worker.novacane-studio.workers.dev) stays the one everyone uses: a thin pass-through
 # Worker (src/passthrough.js) forwards every request there. Run on the studio PC, from the
 # novacane-worker folder, at a quiet time:   vps/switch.sh
@@ -72,7 +72,7 @@ for i in $(seq 30); do
   if journalctl --user -u agent-nova.service --since "$since" --no-pager 2>/dev/null | grep -q "Nova Agent is online"; then linked=yes; break; fi
   sleep 2
 done
-[ -n "$linked" ] && ok "Nova Agent is online through the VPS" || echo "   ! Nova Agent hasn't said it's online yet (it keeps trying; check Desk in a minute)"
+[ -n "$linked" ] && ok "Nova Agent is online through the VPS" || echo "   ! Nova Agent hasn't said it's online yet (it keeps trying; check Computer in a minute)"
 
 echo "Checking everything from outside"
 problems=0
@@ -90,7 +90,7 @@ echo
 if [ "$problems" = 0 ]; then
   echo "Switched ✓ Nova Bot now runs on the VPS, 24/7, at the same address: $LIVE"
 else
-  echo "Switched, but something above didn't check out. Look at Desk (Portal → Admin → Desk); to go back: vps/switch-back.sh"
+  echo "Switched, but something above didn't check out. Look at Computer (Portal → Admin → Computer); to go back: vps/switch-back.sh"
 fi
 echo "Phones: notifications turn themselves back on the next time Nova Agent or Portal is opened on each phone."
 echo "To go back to Cloudflare: vps/switch-back.sh"

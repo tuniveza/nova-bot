@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Desk: back up Nova Bot's database and Durable Objects (every SQLite file under /srv/nova/state),
+# Computer: back up Nova Bot's database and Durable Objects (every SQLite file under /srv/nova/state),
 # safely while it runs (sqlite3 .backup), into /srv/nova/backups/<UTC time>.tar.gz; keeps 14.
 set -euo pipefail
 umask 077

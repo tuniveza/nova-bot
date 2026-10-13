@@ -1,4 +1,4 @@
-// Portal → Admin → Desk (src/desk.js): Nova Bot here and the VPS side by side, admins only,
+// Portal → Admin → Computer (src/desk.js): Nova Bot here and the VPS side by side, admins only,
 // the VPS asked with a token made from AGENT_NOVA_KEY, actions only from a browser sign-in.
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -26,7 +26,7 @@ afterEach(() => {
 	globalThis.fetch = real;
 });
 
-describe("Desk", () => {
+describe("Computer", () => {
 	it("makes the same token as the VPS's status service (HMAC-SHA256 of desk-status)", async () => {
 		const want = createHmac("sha256", "k-123").update("desk-status").digest("hex");
 		expect(await deskToken("k-123")).toBe(want);

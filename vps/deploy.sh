@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Desk: send this Nova Bot (and the panels from Nova Agent) to the VPS and (re)start it there.
+# Computer: send this Nova Bot (and the panels from Nova Agent) to the VPS and (re)start it there.
 # Run on the studio PC from the novacane-worker folder:
 #   NOVA_AGENT_DIR=~/an/pj/ns/na-release vps/deploy.sh
 # Settings (defaults): DESK_SSH=root@185.185.126.195  DESK_ADDRESS=185-185-126-195.sslip.io

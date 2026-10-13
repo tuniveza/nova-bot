@@ -1,7 +1,7 @@
 # The Worker's every-minute jobs (wrangler.jsonc "triggers": "* * * * *"), fired on the VPS.
 # Only switched on at cutover (vps/README.md), so the VPS and Cloudflare never both send.
 [Unit]
-Description=Nova Bot's every-minute jobs (Desk)
+Description=Nova Bot's every-minute jobs (Computer)
 After=nova.service
 Requires=nova.service
 

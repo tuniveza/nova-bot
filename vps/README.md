@@ -1,8 +1,11 @@
-# Desk: Nova Bot on the VPS
+# Computer: Nova Bot on the VPS
+
+(Portal → Admin → **Computer** was called Desk once: inside, the files, addresses and services still
+say `desk`: `src/desk.js`, `/app/api/desk`, `desk-status.service`.)
 
 The same Nova Bot (this repo, unchanged) runs on the studio's VPSdime server next to Cloudflare, so
 the studio can be online 24/7 without Cloudflare's free-plan limits (10 ms of CPU per request,
-Durable Object time). Portal → Admin → **Desk** shows both side by side.
+Durable Object time). Portal → Admin → **Computer** shows both side by side.
 
 ## What's on the VPS (root@185.185.126.195, "odysi", Ubuntu 24.04)
 
@@ -12,7 +15,7 @@ Durable Object time). Portal → Admin → **Desk** shows both side by side.
 | Caddy | `/etc/caddy/Caddyfile` | HTTPS at **https://185-185-126-195.sslip.io** (automatic certificate), WebSockets included. Blocks the runtime's own `/__scheduled` door from outside. |
 | `nova-cron.timer` | | Fires the Worker's every-minute jobs. **Off until the switch-over**, so the VPS and Cloudflare never both send emails, posts or pings. |
 | `nova-backup.timer` | `/srv/nova/backups` | 03:30 every night: every SQLite file, copied safely while running, 14 kept. |
-| `desk-status.service` | `/srv/nova/desk-status` | How the VPS is doing, for Desk. 127.0.0.1:8788, reached through Caddy at `/desk-status/*`, and **only** with a token made from AGENT_NOVA_KEY. |
+| `desk-status.service` | `/srv/nova/desk-status` | How the VPS is doing, for Computer. 127.0.0.1:8788, reached through Caddy at `/desk-status/*`, and **only** with a token made from AGENT_NOVA_KEY. |
 | Firewall (ufw) | | 22, 80, 443 open (and whatever was there: 3389 stays as it was). |
 
 Workers AI (voice) only exists on Cloudflare, so on the VPS voice falls back to the browser's own.
@@ -27,7 +30,7 @@ Workers AI (voice) only exists on Cloudflare, so on the VPS voice falls back to 
 
 Cloudflare never gives secrets back, so they're typed in once on the VPS (`set-secrets`) into
 `/srv/nova/secrets.env` (mode 600). The list: AGENT_NOVA_KEY (must be **the same** as Cloudflare's and
-the studio PC's `na/.env`, because Google's saved keys in the database are locked with it, and Desk
+the studio PC's `na/.env`, because Google's saved keys in the database are locked with it, and Computer
 uses it), ANTHROPIC_API_KEY, RESEND_API_KEY, RESEND_MARKETING_KEY, CAMPAIGN_FROM, ENQUIRY_EMAIL_FROM,
 ENQUIRY_EMAIL_TO, ACUITY_USER_ID, ACUITY_API_KEY, ACUITY_CALENDAR_URL, and optional Stripe, Meta and TURN keys.
 VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY, ACUITY_WEBHOOK_KEY and ACUITY_EMAIL_KEY are made by
@@ -74,7 +77,7 @@ How the pieces fit:
   Cloudflare keeps their saved state for a switch back.
 - **Down:** when the VPS can't be reached (or Caddy has no Nova Bot behind it), the pass-through
   answers a calm "Nova is restarting" page (or JSON, for the apps) that refreshes by itself.
-- **Desk** shows which side is live, the commands, and warnings (e.g. newsletters won't send while
+- **Computer** shows which side is live, the commands, and warnings (e.g. newsletters won't send while
   RESEND_MARKETING_KEY is from a Resend account without novacane.co.uk).
 
 **Later, your own address:** point e.g. `desk.novacane.co.uk` at 185.185.126.195 (one DNS A record),
