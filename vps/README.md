@@ -10,7 +10,7 @@ Durable Object time). Portal → Admin → **Desk** shows both side by side.
 |---|---|---|
 | `nova.service` | `/srv/nova/app` (user `nova`) | Nova Bot, run by Cloudflare's own runtime (workerd, via `wrangler dev --local`) on 127.0.0.1:8787. D1 → SQLite and the Durable Objects are kept on disk in `/srv/nova/state`. Restarts by itself. |
 | Caddy | `/etc/caddy/Caddyfile` | HTTPS at **https://185-185-126-195.sslip.io** (automatic certificate), WebSockets included. Blocks the runtime's own `/__scheduled` door from outside. |
-| `nova-cron.timer` | | Fires the Worker's every-minute jobs. **Off until the cutover**, so the VPS and Cloudflare never both send emails, posts or pings. |
+| `nova-cron.timer` | | Fires the Worker's every-minute jobs. **Off until the switch-over**, so the VPS and Cloudflare never both send emails, posts or pings. |
 | `nova-backup.timer` | `/srv/nova/backups` | 03:30 every night: every SQLite file, copied safely while running, 14 kept. |
 | `desk-status.service` | `/srv/nova/desk-status` | How the VPS is doing, for Desk. 127.0.0.1:8788, reached through Caddy at `/desk-status/*`, and **only** with a token made from AGENT_NOVA_KEY. |
 | Firewall (ufw) | | 22, 80, 443 open (and whatever was there: 3389 stays as it was). |
@@ -29,38 +29,53 @@ Cloudflare never gives secrets back, so they're typed in once on the VPS (`set-s
 `/srv/nova/secrets.env` (mode 600). The list: AGENT_NOVA_KEY (must be **the same** as Cloudflare's and
 the studio PC's `na/.env`, because Google's saved keys in the database are locked with it, and Desk
 uses it), ANTHROPIC_API_KEY, RESEND_API_KEY, RESEND_MARKETING_KEY, CAMPAIGN_FROM, ENQUIRY_EMAIL_FROM,
-ENQUIRY_EMAIL_TO, VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY (the **same** pair as Cloudflare's, or every
-phone must sign up for notifications again), ACUITY_USER_ID, ACUITY_API_KEY, ACUITY_CALENDAR_URL,
-ACUITY_WEBHOOK_KEY, ACUITY_EMAIL_KEY, and optional Stripe, Meta and TURN keys.
+ENQUIRY_EMAIL_TO, ACUITY_USER_ID, ACUITY_API_KEY, ACUITY_CALENDAR_URL, and optional Stripe, Meta and TURN keys.
+VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY, ACUITY_WEBHOOK_KEY and ACUITY_EMAIL_KEY are made by
+`switch-keys` at the switch-over (see below).
 
-## The cutover (when you're ready; nothing here has been done yet)
+## The switch-over (ready; nothing has been switched yet)
 
-**Recommended: keep `novacane-worker.novacane-studio.workers.dev` as the address everyone uses, and
-make the Cloudflare Worker a thin pass-through to the VPS.** Phones' installed apps, their
-notification sign-ups, browser sign-ins, Google's sign-in return address, the website's chat
-script, and the Acuity/Stripe/Resend webhooks are all tied to that address. A pass-through keeps
-every one of them working with no changes, while all the real work (the database, the jobs, the
-PC link, Claude) happens on the VPS. The pass-through itself is tiny (it just forwards each request,
-WebSockets too), well inside the free plan. Moving everything to the VPS's own address instead
-would mean re-installing the phone apps, re-subscribing every phone, adding a Google redirect
-address, changing the Squarespace script tag and every webhook.
+Keep `novacane-worker.novacane-studio.workers.dev` as the address everyone uses: Cloudflare runs a
+thin **pass-through** Worker there (`src/passthrough.js`) that forwards every request (pages, the
+API, streams, WebSockets) to the VPS, and all the real work (the database, the jobs, the PC link,
+Claude) happens on the VPS. Phones' installed apps, browser sign-ins, Google's return address, the
+website's chat script and the webhooks all keep working, because the address doesn't change.
 
-Steps (about 10 minutes, at a quiet time):
-1. Run `set-secrets` on the VPS (once). Check Desk shows the VPS as reachable (this proves
-   AGENT_NOVA_KEY matches).
-2. Set `PUBLIC_URL` on the VPS to the workers.dev address (one line in `vps/make-config.mjs`'s call
-   inside `deploy.sh`), so emails and links keep pointing at the same address; deploy.
-3. `vps/sync-data.sh`: the final copy of the database.
-4. Deploy the pass-through Worker on Cloudflare (to write: it forwards every request to
-   https://185-185-126-195.sslip.io with the visitor's address in a signed header, and Caddy is set
-   to trust that header only when the signature is right).
-5. On the VPS: `systemctl enable --now nova-cron.timer` (the jobs now run there, and Cloudflare no
-   longer runs them because the pass-through has no cron).
-6. Restart Nova Agent on the PC (it reconnects through the same address).
+**One command each way** (on the studio PC, in `nb/novacane-worker`, at a quiet time; each asks
+you to type `yes` first):
 
-**Rollback:** redeploy the normal Worker (`npx wrangler deploy`), stop the VPS's jobs
-(`systemctl disable --now nova-cron.timer`). Anything written on the VPS in between would need
-copying back, so roll back quickly or not at all.
+- `vps/switch.sh`: checks the VPS; sends it this code with the workers.dev address as its
+  `PUBLIC_URL`; makes its keys (`/srv/nova/bin/switch-keys`: a new notification key pair, and the
+  Acuity keys); takes the final copy of the database; checks the VPS is healthy; deploys the
+  pass-through (`wrangler deploy -c wrangler.passthrough.jsonc`, which has no timed jobs, so
+  Cloudflare's stop); starts the VPS's timed jobs (`nova-cron.timer`); restarts Nova Agent on the
+  PC; then checks everything from outside (pages, sign-in, a website chat that's deleted after).
+- `vps/switch-back.sh`: stops the VPS's timed jobs, redeploys the normal Worker on Cloudflare (with
+  its jobs), restarts Nova Agent, checks. Then asks **y/N** before copying the VPS's database back
+  into Cloudflare's (anything saved while the VPS was live is only there). Rows over Cloudflare's
+  100 KB per statement (the biggest shared note) can't go back that way; the import says so.
+
+How the pieces fit:
+- **Who's asking:** the pass-through signs each request (`src/pass-sign.js`: when, the visitor's IP,
+  the address asked for; HMAC with a key made from AGENT_NOVA_KEY). The VPS (`src/vps-front.js`)
+  trusts it only when the signature is right and under 5 minutes old; then Nova Bot sees the
+  workers.dev address and the visitor's IP, exactly as on Cloudflare. Anything else keeps Caddy's
+  caller and the VPS's own address. The VPS always sees https (the runtime itself only hears http).
+- **Acuity: nothing to change.** Acuity's webhook (`/acuity/webhook?key=…`) and the Google script
+  (`/acuity/email`, `X-Nova-Key`) still send Cloudflare's old keys. The pass-through checks them
+  against Cloudflare's ACUITY_WEBHOOK_KEY / ACUITY_EMAIL_KEY and swaps in the VPS's, which are
+  made from AGENT_NOVA_KEY (`switch-keys`). ADMIN_PASSWORD isn't needed (only the first Portal
+  account setup used it).
+- **Notifications:** Cloudflare can't give its VAPID keys back, so the VPS gets a new pair. The next
+  time Portal opens on a phone, it notices the server's key changed and quietly signs the phone up
+  again (it already said Allow); if the phone wants a tap, it says once, calmly, to turn
+  notifications on again (Alerts → Turn on notifications).
+- **Durable Objects:** the pass-through still exports `AgentLink` and `LosslessRoom` (unused), so
+  Cloudflare keeps their saved state for a switch back.
+- **Down:** when the VPS can't be reached (or Caddy has no Nova Bot behind it), the pass-through
+  answers a calm "Nova is restarting" page (or JSON, for the apps) that refreshes by itself.
+- **Desk** shows which side is live, the commands, and warnings (e.g. newsletters won't send while
+  RESEND_MARKETING_KEY is from a Resend account without novacane.co.uk).
 
 **Later, your own address:** point e.g. `desk.novacane.co.uk` at 185.185.126.195 (one DNS A record),
 then deploy with `DESK_ADDRESS=desk.novacane.co.uk`. Caddy gets the certificate by itself.
