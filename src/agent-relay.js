@@ -244,11 +244,11 @@ export class AgentLink extends DurableObject {
 
   async fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname === "/connect") return this.connect();
+    if (url.pathname === "/connect") return this.connect(request.headers.get("X-Nova-Agent-Where") === "server" ? "server" : "pc");
     if (url.pathname === "/status") {
       const ws = this.pc();
-      const at = ws ? ws.deserializeAttachment()?.since : null;
-      return json({ connected: Boolean(ws), since: at || null });
+      const at = ws ? ws.deserializeAttachment() : null;
+      return json({ connected: Boolean(ws), since: at?.since || null, where: ws ? at?.where || "pc" : null });
     }
     if (url.pathname.startsWith("/relay/")) return this.relay(request, url.pathname.slice("/relay".length) + url.search);
     if (url.pathname === "/cancel") {
@@ -258,8 +258,19 @@ export class AgentLink extends DurableObject {
     return json({ error: "Not found" }, 404);
   }
 
-  connect() {
-    // A new connection from the PC replaces the old one (a restart, or a dropped network)
+  // where: which Nova Agent is linking, "server" (the VPS, vps/agent-switch.sh) or "pc" (the studio
+  // PC; a Nova Agent from before says nothing, which is the PC). Only one runs: while the server's is
+  // linked, a PC's is turned away (4002), and Nova Agent on the PC then stops itself and stays off
+  // (src/where.ts in Nova Agent). The server's always gets the link.
+  connect(where = "pc") {
+    const current = this.pc();
+    if (where !== "server" && current && current.deserializeAttachment()?.where === "server") {
+      const { 0: client, 1: server } = new WebSocketPair();
+      server.accept();
+      server.close(4002, "Nova Agent runs on the server");
+      return new Response(null, { status: 101, webSocket: client });
+    }
+    // A new connection replaces the old one (a restart, or a dropped network)
     for (const old of this.ctx.getWebSockets("pc")) {
       try {
         old.close(4001, "replaced");
@@ -268,7 +279,7 @@ export class AgentLink extends DurableObject {
     this.failAll();
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, ["pc"]);
-    server.serializeAttachment({ since: new Date().toISOString() });
+    server.serializeAttachment({ since: new Date().toISOString(), where });
     return new Response(null, { status: 101, webSocket: client });
   }
 

@@ -97,6 +97,12 @@ describe("status page", () => {
 		expect(pc.text).toMatch(/Waiting for it: Agent, quests, Calendar's own notes, Board, Console's terminals and the Fixer/);
 	});
 
+	it("calls the row Nova Agent, and says when it runs on the server", async () => {
+		world();
+		const pc = (await (await call("/status.json")).json()).parts.find((p) => p.id === "pc");
+		expect(pc.name).toBe("Nova Agent");
+	});
+
 	it("answers 503 when something is red, so an outside watchdog notices", async () => {
 		world({ feed: false });
 		const res = await call("/status.json");

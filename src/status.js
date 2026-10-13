@@ -24,7 +24,8 @@
 //   backups        the last nightly backup's age
 //   Google         each part's last run
 //   the server     disk and memory on the VPS
-//   studio PC      linked or not — when it's off, which parts keep working and which wait for it
+//   Nova Agent     linked or not, and where it runs (the server, or the studio PC) — when it's off,
+//                  which parts keep working and which wait for it
 // Plus the last "laptop off" test (vps/laptop-off-test.sh), when it ran and what passed.
 //
 // Nothing personal is ever shown: no names, emails, messages or keys; only states and times.
@@ -267,11 +268,14 @@ export async function computeStatus(env, { now = Date.now(), fetcher = fetch, fo
     parts.push(part("google", "Google", "amber", "Google isn't connected, so nothing syncs with it."));
   }
 
-  // The studio PC: online, or which parts wait for it
+  // Nova Agent: on the server (the laptop can be off), on the studio PC, or off and which parts wait for it
+  // (the id stays "pc", which vps/laptop-off-test.sh and older pages read)
   parts.push(
-    link.connected
-      ? part("pc", "Studio PC", "green", "Linked: Agent, quests, Calendar's own notes, Board, Console's terminals and the Fixer are all available.", { checked: link.since || null })
-      : part("pc", "Studio PC", "amber", "Off or not linked. Still working without it: the website chat and bookings, Portal, enquiries, emails, clients, Money, Social, Campaigns, shared Notes and Google. Waiting for it: Agent, quests, Calendar's own notes, Board, Console's terminals and the Fixer.")
+    link.connected && link.where === "server"
+      ? part("pc", "Nova Agent", "green", "On the server: Agent, quests, Calendar's own notes, Board, Files, Console and the Fixer all work with the studio PC off.", { checked: link.since || null })
+      : link.connected
+        ? part("pc", "Nova Agent", "green", "On the studio PC (linked): Agent, quests, Calendar's own notes, Board, Console's terminals and the Fixer are all available while the PC is on.", { checked: link.since || null })
+        : part("pc", "Nova Agent", "amber", "Off or not linked. Still working without it: the website chat and bookings, Portal, enquiries, emails, clients, Money, Social, Campaigns, shared Notes and Google. Waiting for it: Agent, quests, Calendar's own notes, Board, Console's terminals and the Fixer.")
   );
 
   const red = parts.filter((p) => p.state === "red");
@@ -344,6 +348,7 @@ ${laptop}
 <section class="help" aria-labelledby="sos"><h2 id="sos">If something's red, do this</h2><ol>
 <li><b>Wait one minute and look again.</b> This page checks itself every minute; many things fix themselves.</li>
 <li><b>Restart Nova</b> — admins: Portal → Admin → <a href="/portal/?view=computer">Computer</a> → <b>Restart Nova Bot</b>. Or in a terminal on the studio PC: <code>ssh root@185.185.126.195 systemctl restart nova</code></li>
+<li><b>Nova Agent off?</b> On the server it starts again by itself; to restart it: <code>ssh root@185.185.126.195 systemctl restart nova-agent</code></li>
 <li><b>Emails red?</b> Restart the mail sender: <code>ssh root@185.185.126.195 systemctl restart postfix nova-mail</code> — Gmail sends meanwhile if it's connected.</li>
 <li><b>Server red (disk or memory)?</b> Computer shows how full it is; old backups live in <code>/srv/nova/backups</code> on the server (14 days are kept, plus copies in Google Drive → Nova Agent → Backups).</li>
 <li><b>This page won't load at all?</b> Then the server itself is down: log in to the VPSdime panel and press <b>Reboot</b>, or open a support ticket with VPSdime. Nova starts again by itself when the server comes back.</li>

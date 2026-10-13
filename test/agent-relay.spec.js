@@ -309,3 +309,49 @@ describe("Calendar online", () => {
     expect(res.headers.get("ETag")).toBeNull();
   });
 });
+
+// Nova Agent on the server (vps/agent-switch.sh): only one Nova Agent runs. The server's link
+// always wins; a PC's is turned away with 4002 (Nova Agent on the PC then stops and stays off).
+describe("only one Nova Agent", () => {
+  async function open(where) {
+    const headers = { Authorization: `Bearer ${KEY}`, Upgrade: "websocket" };
+    if (where) headers["X-Nova-Agent-Where"] = where;
+    const res = await call("/nova-agent/link", { headers });
+    expect(res.status).toBe(101);
+    const ws = res.webSocket;
+    const closed = new Promise((resolve) => ws.addEventListener("close", (e) => resolve(e.code)));
+    ws.accept();
+    return { ws, closed };
+  }
+  const linkNow = async () => (await call("/nova-agent/link/status", { headers: STAFF_AUTH })).json();
+
+  it("the server's link stays; a PC trying afterwards is turned away (4002)", async () => {
+    const server = await open("server");
+    expect(await linkNow()).toMatchObject({ connected: true, where: "server" });
+    const pc = await open("pc");
+    expect(await pc.closed).toBe(4002);
+    const old = await open(); // a Nova Agent from before says nothing: it's the PC
+    expect(await old.closed).toBe(4002);
+    expect(await linkNow()).toMatchObject({ connected: true, where: "server" });
+    server.ws.close();
+  });
+
+  it("the server takes the link over from the PC (which is told it was replaced)", async () => {
+    const pc = await open("pc");
+    expect(await linkNow()).toMatchObject({ connected: true, where: "pc" });
+    const server = await open("server");
+    expect(await pc.closed).toBe(4001);
+    expect(await linkNow()).toMatchObject({ connected: true, where: "server" });
+    server.ws.close();
+  });
+
+  it("the status page says Nova Agent is on the server", async () => {
+    const server = await open("server");
+    await env.DB.prepare("DELETE FROM settings WHERE key = 'status_cache'").run().catch(() => {});
+    const data = await (await call("/status.json")).json();
+    const row = data.parts.find((p) => p.id === "pc");
+    expect(row).toMatchObject({ name: "Nova Agent", state: "green" });
+    expect(row.text).toMatch(/^On the server/);
+    server.ws.close();
+  });
+});
