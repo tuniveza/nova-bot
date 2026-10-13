@@ -3,6 +3,8 @@
 # Run on the studio PC from the novacane-worker folder:
 #   NOVA_AGENT_DIR=~/an/pj/ns/na-release vps/deploy.sh
 # Settings (defaults): DESK_SSH=root@185.185.126.195  DESK_ADDRESS=185-185-126-195.sslip.io
+#   DESK_PUBLIC_URL: the address Nova Bot puts in links and emails (default https://$DESK_ADDRESS;
+#   after the switch-over vps/switch.sh sets it to Cloudflare's workers.dev address)
 # It never starts the every-minute jobs (that's the cutover: vps/README.md). Secrets are typed in on
 # the VPS (/srv/nova/bin/set-secrets); DESK_COPY_PC_SECRETS=1 also copies the two the PC has.
 set -euo pipefail
@@ -22,7 +24,7 @@ rsync -az --delete \
   ./ "$SSH:/srv/nova/app/"
 
 echo "3/5 Settings and services"
-node vps/make-config.mjs "https://$ADDR" | ssh "$SSH" "cat > /srv/nova/app/wrangler.vps.jsonc"
+node vps/make-config.mjs "${DESK_PUBLIC_URL:-https://$ADDR}" | ssh "$SSH" "cat > /srv/nova/app/wrangler.vps.jsonc"
 ssh "$SSH" "ADDR='$ADDR' bash -s" <<'REMOTE'
 set -euo pipefail
 cd /srv/nova/app
@@ -45,6 +47,7 @@ for kv in "ENQUIRY_EMAIL_FROM=Novacane Studios <hello@novacane.co.uk>" "CAMPAIGN
   k=${kv%%=*}; grep -q "^$k=" /srv/nova/secrets.env || echo "$kv" >> /srv/nova/secrets.env
 done
 install -m 700 -o root vps/bin/set-secrets /srv/nova/bin/set-secrets
+install -m 700 -o root vps/bin/switch-keys /srv/nova/bin/switch-keys
 cp vps/systemd/*.service vps/systemd/*.timer /etc/systemd/system/
 touch /srv/nova/secrets.env && chmod 600 /srv/nova/secrets.env
 ln -sf /srv/nova/secrets.env /srv/nova/app/.dev.vars

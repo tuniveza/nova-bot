@@ -1,0 +1,50 @@
+#!/usr/bin/env node
+// Desk, the switch-over (vps/switch.sh runs this on the VPS, as root). Sets the keys Nova Bot on the
+// VPS needs once it's the live one, in /srv/nova/secrets.env, never printing them:
+//   - VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY: a new pair for phone notifications, only if there's none
+//     (Cloudflare's pair can't be read back; phones turn notifications on again once, by themselves
+//     when Nova Agent or Portal is next opened)
+//   - ACUITY_WEBHOOK_KEY / ACUITY_EMAIL_KEY: made from AGENT_NOVA_KEY, the same way the pass-through
+//     makes them (src/pass-sign.js), so it can swap Cloudflare's old keys for these and nothing has
+//     to change in Acuity or the Google script
+// Prints only which names it set.
+const fs = require("node:fs");
+const crypto = require("node:crypto");
+const FILE = process.argv[2] || "/srv/nova/secrets.env";
+
+const lines = fs.existsSync(FILE) ? fs.readFileSync(FILE, "utf8").split("\n").filter(Boolean) : [];
+const get = (name) => (lines.find((l) => l.startsWith(name + "=")) || "").slice(name.length + 1);
+const set = (name, value) => {
+  const i = lines.findIndex((l) => l.startsWith(name + "="));
+  if (i >= 0) lines[i] = `${name}=${value}`;
+  else lines.push(`${name}=${value}`);
+};
+const agentKey = get("AGENT_NOVA_KEY");
+if (!agentKey) {
+  console.error("AGENT_NOVA_KEY isn't set on the VPS: nothing changed.");
+  process.exit(1);
+}
+const derived = (label) => crypto.createHmac("sha256", agentKey).update(label).digest("hex");
+const done = [];
+
+if (!get("VAPID_PUBLIC_KEY") || !get("VAPID_PRIVATE_KEY")) {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const pub = publicKey.export({ format: "jwk" });
+  const priv = privateKey.export({ format: "jwk" });
+  const point = Buffer.concat([Buffer.from([4]), Buffer.from(pub.x, "base64url"), Buffer.from(pub.y, "base64url")]);
+  set("VAPID_PUBLIC_KEY", point.toString("base64url"));
+  set("VAPID_PRIVATE_KEY", priv.d);
+  done.push("VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY (new pair)");
+}
+for (const [name, label] of [["ACUITY_WEBHOOK_KEY", "acuity-webhook-v1"], ["ACUITY_EMAIL_KEY", "acuity-email-v1"]]) {
+  const want = derived(label);
+  if (get(name) !== want) {
+    set(name, want);
+    done.push(name);
+  }
+}
+const old = process.umask(0o077);
+fs.writeFileSync(FILE + ".new", lines.join("\n") + "\n");
+fs.renameSync(FILE + ".new", FILE);
+process.umask(old);
+console.log(done.length ? `Set: ${done.join(", ")}` : "Keys already in place");

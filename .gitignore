@@ -203,3 +203,4 @@ public/observatory/
 public/lossless/
 public/fixer/
 VERSION
+wrangler.passthrough.jsonc

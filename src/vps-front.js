@@ -1,0 +1,45 @@
+// Nova Bot on the VPS (DESK_HOST = "vps"): how each request is seen before anything else handles it.
+//
+// The runtime on the VPS (workerd, behind Caddy) is reached over plain http on 127.0.0.1, so it would
+// see every address as http://… — but people reach it over https, and the "only from this site's own
+// pages" checks compare the browser's Origin (https://…) with it. So the address is always https.
+//
+// After the switch-over, requests arrive from the pass-through on Cloudflare (src/passthrough.js),
+// signed: when, the visitor's IP address, and the address they asked for (the workers.dev one). When
+// the signature is right and fresh, Nova Bot sees the request exactly as Cloudflare did: that address
+// (so sign-ins, Google's return address, links and the Origin checks all line up) and that visitor
+// (CF-Connecting-IP, which the rate limits and the IP fingerprints use). Unsigned or wrongly signed
+// requests keep Caddy's own CF-Connecting-IP (the real caller) and the VPS's address. The signature
+// headers never reach the rest of Nova Bot.
+
+import { PASS_HEADERS, PASS_WINDOW_MS, passSignature, sameHex } from "./pass-sign.js";
+
+// The address the pass-through is allowed to stand in for (PUBLIC_URL after the switch)
+function publicHost(env) {
+  try {
+    return new URL(String(env.PUBLIC_URL || "")).host;
+  } catch {
+    return "";
+  }
+}
+
+export async function vpsFront(request, env, now = Date.now()) {
+  if (env.DESK_HOST !== "vps") return request;
+  const url = new URL(request.url);
+  url.protocol = "https:";
+  const headers = new Headers(request.headers);
+  const ts = headers.get("x-nova-pass-ts");
+  const ip = headers.get("x-nova-pass-ip") || "";
+  const host = headers.get("x-nova-pass-host") || "";
+  const sig = headers.get("x-nova-pass-sig");
+  for (const h of PASS_HEADERS) headers.delete(h);
+  if (ts && sig && host && host === publicHost(env) && Math.abs(now - Number(ts)) <= PASS_WINDOW_MS) {
+    if (sameHex(sig, await passSignature(env, ts, ip, host))) {
+      url.host = host;
+      if (ip) headers.set("CF-Connecting-IP", ip);
+      else headers.delete("CF-Connecting-IP");
+    }
+  }
+  if (url.toString() === request.url && !PASS_HEADERS.some((h) => request.headers.has(h))) return request;
+  return new Request(url.toString(), new Request(request, { headers }));
+}

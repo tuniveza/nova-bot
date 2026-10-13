@@ -62,6 +62,7 @@ import lossless from "./lossless/worker.js";
 import { requireStaff } from "./portal/auth.js";
 export { LosslessRoom } from "./lossless/room.js";
 export { AgentLink } from "./agent-relay.js";
+import { vpsFront } from "./vps-front.js";
 import { calendarPage, handleLink, handleRelay, isRelayed, linkStatus } from "./agent-relay.js";
 import { handleSharedNotes } from "./notes-shared.js";
 import { handleMusicWorld } from "./music-world.js";
@@ -742,6 +743,9 @@ export default {
   },
 
   async fetch(request, env, ctx) {
+    // On the VPS: the https address, and (after the switch-over) the visitor and address the
+    // pass-through on Cloudflare signed for (src/vps-front.js). Elsewhere it's left as it is.
+    request = await vpsFront(request, env);
     const { pathname } = new URL(request.url);
 
     // https://…/agent/ is the only address: any other page opened in a browser goes there
