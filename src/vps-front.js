@@ -2,7 +2,8 @@
 //
 // The runtime on the VPS (workerd, behind Caddy) is reached over plain http on 127.0.0.1, so it would
 // see every address as http://… — but people reach it over https, and the "only from this site's own
-// pages" checks compare the browser's Origin (https://…) with it. So the address is always https.
+// pages" checks compare the browser's Origin (https://…) with it. So the address is always https, and
+// so is the browser's Origin for it (the runtime's proxy turns that into http://… on the way in).
 //
 // After the switch-over, requests arrive from the pass-through on Cloudflare (src/passthrough.js),
 // signed: when, the visitor's IP address, and the address they asked for (the workers.dev one). When
@@ -36,6 +37,17 @@ export async function vpsFront(request, env, now = Date.now()) {
   const host = headers.get("x-nova-pass-host") || "";
   const sig = headers.get("x-nova-pass-sig");
   for (const h of PASS_HEADERS) headers.delete(h);
+  // The local runtime's own proxy (wrangler dev) rewrites a browser's Origin for this address,
+  // https://<this address>, to http://<this address> (its own plain-http side). Put it back, the
+  // same way as the address itself, or every "only from this site's own pages" check says no.
+  // (No page is ever served over plain http here: Caddy sends http to https.)
+  const origin = headers.get("Origin");
+  if (origin) {
+    try {
+      const o = new URL(origin);
+      if (o.protocol === "http:" && o.hostname === url.hostname && (o.port === "" || o.port === "8787")) headers.set("Origin", `https://${url.host}`);
+    } catch {}
+  }
   if (ts && sig && host && publicHosts(env).includes(host) && Math.abs(now - Number(ts)) <= PASS_WINDOW_MS) {
     if (sameHex(sig, await passSignature(env, ts, ip, host))) {
       url.host = host;
@@ -44,6 +56,6 @@ export async function vpsFront(request, env, now = Date.now()) {
       else headers.delete("CF-Connecting-IP");
     }
   }
-  if (url.toString() === request.url && !PASS_HEADERS.some((h) => request.headers.has(h))) return request;
+  if (url.toString() === request.url && !PASS_HEADERS.some((h) => request.headers.has(h)) && headers.get("Origin") === request.headers.get("Origin")) return request;
   return new Request(url.toString(), new Request(request, { headers }));
 }

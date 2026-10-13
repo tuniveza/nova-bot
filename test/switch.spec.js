@@ -168,6 +168,16 @@ describe("the VPS's front door", () => {
 		expect(await vpsFront(cf, {})).toBe(cf);
 	});
 
+	it("puts the browser's Origin back to https (the local runtime's proxy makes it http), and only for this address", async () => {
+		const env = { ...vpsEnv(), PUBLIC_URL: "https://nova.novacane.co.uk" };
+		const rewritten = new Request("http://nova.novacane.co.uk/app/api/x", { method: "POST", headers: { Origin: "http://nova.novacane.co.uk" } });
+		expect((await vpsFront(rewritten, env)).headers.get("Origin")).toBe("https://nova.novacane.co.uk");
+		const elsewhere = new Request("http://nova.novacane.co.uk/app/api/x", { method: "POST", headers: { Origin: "http://evil.example" } });
+		expect((await vpsFront(elsewhere, env)).headers.get("Origin")).toBe("http://evil.example");
+		const right = new Request("http://nova.novacane.co.uk/app/api/x", { method: "POST", headers: { Origin: "https://nova.novacane.co.uk" } });
+		expect((await vpsFront(right, env)).headers.get("Origin")).toBe("https://nova.novacane.co.uk");
+	});
+
 	it("on the new address, still trusts the old address's pass-through while links are moved over", async () => {
 		const env = { ...vpsEnv(), PUBLIC_URL: "https://nova.novacane.co.uk" };
 		const out = await vpsFront(await signed("http://127.0.0.1:8787/portal/"), env);
