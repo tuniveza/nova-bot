@@ -46,6 +46,9 @@ if ! pc_agent_stopped; then
   exit 1
 fi
 echo "  stopped: no service, no copy running from $NA_DIR, nothing on port 4545"
+# (the laptop-off test's own test person, if a check run before left anything here)
+rm -f "$NA_DIR/data/chats/laptop-off-test.json" "$NA_DIR/data/boards/laptop-off-test.json"
+node -e 'const fs=require("fs"),f=process.argv[1];try{const p=JSON.parse(fs.readFileSync(f,"utf8"));if(p["laptop-off-test"]){delete p["laptop-off-test"];fs.writeFileSync(f,JSON.stringify(p,null,2)+"\n")}}catch{}' "$NA_DIR/data/people.json"
 
 back_now() { echo "Going back to the PC…"; vps/agent-switch-back.sh --yes; }
 

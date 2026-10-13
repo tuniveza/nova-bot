@@ -249,7 +249,8 @@ try {
   });
 
   await check("Booking form opens with free times", async () => {
-    const post = (path, body) => fetch(`${URL_}${path}`, { method: "POST", headers: { "Content-Type": "application/json", Origin: ORIGIN }, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) }).then((r) => r.json());
+    // (as the studio's website, where the chat and its booking card live)
+    const post = (path, body) => fetch(`${URL_}${path}`, { method: "POST", headers: { "Content-Type": "application/json", Origin: "https://novacane.co.uk" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) }).then((r) => r.json());
     const open = await post("/booking-form/open", {});
     must(open && open.form, "the booking card didn't open");
     const types = open.form.sessions || open.form.types || open.form.sessionTypes || [];
@@ -257,8 +258,8 @@ try {
     if (!first) return "opens (no session types to try times with)";
     const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date(Date.now() + 2 * 864e5));
     const times = await post("/booking-form/times", { session_type_id: first.id, date });
-    must(Array.isArray(times.times), times.message || "no times answer");
-    return `${types.length} session types; ${times.times.length} free times on ${date}`;
+    must(Array.isArray(times.times) && !/couldn't check/i.test(times.message || ""), times.message || "no times answer");
+    return `${types.length} session types; ${times.times.length} free times on ${date}${times.message ? ` (${times.message.slice(0, 40)})` : ""}`;
   });
 
   const sections = { me: "/app/api/me", enquiries: "/app/api/enquiries", clients: "/app/api/clients", campaigns: "/app/api/campaigns", services: "/app/api/services", alerts: "/app/api/notifications", quests: "/app/api/quests", links: "/app/api/links", bookings: "/app/api/booking-actions", social: "/app/api/social", money: "/app/api/money", inbox: "/app/api/inbox/saved", phones: "/app/api/push/phones" };

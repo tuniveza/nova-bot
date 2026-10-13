@@ -12,7 +12,7 @@ echo "1/4 Stopping Nova Agent on the server (and keeping it off)"
 vps 'rm -f /srv/nova-agent/.live; systemctl disable --now nova-agent >/dev/null 2>&1 || true; ! systemctl is-active --quiet nova-agent' \
   || { echo "  It didn't stop. Nothing else was changed."; exit 1; }
 # (the laptop-off test's own test person, if a run was cut short)
-vps 'rm -f /srv/nova-agent/data/chats/laptop-off-test.json; f=/srv/nova-agent/data/people.json; [ -f $f ] && sudo -u nova-agent node -e "const fs=require(\"fs\");const p=JSON.parse(fs.readFileSync(\"$f\",\"utf8\"));delete p[\"laptop-off-test\"];fs.writeFileSync(\"$f\",JSON.stringify(p,null,2)+\"\\n\")" || true'
+vps 'rm -f /srv/nova-agent/data/chats/laptop-off-test.json /srv/nova-agent/data/boards/laptop-off-test.json; f=/srv/nova-agent/data/people.json; [ -f $f ] && sudo -u nova-agent node -e "const fs=require(\"fs\");const p=JSON.parse(fs.readFileSync(\"$f\",\"utf8\"));delete p[\"laptop-off-test\"];fs.writeFileSync(\"$f\",JSON.stringify(p,null,2)+\"\\n\")" || true'
 
 echo "2/4 Code: what the Fixer merged on the server comes back here"
 vps/agent-code-sync.sh || echo "  (the code needs a look, see above; the data still comes back)"
