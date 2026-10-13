@@ -105,14 +105,14 @@ export async function chatRoundTrip(env, fetcher = fetch) {
       method: "POST",
       headers: { "Content-Type": "application/json", Origin: "https://novacane.co.uk" },
       body: JSON.stringify({ messages: [{ role: "user", content: "Status check: please just reply OK." }], chatId, page: "/status" }),
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(30_000),
     });
     const data = await res.json().catch(() => ({}));
     result = res.ok && typeof data.reply === "string" && data.reply.trim()
       ? { ok: true, ms: Date.now() - t0 }
       : { ok: false, ms: Date.now() - t0, reason: res.status === 429 ? "busy (too many chats right now)" : `answered ${res.status}${data.error ? ` (${String(data.error).slice(0, 60)})` : ""}` };
   } catch (err) {
-    result = { ok: false, ms: Date.now() - t0, reason: err?.name === "TimeoutError" ? "no answer within 45 seconds" : "couldn't be reached" };
+    result = { ok: false, ms: Date.now() - t0, reason: err?.name === "TimeoutError" ? "no answer within 30 seconds" : "couldn't be reached" };
   }
   // The test leaves nothing behind (and again a moment later: the chat saves itself after it answers)
   const tidy = () =>
