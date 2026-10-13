@@ -1,0 +1,40 @@
+Desk mail: the DNS records for the VPS's own mail server (send-only), 2026-10-13
+=================================================================================
+Add these at Squarespace (Domains → novacane.co.uk → DNS → Custom records). They don't touch
+incoming mail: novacane.co.uk's MX stays Google Workspace, and Resend keeps its own records
+(resend._domainkey and the send. subdomain).
+
+1) SPF — TXT at the root (Host: @). There's no SPF record yet, so add this ONE (only one SPF
+   record may exist; if one appears later, merge them):
+   Host:  @
+   Type:  TXT
+   Value: v=spf1 include:_spf.google.com ip4:185.185.126.195 ~all
+   (include:_spf.google.com keeps Google Workspace/Gmail sending from @novacane.co.uk working;
+   ip4: lets the VPS send.)
+
+2) DKIM — TXT for the "nova" key the VPS signs with:
+   Host:  nova._domainkey
+   Type:  TXT
+   Value (one line; if the box limits length, Squarespace splits it itself):
+   v=DKIM1; h=sha256; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmH7+K8+uiBXc1ZIcZ2wBCMHwx/MRAExku5wLks4nalhvPi58pZj01LD2hrR4GvAPJkLOq1YELzkaZYwkcXIgi+6F1ueW8VVQok367TTJ9WRLbfXMP2Iy/fWCtDd5wGkVKl8Mn1SuGqlQhfZw+1k+xdVR0oNDaXO0Sea7+Zd60kDWdyoDkTmvR5B60ph7cMnCSqeaPucrY7dBZtlEAeNBw+/3joSAZ09nBVY3oXfBQtqpXdVAHQpVFJel/iuqDUc7gSOdZP0OYSwQNGMA51HRn0aG7HjGUJlRt6/beBYTZ5OjrG975Kpu9dxFOalnQF+LWkSVpl43gSEJq+vByLoWSQIDAQAB
+
+   (Split into ≤255-character strings for providers that need them:)
+   "v=DKIM1; h=sha256; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmH7+K8+uiBXc1ZIcZ2wBCMHwx/MRAExku5wLks4nalhvPi58pZj01LD2hrR4GvAPJkLOq1YELzkaZYwkcXIgi+6F1ueW8VVQok367TTJ9WRLbfXMP2Iy/fWCtDd5wGkVKl8Mn1SuGqlQhfZw+1k+xdVR0oNDaXO0Sea7+Zd60kDWdyoDkT"
+   "mvR5B60ph7cMnCSqeaPucrY7dBZtlEAeNBw+/3joSAZ09nBVY3oXfBQtqpXdVAHQpVFJel/iuqDUc7gSOdZP0OYSwQNGMA51HRn0aG7HjGUJlRt6/beBYTZ5OjrG975Kpu9dxFOalnQF+LWkSVpl43gSEJq+vByLoWSQIDAQAB"
+
+3) A record for the mail server's name:
+   Host:  mail
+   Type:  A
+   Value: 185.185.126.195
+
+4) Reverse DNS (PTR) — in the VPSdime panel, not Squarespace:
+   185.185.126.195  →  mail.novacane.co.uk
+
+Optional, later (once mail has gone well for a couple of weeks): tighten DMARC from
+"v=DMARC1; p=none;" to "v=DMARC1; p=quarantine; rua=mailto:admin@kulturekingdom.uk".
+
+Check them (from any computer):
+   dig +short TXT novacane.co.uk
+   dig +short TXT nova._domainkey.novacane.co.uk
+   dig +short A mail.novacane.co.uk
+   dig +short -x 185.185.126.195
