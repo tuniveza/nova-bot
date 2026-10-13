@@ -225,9 +225,18 @@ export async function sendTestEmail(env) {
 // customer goes to their address only). `idempotencyKey` makes Resend send it at most once
 // however many times it's asked; `headers` are extra email headers (e.g. List-Unsubscribe);
 // `html` is an HTML version alongside the text (a campaign's test email).
+// Where single emails are handed over: Resend, or (on the VPS, RESEND_API_URL) the VPS's own
+// mail service, which takes the very same request (vps/mail/server.mjs)
+export function mailApiUrl(env) {
+  const base = String(env.RESEND_API_URL || "").trim().replace(/\/+$/, "");
+  return /^https?:\/\//.test(base) ? base : "https://api.resend.com";
+}
+export const ownMailServer = (env) => mailApiUrl(env) !== "https://api.resend.com";
+
 export async function sendEmail(env, { subject, text, html, replyTo, to, from, headers, idempotencyKey }) {
+  const who = ownMailServer(env) ? "The studio's mail server" : "Resend";
   try {
-    const res = await fetch("https://api.resend.com/emails", {
+    const res = await fetch(mailApiUrl(env) + "/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${env.RESEND_API_KEY.trim()}`,
@@ -256,9 +265,9 @@ export async function sendEmail(env, { subject, text, html, replyTo, to, from, h
     try {
       reason = (await res.json()).message || reason;
     } catch {}
-    return { ok: false, message: `Resend didn't send it: ${reason}` };
+    return { ok: false, message: `${who} didn't send it: ${reason}` };
   } catch (err) {
-    return { ok: false, message: "Couldn't reach Resend: " + err.message };
+    return { ok: false, message: `Couldn't reach ${who === "Resend" ? "Resend" : "the studio's mail server"}: ` + err.message };
   }
 }
 

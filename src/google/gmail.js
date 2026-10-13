@@ -20,7 +20,7 @@
 
 import { buildMime, base64Url, canUse, connectedAccount, google, GoogleError } from "../nova/google.js";
 import { spamCheck, spamReason } from "../inbox.js";
-import { sendEmail as resendEmail } from "../enquiries.js";
+import { ownMailServer, sendEmail as resendEmail } from "../enquiries.js";
 import { notifyPhones } from "../push.js";
 import { flush, forgetLink, getLink, keepLink, later, links, low, partOn, prep, putLink, readSetting, spendDb, writeSetting } from "./common.js";
 
@@ -34,6 +34,21 @@ const SEARCH_PER_RUN = 12;
 // text, html, headers, idempotencyKey }). `ref`: what it's about ({ kind: "enquiry" | "outreach" |
 // "invoice", id }). -> { ok, id, via: "gmail" | "resend" } or { ok: false, message }
 export async function sendStudioEmail(env, msg, ref = null) {
+  // On the VPS with its own mail server first (MAIL_FIRST=vps): that sends it; if it can't, Gmail
+  // (when connected and switched on) is the backup
+  if (env.MAIL_FIRST === "vps" && ownMailServer(env)) {
+    const own = await resendEmail(env, msg);
+    if (own.ok) return { ...own, via: "vps" };
+    console.log("The studio's mail server didn't take an email; trying Gmail instead");
+    if (await partOn(env, "send").catch(() => false)) {
+      try {
+        return await gmailSend(env, msg, ref);
+      } catch (err) {
+        return { ok: false, message: err instanceof GoogleError && err.status ? `Neither the studio's mail server nor Gmail sent it (${own.message})` : "Gmail didn't answer in time: it may or may not have gone. Check the studio's Sent folder before trying again." };
+      }
+    }
+    return own;
+  }
   if (await partOn(env, "send").catch(() => false)) {
     try {
       return await gmailSend(env, msg, ref);
@@ -46,7 +61,7 @@ export async function sendStudioEmail(env, msg, ref = null) {
     }
   }
   const result = await resendEmail(env, msg);
-  return result.ok ? { ...result, via: "resend" } : result;
+  return result.ok ? { ...result, via: ownMailServer(env) ? "vps" : "resend" } : result;
 }
 
 async function gmailSend(env, msg, ref) {

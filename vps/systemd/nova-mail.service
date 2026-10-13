@@ -1,0 +1,19 @@
+# Desk: the VPS's own mail service (vps/mail/server.mjs). Nova Bot hands single emails to it on
+# 127.0.0.1:8790 the way it would to Resend; it gives them to Postfix, which signs (DKIM) and sends.
+[Unit]
+Description=Nova mail (send-only, for Nova Bot)
+After=network-online.target postfix.service opendkim.service
+
+[Service]
+Type=simple
+User=nova
+EnvironmentFile=/srv/nova/mail.env
+ExecStart=/usr/bin/node /srv/nova/mail/server.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=false
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

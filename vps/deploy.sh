@@ -30,6 +30,20 @@ printf 'DESK_ADDRESS=%s\nDESK_HOSTNAME=%s\nDESK_URL=https://%s\n' "$ADDR" "$ADDR
 sed "s/{\$DESK_HOSTNAME}/$ADDR/" vps/Caddyfile > /etc/caddy/Caddyfile
 install -m 755 vps/bin/backup /srv/nova/bin/backup
 mkdir -p /srv/nova/desk-status && install -m 644 vps/desk-status/server.mjs /srv/nova/desk-status/server.mjs
+# The VPS's own mail service (vps/mail): its key is made once, then Nova Bot is told to use it
+mkdir -p /srv/nova/mail && install -m 644 vps/mail/server.mjs /srv/nova/mail/server.mjs
+if [ ! -s /srv/nova/mail.env ]; then umask 077; printf 'MAIL_KEY=%s\nMAIL_PORT=8790\n' "$(openssl rand -hex 24)" > /srv/nova/mail.env; fi
+chown nova:nova /srv/nova/mail.env; chmod 600 /srv/nova/mail.env
+mailkey=$(grep '^MAIL_KEY=' /srv/nova/mail.env | cut -d= -f2-)
+touch /srv/nova/secrets.env
+for kv in "RESEND_API_URL=http://127.0.0.1:8790" "RESEND_API_KEY=$mailkey" "MAIL_FIRST=vps"; do
+  k=${kv%%=*}; { grep -v "^$k=" /srv/nova/secrets.env || true; echo "$kv"; } > /srv/nova/secrets.env.new && mv /srv/nova/secrets.env.new /srv/nova/secrets.env
+done
+unset mailkey
+# The from addresses (not secret): the studio's own domain, unless set already
+for kv in "ENQUIRY_EMAIL_FROM=Novacane Studios <hello@novacane.co.uk>" "CAMPAIGN_FROM=Novacane Studios <hello@novacane.co.uk>"; do
+  k=${kv%%=*}; grep -q "^$k=" /srv/nova/secrets.env || echo "$kv" >> /srv/nova/secrets.env
+done
 install -m 700 -o root vps/bin/set-secrets /srv/nova/bin/set-secrets
 cp vps/systemd/*.service vps/systemd/*.timer /etc/systemd/system/
 touch /srv/nova/secrets.env && chmod 600 /srv/nova/secrets.env
@@ -52,5 +66,5 @@ for name in $([ "${DESK_COPY_PC_SECRETS:-0}" = 1 ] && echo AGENT_NOVA_KEY ANTHRO
 done
 
 echo "5/5 Packages and restart"
-ssh "$SSH" "cd /srv/nova/app && sudo -u nova -H npm ci --no-audit --no-fund --loglevel=error >/dev/null && systemctl enable --now nova >/dev/null 2>&1 && systemctl restart nova && systemctl enable --now nova-backup.timer >/dev/null 2>&1 && systemctl enable --now desk-status >/dev/null 2>&1 && systemctl restart desk-status && (systemctl reload caddy || systemctl restart caddy)"
+ssh "$SSH" "cd /srv/nova/app && sudo -u nova -H npm ci --no-audit --no-fund --loglevel=error >/dev/null && systemctl enable --now nova >/dev/null 2>&1 && systemctl restart nova && systemctl enable --now nova-backup.timer >/dev/null 2>&1 && systemctl enable --now desk-status >/dev/null 2>&1 && systemctl restart desk-status && systemctl enable --now nova-mail >/dev/null 2>&1 && systemctl restart nova-mail && (systemctl reload caddy || systemctl restart caddy)"
 echo "Done: https://$ADDR (the every-minute jobs stay off until the cutover)"
