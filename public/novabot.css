@@ -2552,3 +2552,14 @@ html.nv-page-locked body {
   #nv-chat-panel.nv-booking { bottom: 24px; height: calc(100vh - 48px); height: calc(100dvh - 48px); max-height: calc(100dvh - 48px); }
   #nv-chat:has(#nv-chat-panel.nv-booking) #nv-chat-toggle { opacity: 0; pointer-events: none; }
 }
+/* While booking on a computer or tablet the chat is exactly as tall as the card needs (no big empty
+   space under it), and never taller than the window: the card's fields only scroll if the window
+   is shorter than the card */
+@media (min-width: 521px) {
+  #nv-chat-panel.nv-booking { height: auto; max-height: calc(100vh - 48px); max-height: calc(100dvh - 48px); }
+  #nv-chat-panel.nv-booking #nv-chat-messages { flex: 0 1 auto; min-height: 0; }
+}
+@media (min-width: 521px) {
+  /* clear of the chat's big rounded bottom corners, with an even margin all round */
+  #nv-chat-panel.nv-booking #nv-chat-messages { padding: calc(8px + var(--nv-peaks, 34px)) 16px 24px; }
+}
