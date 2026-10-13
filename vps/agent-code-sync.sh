@@ -48,7 +48,7 @@ for repo in na nb; do
   # The Fixer's job branches: whatever one side has and the other doesn't
   git -C "$dir" push -q "$RECEIVE" "$remote" 'refs/heads/fixer/*:refs/heads/fixer/*' 2>/dev/null || true
   if [ "$only_send" = 0 ]; then
-    for b in $(git -C "$dir" for-each-ref --format='%(refname:strip=3)' 'refs/remotes/server/fixer/'); do
+    for b in $(git -C "$dir" for-each-ref --format='%(refname:strip=4)' 'refs/remotes/server/fixer/'); do
       git -C "$dir" rev-parse --verify --quiet "refs/heads/fixer/$b" >/dev/null || git -C "$dir" branch -q "fixer/$b" "refs/remotes/server/fixer/$b"
     done
   fi

@@ -60,7 +60,8 @@ vps/agent-sync.sh || { back_now; exit 1; }
 
 echo "5/6 Starting Nova Agent on the server"
 since=$(vps "date '+%Y-%m-%d %H:%M:%S'")
-vps 'touch /srv/nova-agent/.live && systemctl enable --now nova-agent >/dev/null 2>&1'
+# (.ran-here: from now on the server's data is the newest, so switching back brings it to the PC)
+vps 'touch /srv/nova-agent/.live && install -o nova-agent -g nova-agent -m 640 /dev/null /srv/nova-agent/data/.ran-here && systemctl enable --now nova-agent >/dev/null 2>&1'
 if wait_online vps 120 "$since"; then
   echo "  \"Nova Agent is online\" (the server's journal)"
 else

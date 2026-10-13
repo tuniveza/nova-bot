@@ -25,7 +25,7 @@ if [ "${1:-}" != --reverse ]; then
   vps "PC_JOBS='$PC_JOBS' bash -s" <<'REMOTE'
 set -euo pipefail
 cd /srv/nova-agent
-rm -f data/nova.db-wal data/nova.db-shm
+rm -f data/nova.db-wal data/nova.db-shm data/.ran-here
 chown -R nova-agent:nova-agent data .worktrees.mjs
 chmod 750 data
 sudo -u nova-agent node .worktrees.mjs /srv/nova-agent/data "$PC_JOBS" /srv/nova-agent/fixer-jobs /srv/nova-agent/na /srv/nova-agent/nb
@@ -37,7 +37,7 @@ else
   if ! pc_agent_stopped; then echo "Nova Agent is running on the PC: stop it first"; exit 1; fi
   echo "1/3 Nova Agent's data → the PC (from the server)"
   vps "sqlite3 $HOME_VPS/data/nova.db \".backup '/tmp/nova-agent-back.db'\""
-  rsync -a --delete --exclude 'nova.db' --exclude 'nova.db-wal' --exclude 'nova.db-shm' --exclude '.copied-from-pc' "$SSH:$HOME_VPS/data/" "$PC_DATA/"
+  rsync -a --delete --exclude 'nova.db' --exclude 'nova.db-wal' --exclude 'nova.db-shm' --exclude '.copied-from-pc' --exclude '.ran-here' "$SSH:$HOME_VPS/data/" "$PC_DATA/"
   rsync -a "$SSH:/tmp/nova-agent-back.db" "$tmp/nova.db"
   vps 'rm -f /tmp/nova-agent-back.db'
   rm -f "$PC_DATA/nova.db-wal" "$PC_DATA/nova.db-shm"

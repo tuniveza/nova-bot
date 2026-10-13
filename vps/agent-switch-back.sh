@@ -18,8 +18,15 @@ echo "2/4 Code: what the Fixer merged on the server comes back here"
 vps/agent-code-sync.sh || echo "  (the code needs a look, see above; the data still comes back)"
 
 echo "3/4 Data: the server's copy comes back to the PC"
-if ! pc_agent_stopped; then systemctl --user stop agent-nova 2>/dev/null || true; sleep 3; fi
-vps/agent-sync.sh --reverse
+# Only when the server's Nova Agent ran on it: otherwise the PC's data is already the newest (a move
+# that stopped before the server's started must never bring an older copy back)
+if vps 'test -f /srv/nova-agent/data/.ran-here' </dev/null; then
+  if ! pc_agent_stopped; then systemctl --user stop agent-nova 2>/dev/null || true; sleep 3; fi
+  vps/agent-sync.sh --reverse
+  vps 'rm -f /srv/nova-agent/data/.ran-here' </dev/null
+else
+  echo "  The server's Nova Agent didn't run since the PC's data was copied there: the PC's data stays as it is"
+fi
 
 echo "4/4 Starting the PC's Nova Agent"
 rm -f "$PC_MARKER" "$PC_DROPIN"
