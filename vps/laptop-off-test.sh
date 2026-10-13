@@ -12,7 +12,8 @@ set -uo pipefail
 URL=${NOVA_URL:-https://nova.novacane.co.uk}
 SSH=${DESK_SSH:-root@185.185.126.195}
 TO=${TEST_TO:-$(ssh "$SSH" cat /srv/nova/owner-email)}
-DB_GLOB='/srv/nova/state/v3/d1/miniflare-D1DatabaseObject/*.sqlite'
+# Nova Bot's database on the VPS (the one that isn't metadata.sqlite); SQL comes in on stdin
+SQL_ON_VPS='sqlite3 -cmd ".timeout 5000" "$(ls /srv/nova/state/v3/d1/miniflare-D1DatabaseObject/*.sqlite | grep -v metadata | head -1)"'
 passed=()
 failed=()
 check() { # name, then a command that succeeds when it works
@@ -22,7 +23,7 @@ check() { # name, then a command that succeeds when it works
 part() { # the state of one part on the status page: green / amber / red
   curl -s -m 60 "$URL/status.json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const p=JSON.parse(s).parts.find(x=>x.id===process.argv[1]);console.log(p?p.state:"missing")}catch{console.log("unreadable")}})' "$1"
 }
-fresh() { ssh "$SSH" "sqlite3 $DB_GLOB \"DELETE FROM settings WHERE key = 'status_cache'\"" 2>/dev/null; }
+fresh() { echo "DELETE FROM settings WHERE key = 'status_cache';" | ssh "$SSH" "$SQL_ON_VPS" 2>/dev/null; }
 restore() {
   if [ "$(systemctl --user is-active agent-nova)" != active ]; then
     echo "Starting Nova Agent again…"
@@ -84,7 +85,7 @@ echo "5/5 Putting the result on the status page"
 ok=$([ ${#failed[@]} -eq 0 ] && echo true || echo false)
 json=$(node -e 'const [at,ok,p,f,s]=process.argv.slice(1);console.log(JSON.stringify({at,passed:ok==="true",checks:p?p.split("|"):[],failed:f?f.split("|"):[],offSeconds:+s}))' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ok" "$(IFS='|'; echo "${passed[*]}")" "$(IFS='|'; echo "${failed[*]}")" "$on_for")
-printf '%s' "$json" | ssh "$SSH" "v=\$(cat); v=\${v//\\'/\\'\\'}; sqlite3 $DB_GLOB \"INSERT INTO settings (key, value) VALUES ('status_laptop_off_test', '\$v') ON CONFLICT (key) DO UPDATE SET value = excluded.value; DELETE FROM settings WHERE key = 'status_cache';\""
+printf "INSERT INTO settings (key, value) VALUES ('status_laptop_off_test', '%s') ON CONFLICT (key) DO UPDATE SET value = excluded.value; DELETE FROM settings WHERE key = 'status_cache';\n" "${json//\'/\'\'}" | ssh "$SSH" "$SQL_ON_VPS"
 echo
 if [ "$ok" = true ]; then echo "All passed: everything that should keep working with the laptop off did."; else echo "Didn't pass: ${failed[*]}"; fi
 echo "See $URL/status"

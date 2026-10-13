@@ -26,6 +26,23 @@ Workers AI (voice) only exists on Cloudflare, so on the VPS voice falls back to 
 - `vps/sync-data.sh`: copy the live database from Cloudflare (a read-only export) into the VPS, replacing its copy.
 - On the VPS (Console → **+ VPS**, or ssh): `sudo /srv/nova/bin/set-secrets` asks for each secret key with hidden typing; Enter keeps what's there. `sudo /srv/nova/bin/backup` backs up now.
 
+## Is it working? The status page
+
+- **https://nova.novacane.co.uk/status**: public, no sign-in, nothing personal. A light per part
+  (website chat, Portal, signing in, emails, bookings feed, timed jobs, backups, Google, the server,
+  the studio PC), the last laptop-off test, a "Test the chat now" button and an "If something's red,
+  do this" card. **/status.json** is the same as data: 200 when nothing is red, 503 when something is
+  (src/status.js).
+- **Outside watchdog** (tells you even if the whole VPS is down): a free UptimeRobot account
+  (uptimerobot.com → Register → confirm the email) → **New monitor** → type **Keyword**, URL
+  `https://nova.novacane.co.uk/status.json`, keyword `"ok":true`, alert when it **doesn't exist**,
+  every 5 minutes → alert contact **admin@kulturekingdom.uk** → Create. (Better Stack's free plan
+  works the same way: Monitors → Create → "Keyword", same URL and keyword.)
+- **The PC's watchdog** (Nova Agent's src/watchdog.ts): every 5 minutes; after 2 misses in a row a
+  desktop notification (and a phone one through ntfy.sh if NTFY_TOPIC is set in Nova Agent's .env).
+- **The laptop-off test**: `vps/laptop-off-test.sh` unplugs the PC for about 2 minutes, checks what
+  should keep working, plugs it back in and puts the result on the status page.
+
 ## Secrets
 
 Cloudflare never gives secrets back, so they're typed in once on the VPS (`set-secrets`) into
