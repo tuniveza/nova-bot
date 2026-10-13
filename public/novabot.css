@@ -2563,3 +2563,9 @@ html.nv-page-locked body {
   /* clear of the chat's big rounded bottom corners, with an even margin all round */
   #nv-chat-panel.nv-booking #nv-chat-messages { padding: calc(8px + var(--nv-peaks, 34px)) 16px 24px; }
 }
+/* Lite mode (some computers and Android) too: while booking, an even margin round the card and
+   clear of the chat's big rounded bottom corners (lite's own tighter spacing let the corners
+   cover the card's) */
+@media (min-width: 521px) {
+  #nv-chat.nv-lite #nv-chat-panel.nv-booking #nv-chat-messages { padding: 14px 16px 24px; }
+}
