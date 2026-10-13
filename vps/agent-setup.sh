@@ -77,7 +77,7 @@ if [ ! -x /srv/nova-agent/.local/bin/claude ]; then
 fi
 v=$(sudo -u nova-agent -H /srv/nova-agent/.local/bin/claude --version 2>/dev/null || echo "not installed")
 echo "   Claude Code: $v"
-if [ -f /srv/nova-agent/.claude/.credentials.json ]; then echo "   signed in"; else echo "   not signed in yet: ssh $(hostname -I | cut -d' ' -f1), then: sudo -iu nova-agent claude  (and /login)"; fi
+if [ -f /srv/nova-agent/.claude/.credentials.json ]; then echo "   signed in"; else echo "   not signed in yet: ssh root@185.185.126.195, then: sudo -iu nova-agent claude  (and /login)"; fi
 REMOTE
 
 echo "6/7 Service, sudo rules, the server's own deploy"
