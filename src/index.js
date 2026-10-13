@@ -75,6 +75,7 @@ import { relayWithDrive } from "./google/relay.js";
 import { handleInvoicePage } from "./money.js";
 import { handleJoin } from "./fans.js";
 import { handleNoThanks } from "./outreach.js";
+import { handleStatus, cronHeartbeat, isStatusAddress } from "./status.js";
 
 // ===== THINGS YOU CAN EDIT =====
 
@@ -713,6 +714,8 @@ export default {
     const at = controller?.scheduledTime || Date.now();
     ctx.waitUntil(
       Promise.all([
+        // A heartbeat for the status page: the timed jobs ran (src/status.js)
+        cronHeartbeat(env, at),
         sendOverduePings(env),
         deleteOldAlerts(env),
         dailyAcuityCheck(env, new Date(at)),
@@ -771,6 +774,10 @@ export default {
     // Addresses the panels had for a day go back to their own
     const moved = movedPage(request, env, pathname);
     if (moved) return moved;
+    // Is Nova working? Public, no sign-in, nothing personal: the page, its data for an outside
+    // watchdog, and "Test the chat now" (src/status.js). /status opened in a browser is the page;
+    // Nova Agent's own fetch('/status') still goes to the studio PC below
+    if (isStatusAddress(request, pathname)) return handleStatus(request, env);
     // Nova Agent online: its own addresses (chat, Missions, Quests, Calendar's data, the Visualizer's
     // feeds) go to the studio PC over its link (src/agent-relay.js)
     // (a social post's picture or a receipt comes from Google Drive when the PC is off: src/google/relay.js)
@@ -1535,7 +1542,7 @@ function novaAgentPage(request, env, pathname) {
 // goes to /agent/: a panel's address (or one it had before, or /agent/<panel>) opens that panel,
 // anything else just Nova Agent. Files (scripts, icons, a CSV) aren't pages and stay as they are,
 // and so do the website chat's pages for customers (Nova Bot's own) and connecting Google.
-const CUSTOMER_PAGES = /^\/(book(\/.*)?|referral|privacy|enquiry\/stop|join(\/confirm)?|invoice\/[0-9a-f]{32})$/;
+const CUSTOMER_PAGES = /^\/(book(\/.*)?|referral|privacy|status(\.json)?|enquiry\/stop|join(\/confirm)?|invoice\/[0-9a-f]{32})$/;
 function panelFor(pathname) {
   if (pathname.startsWith(AGENT)) return PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")] || "";
   if (PANELS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return pathname;

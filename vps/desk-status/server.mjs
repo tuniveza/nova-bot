@@ -6,7 +6,9 @@
 // HMAC-SHA256 of "desk-status" with AGENT_NOVA_KEY (the key Nova Bot already has, both on
 // Cloudflare and here), compared in constant time. No key set here = everything refused.
 //
-//   GET  /status           how the VPS and Nova Bot on it are doing (no secrets, no customer data)
+//   GET  /status           how the VPS and Nova Bot on it are doing (no secrets, no customer data),
+//                          including its mail sender: running, how many emails wait, when the last went
+//                          (counts and times only — never an address)
 //   POST /action {do}      "restart" (Nova Bot) | "restart-web" (Caddy) | "backup"
 //
 // Runs as root (it reads the journal and restarts services), with no other powers than those.
@@ -20,7 +22,7 @@ const PORT = 8788;
 const SECRETS = "/srv/nova/secrets.env";
 const STATE = "/srv/nova/state";
 const BACKUPS = "/srv/nova/backups";
-const SERVICES = ["nova", "caddy", "nova-cron.timer", "nova-backup.timer", "desk-status"];
+const SERVICES = ["nova", "caddy", "nova-cron.timer", "nova-backup.timer", "desk-status", "nova-mail", "postfix"];
 
 function key() {
   try {
@@ -52,6 +54,23 @@ const readText = (f) => {
     return null;
   }
 };
+
+// The mail sender (vps/mail + Postfix): counts and times only, never who an email was to
+async function mailInfo(active) {
+  const q = await run("postqueue", ["-j"]);
+  const queue = q.ok ? q.out.split("\n").filter((l) => l.trim().startsWith("{")).length : null;
+  const sent = await run("journalctl", ["-t", "postfix/smtp", "--since", "-14d", "-o", "short-iso", "--no-pager", "--grep", "status=sent"]);
+  const lastLine = sent.out.split("\n").filter((l) => /status=sent/.test(l)).pop() || "";
+  const at = lastLine.match(/^(\S+)/);
+  const bad = await run("journalctl", ["-t", "postfix/smtp", "--since", "-24h", "-o", "cat", "--no-pager", "--grep", "status=(deferred|bounced)"]);
+  return {
+    sender: active["nova-mail"],
+    postfix: active.postfix,
+    queue,
+    lastSent: at && !Number.isNaN(Date.parse(at[1])) ? new Date(at[1]).toISOString() : null,
+    troubleToday: bad.out.split("\n").filter((l) => /status=(deferred|bounced)/.test(l)).length,
+  };
+}
 
 async function status() {
   const active = {};
@@ -86,6 +105,7 @@ async function status() {
     disk,
     services: active,
     jobsOn: active["nova-cron.timer"] === "active",
+    mail: await mailInfo(active),
     lastSync: readText(`${STATE}/.last-sync`),
     lastBackup: readText(`${STATE}/.last-backup`),
     backups: backups.slice(-5),
