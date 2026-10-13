@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 SSH=${DESK_SSH:-root@185.185.126.195}
 if ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH" 'systemctl is-enabled --quiet nova-cron.timer && test -f /srv/nova/state/.live-since'; then
   echo "Nova Bot is live on the VPS: deploying there"
-  DESK_PUBLIC_URL=https://novacane-worker.novacane-studio.workers.dev exec vps/deploy.sh
+  DESK_PUBLIC_URL=https://nova.novacane.co.uk exec vps/deploy.sh
 else
   echo "Nova Bot is live on Cloudflare: deploying there"
   exec npx wrangler deploy

@@ -150,6 +150,18 @@ describe("the VPS's front door", () => {
 		expect(await vpsFront(cf, {})).toBe(cf);
 	});
 
+	it("on the new address, still trusts the old address's pass-through while links are moved over", async () => {
+		const env = { ...vpsEnv(), PUBLIC_URL: "https://nova.novacane.co.uk" };
+		const out = await vpsFront(await signed("http://127.0.0.1:8787/portal/"), env);
+		expect(out.url).toBe(`${LIVE}/portal/`);
+		expect(out.headers.get("CF-Connecting-IP")).toBe("198.51.100.7");
+		// A signature for Nova's own new address is fine too; anything else isn't
+		const own = await vpsFront(await signed("http://127.0.0.1:8787/a", { host: "nova.novacane.co.uk" }), env);
+		expect(own.url).toBe("https://nova.novacane.co.uk/a");
+		const none = await vpsFront(await signed("http://127.0.0.1:8787/a"), { ...env, OLD_PUBLIC_HOSTS: "" });
+		expect(none.url).toBe("https://127.0.0.1/a");
+	});
+
 	it("takes what the pass-through sends, end to end", async () => {
 		const sent = capture();
 		await passOn(new Request(`${LIVE}/portal/?view=today`, { headers: { "CF-Connecting-IP": "192.0.2.44" } }), ptEnv());

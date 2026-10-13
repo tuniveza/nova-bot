@@ -117,7 +117,7 @@ describe("chat", () => {
 
 	it("falls back to the booking link if Claude is down", async () => {
 		const { data } = await chat(ask("hi"));
-		expect(data.reply).toContain("https://novacane-worker.novacane-studio.workers.dev/book");
+		expect(data.reply).toContain("https://nova.novacane.co.uk/book");
 	});
 
 	it("slows down a visitor sending too many messages", async () => {

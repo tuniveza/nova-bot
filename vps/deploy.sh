@@ -2,15 +2,16 @@
 # Computer: send this Nova Bot (and the panels from Nova Agent) to the VPS and (re)start it there.
 # Run on the studio PC from the novacane-worker folder:
 #   NOVA_AGENT_DIR=~/an/pj/ns/na-release vps/deploy.sh
-# Settings (defaults): DESK_SSH=root@185.185.126.195  DESK_ADDRESS=185-185-126-195.sslip.io
-#   DESK_PUBLIC_URL: the address Nova Bot puts in links and emails (default https://$DESK_ADDRESS;
-#   after the switch-over vps/switch.sh sets it to Cloudflare's workers.dev address)
+# Settings (defaults): DESK_SSH=root@185.185.126.195  DESK_ADDRESS=nova.novacane.co.uk  DESK_ALSO=185-185-126-195.sslip.io
+#   DESK_PUBLIC_URL: the address Nova Bot puts in links and emails (default https://$DESK_ADDRESS)
 # It never starts the every-minute jobs (that's the cutover: vps/README.md). Secrets are typed in on
 # the VPS (/srv/nova/bin/set-secrets); DESK_COPY_PC_SECRETS=1 also copies the two the PC has.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SSH=${DESK_SSH:-root@185.185.126.195}
-ADDR=${DESK_ADDRESS:-185-185-126-195.sslip.io}
+ADDR=${DESK_ADDRESS:-nova.novacane.co.uk}
+# Other names the web front also answers to (a fallback that works without the domain)
+ALSO=${DESK_ALSO:-185-185-126-195.sslip.io}
 PC_ENV=${PC_ENV:-$HOME/an/pj/ns/na/.env}
 
 echo "1/5 Panels into public/ (from ${NOVA_AGENT_DIR:-the na folder})"
@@ -25,11 +26,12 @@ rsync -az --delete \
 
 echo "3/5 Settings and services"
 node vps/make-config.mjs "${DESK_PUBLIC_URL:-https://$ADDR}" | ssh "$SSH" "cat > /srv/nova/app/wrangler.vps.jsonc"
-ssh "$SSH" "ADDR='$ADDR' bash -s" <<'REMOTE'
+ssh "$SSH" "ADDR='$ADDR' ALSO='$ALSO' bash -s" <<'REMOTE'
 set -euo pipefail
 cd /srv/nova/app
 printf 'DESK_ADDRESS=%s\nDESK_HOSTNAME=%s\nDESK_URL=https://%s\n' "$ADDR" "$ADDR" "$ADDR" > /srv/nova/desk.env
-sed "s/{\$DESK_HOSTNAME}/$ADDR/" vps/Caddyfile > /etc/caddy/Caddyfile
+names="$ADDR"; [ -n "$ALSO" ] && [ "$ALSO" != "$ADDR" ] && names="$ADDR, $ALSO"
+sed "s/{\$DESK_HOSTNAME}/$names/" vps/Caddyfile > /etc/caddy/Caddyfile
 install -m 755 vps/bin/backup /srv/nova/bin/backup
 mkdir -p /srv/nova/desk-status && install -m 644 vps/desk-status/server.mjs /srv/nova/desk-status/server.mjs
 # The VPS's own mail service (vps/mail): its key is made once, then Nova Bot is told to use it

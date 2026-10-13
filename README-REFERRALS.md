@@ -18,9 +18,9 @@ How it works:
 
 Worker addresses (live):
 
-- Admin: https://novacane-worker.novacane-studio.workers.dev/admin
-- Webhook: https://novacane-worker.novacane-studio.workers.dev/acuity/webhook
-- Referral page: https://novacane-worker.novacane-studio.workers.dev/referral
+- Admin: https://nova.novacane.co.uk/admin
+- Webhook: https://nova.novacane.co.uk/acuity/webhook
+- Referral page: https://nova.novacane.co.uk/referral
 
 ## One-time setup
 
@@ -64,7 +64,7 @@ npm run deploy
 **scheduled**, **rescheduled** and **canceled** to:
 
 ```
-https://novacane-worker.novacane-studio.workers.dev/acuity/webhook
+https://nova.novacane.co.uk/acuity/webhook
 ```
 
 (Don't also set "changed"; Acuity says that can send duplicates.)
@@ -74,7 +74,7 @@ https://novacane-worker.novacane-studio.workers.dev/acuity/webhook
 
 ```html
 <div style="margin:24px 0;text-align:center;font-family:Arial,sans-serif">
-  <a href="https://novacane-worker.novacane-studio.workers.dev/referral?id=%id%&email=%email%"
+  <a href="https://nova.novacane.co.uk/referral?id=%id%&email=%email%"
      target="_blank" rel="noopener"
      style="display:inline-block;padding:14px 22px;border-radius:16px;background:#b01d68;color:#fff;font-weight:bold;text-decoration:none">
     Did anyone refer you? Add a referral code

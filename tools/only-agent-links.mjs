@@ -1,5 +1,5 @@
 // Admin → Links (the "url_directory" setting in D1) down to the one address there is: Nova Agent,
-// https://novacane-worker.novacane-studio.workers.dev/agent/. Everything else in the list goes.
+// https://nova.novacane.co.uk/agent/. Everything else in the list goes.
 // The list as it was is saved to a file on this computer first (never to the repo: it's public).
 //
 //   npx wrangler d1 execute novabot --remote --json --command "SELECT value FROM settings WHERE key='url_directory'" > links-now.json
@@ -28,7 +28,7 @@ list.groups = [
     items: [
       {
         name: "Nova Agent",
-        url: "https://novacane-worker.novacane-studio.workers.dev/agent/",
+        url: "https://nova.novacane.co.uk/agent/",
         kind: "live",
         note: "Chat, Missions and Quests, with Portal, Calendar, Notes, Index, Observatory, Lossless audio and Admin inside. Sign in with the planet at the top.",
       },
@@ -40,7 +40,7 @@ const entry = {
   app: "Nova Agent",
   size: "major",
   title: "One address: Nova Agent at /agent/",
-  what: "https://novacane-worker.novacane-studio.workers.dev/agent/ is the only address. Any other page, old link or panel address opens Nova Agent (with that panel); the old Notes, Calendar and Lossless sites go there too.",
+  what: "https://nova.novacane.co.uk/agent/ is the only address. Any other page, old link or panel address opens Nova Agent (with that panel); the old Notes, Calendar and Lossless sites go there too.",
   why: "Nova Agent is the Nova app for everyone, so it should be the only place to go.",
   benefit: "One link to remember, share and install.",
 };

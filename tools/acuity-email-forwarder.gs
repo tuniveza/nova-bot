@@ -9,7 +9,7 @@
 // key in KEY below → Save → choose "setUp" at the top → Run → Allow.
 
 // Where the emails go (the Novacane Worker)
-var WORKER = "https://novacane-worker.novacane-studio.workers.dev/acuity/email";
+var WORKER = "https://nova.novacane.co.uk/acuity/email";
 // The secret key the Worker expects (the ACUITY_EMAIL_KEY secret)
 var KEY = "PASTE-THE-KEY-HERE";
 

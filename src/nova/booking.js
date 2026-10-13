@@ -26,7 +26,7 @@ import {
 } from "./studio.js";
 
 // Where the worker lives on the internet (booking links, emails, Stripe's return pages)
-export const LIVE_URL = "https://novacane-worker.novacane-studio.workers.dev";
+export const LIVE_URL = "https://nova.novacane.co.uk";
 export const publicUrl = (env) => String(env?.PUBLIC_URL || LIVE_URL).replace(/\/+$/, "");
 
 // How long a calendar lookup is reused (a new booking clears it straight away)

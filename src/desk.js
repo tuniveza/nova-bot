@@ -89,10 +89,11 @@ async function here(env) {
   };
 }
 
-const LIVE_HOST = "novacane-worker.novacane-studio.workers.dev";
+// Nova's own address (and, while old links are moved over, the address it had before)
+const LIVE_HOSTS = ["nova.novacane.co.uk", "novacane-worker.novacane-studio.workers.dev"];
 function onLiveAddress(env) {
   try {
-    return new URL(publicUrl(env)).host === LIVE_HOST;
+    return LIVE_HOSTS.includes(new URL(publicUrl(env)).host);
   } catch {
     return false;
   }

@@ -14,28 +14,32 @@
 
 import { PASS_HEADERS, PASS_WINDOW_MS, passSignature, sameHex } from "./pass-sign.js";
 
-// The address the pass-through is allowed to stand in for (PUBLIC_URL after the switch)
-function publicHost(env) {
+// The addresses the pass-through is allowed to stand in for: PUBLIC_URL, and the old address
+// (OLD_PUBLIC_HOSTS, comma-separated) while old links, bookmarks and phone apps are moved over
+function publicHosts(env) {
+  const hosts = String(env.OLD_PUBLIC_HOSTS ?? "novacane-worker.novacane-studio.workers.dev").split(",").map((h) => h.trim()).filter(Boolean);
   try {
-    return new URL(String(env.PUBLIC_URL || "")).host;
-  } catch {
-    return "";
-  }
+    hosts.push(new URL(String(env.PUBLIC_URL || "")).host);
+  } catch {}
+  return hosts;
 }
 
 export async function vpsFront(request, env, now = Date.now()) {
   if (env.DESK_HOST !== "vps") return request;
   const url = new URL(request.url);
   url.protocol = "https:";
+  // (the runtime is reached on 127.0.0.1:8787; people use the address on its own)
+  if (url.port === "8787") url.port = "";
   const headers = new Headers(request.headers);
   const ts = headers.get("x-nova-pass-ts");
   const ip = headers.get("x-nova-pass-ip") || "";
   const host = headers.get("x-nova-pass-host") || "";
   const sig = headers.get("x-nova-pass-sig");
   for (const h of PASS_HEADERS) headers.delete(h);
-  if (ts && sig && host && host === publicHost(env) && Math.abs(now - Number(ts)) <= PASS_WINDOW_MS) {
+  if (ts && sig && host && publicHosts(env).includes(host) && Math.abs(now - Number(ts)) <= PASS_WINDOW_MS) {
     if (sameHex(sig, await passSignature(env, ts, ip, host))) {
       url.host = host;
+      if (!host.includes(":")) url.port = "";
       if (ip) headers.set("CF-Connecting-IP", ip);
       else headers.delete("CF-Connecting-IP");
     }

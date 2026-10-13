@@ -18,7 +18,7 @@
   // ===== THINGS YOU CAN EDIT =====
 
   // The live Worker address
-  const LIVE_WORKER_URL = "https://novacane-worker.novacane-studio.workers.dev";
+  const LIVE_WORKER_URL = "https://nova.novacane.co.uk";
 
   // The booking page (the "Book a session" button)
   const BOOKING_LINK = "https://novacane.co.uk/bookings-contact";
@@ -50,7 +50,7 @@
   const scriptOrigin = script ? new URL(script.src, location.href).origin : "";
   const WORKER_URL =
     (script && script.dataset.worker) ||
-    (/\.workers\.dev$|\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(scriptOrigin) ? scriptOrigin : LIVE_WORKER_URL);
+    (/\/\/nova\.novacane\.co\.uk$|\.workers\.dev$|\.sslip\.io$|\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(scriptOrigin) ? scriptOrigin : LIVE_WORKER_URL);
 
   const widget = document.createElement("div");
   widget.id = "nv-chat";

@@ -13,7 +13,7 @@ options:
   page scrolls down to the form).
 
 Enquiries sent from the chat appear on the admin page:
-https://novacane-worker.novacane-studio.workers.dev/admin/enquiries
+https://nova.novacane.co.uk/admin/enquiries
 
 Each one shows the visitor's name, email (click to reply), phone, the details,
 the page they were on and a link to the whole chat. Click **Mark done** once it's
@@ -188,7 +188,7 @@ login, no password stored, read-only), then gives the booking link.
 
 Every NovaBot conversation is saved, so you can see what people ask and spot
 anything NovaBot answers badly:
-https://novacane-worker.novacane-studio.workers.dev/admin/conversations
+https://nova.novacane.co.uk/admin/conversations
 
 Conversations are deleted automatically after 90 days. Visitors' IP addresses
 aren't stored (only a scrambled version, to limit spam).

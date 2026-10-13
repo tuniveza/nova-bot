@@ -13,7 +13,7 @@ npm run deploy
 
 This publishes the chatbot, the voice/mic features and the widget files together.
 Check they're live by opening
-https://novacane-worker.novacane-studio.workers.dev/novabot.js in a browser.
+https://nova.novacane.co.uk/novabot.js in a browser.
 
 ## 2. Add the widget to Squarespace (one time only)
 
@@ -23,8 +23,8 @@ Paste this into the **Footer** box and save:
 
 ```html
 <!-- NovaBot chat -->
-<link rel="stylesheet" href="https://novacane-worker.novacane-studio.workers.dev/novabot.css">
-<script src="https://novacane-worker.novacane-studio.workers.dev/novabot.js" defer></script>
+<link rel="stylesheet" href="https://nova.novacane.co.uk/novabot.css">
+<script src="https://nova.novacane.co.uk/novabot.js" defer></script>
 ```
 
 The chat bubble then appears on every page of the site.
