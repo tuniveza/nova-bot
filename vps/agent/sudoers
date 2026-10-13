@@ -1,0 +1,2 @@
+# Nova Agent on the server (its Fixer): restart itself, and put Nova Bot's approved code live. Nothing else.
+nova-agent ALL=(root) NOPASSWD: /usr/bin/systemctl restart nova-agent.service, /usr/local/sbin/nova-deploy-here

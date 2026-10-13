@@ -1,0 +1,32 @@
+# Nova Agent on the server (vps/README.md, "Nova Agent on the server"): the same Nova Agent as on the
+# studio PC (its own user, its code in /srv/nova-agent/na, its data in /srv/nova-agent/data), linked
+# to Nova Bot through https://nova.novacane.co.uk. Only on 127.0.0.1:4545 (Console's terminals open
+# there, through an ssh tunnel). It only starts once vps/agent-switch.sh has moved it here
+# (/srv/nova-agent/.live), so the PC's and the server's never run at once.
+[Unit]
+Description=Nova Agent (on the server)
+After=network-online.target nova.service
+Wants=network-online.target
+ConditionPathExists=/srv/nova-agent/.live
+
+[Service]
+Type=simple
+User=nova-agent
+Group=nova-agent
+WorkingDirectory=/srv/nova-agent/na
+Environment=HOME=/srv/nova-agent
+Environment=PATH=/srv/nova-agent/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=SHELL=/bin/bash
+# The PC's settings and keys (root only, mode 600): vps/agent-setup.sh writes it
+EnvironmentFile=/etc/nova-agent/agent.env
+ExecStart=/usr/bin/npx --no-install tsx src/visualizer/server.ts
+Restart=always
+RestartSec=5
+MemoryMax=3G
+# (no NoNewPrivileges: the Fixer restarts this service and deploys Nova Bot through its two sudo rules)
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

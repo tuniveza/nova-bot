@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Nova Bot's deploy on the VPS itself, for the Fixer once Nova Agent runs on the server (vps/deploy-live.sh
+# calls it through sudo): the code in /srv/nova-agent/nb (its panels already copied in by
+# scripts/sync-apps.mjs) goes into /srv/nova/app and Nova Bot restarts. The app only: the web front,
+# services, timers and root's tools stay as vps/deploy.sh (run from the PC) last put them.
+set -euo pipefail
+SRC=/srv/nova-agent/nb
+APP=/srv/nova/app
+[ -f "$SRC/wrangler.jsonc" ] || [ -f "$SRC/wrangler.toml" ] || { echo "No Nova Bot in $SRC"; exit 1; }
+url=$(grep '^DESK_URL=' /srv/nova/desk.env | cut -d= -f2-)
+[ -n "$url" ] || { echo "No DESK_URL in /srv/nova/desk.env"; exit 1; }
+rev=$(sudo -u nova-agent git -C "$SRC" rev-parse --short HEAD 2>/dev/null || echo unknown)
+echo "1/3 Files into $APP ($rev)"
+rsync -a --delete \
+  --exclude node_modules --exclude .wrangler --exclude .dev.vars --exclude .git \
+  --exclude test --exclude 'wrangler.vps.jsonc' --exclude VERSION \
+  "$SRC/" "$APP/"
+printf '%s %s\n' "$rev" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$APP/VERSION"
+chown -R nova:nova "$APP"
+echo "2/3 Settings and packages"
+cd "$APP"
+sudo -u nova -H node vps/make-config.mjs "$url" > wrangler.vps.jsonc.new
+mv wrangler.vps.jsonc.new wrangler.vps.jsonc && chown nova:nova wrangler.vps.jsonc
+ln -sf /srv/nova/secrets.env "$APP/.dev.vars"
+sudo -u nova -H npm ci --no-audit --no-fund --loglevel=error >/dev/null
+echo "3/3 Restarting Nova Bot"
+systemctl restart nova
+echo "Done: Nova Bot $rev is live"
