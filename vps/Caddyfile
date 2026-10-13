@@ -5,10 +5,16 @@
 	# The runtime's own test door for the timed jobs: only from the VPS itself, never from outside
 	@inside path /__scheduled* /cdn-cgi/*
 	respond @inside 404
-	reverse_proxy 127.0.0.1:8787 {
-		# Who's asking (the Worker reads it as Cloudflare's header for its rate limits)
-		header_up CF-Connecting-IP {remote_host}
-		header_up X-Forwarded-Proto {scheme}
+	# Desk's status service (token only: vps/desk-status/server.mjs)
+	handle /desk-status/* {
+		reverse_proxy 127.0.0.1:8788
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8787 {
+			# Who's asking (the Worker reads it as Cloudflare's header for its rate limits)
+			header_up CF-Connecting-IP {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
 	}
 	log {
 		output file /var/log/caddy/desk.log {

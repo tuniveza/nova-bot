@@ -1,0 +1,17 @@
+# Desk's status service (vps/desk-status/server.mjs): how the VPS is doing, for Portal → Admin →
+# Desk (through Nova Bot, with a token made from AGENT_NOVA_KEY). Only on 127.0.0.1:8788.
+[Unit]
+Description=Desk status (Nova)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node /srv/nova/desk-status/server.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
