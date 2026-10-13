@@ -99,3 +99,29 @@ How the pieces fit:
 
 **Later, your own address:** point e.g. `desk.novacane.co.uk` at 185.185.126.195 (one DNS A record),
 then deploy with `DESK_ADDRESS=desk.novacane.co.uk`. Caddy gets the certificate by itself.
+
+## Nova Agent on the server (the laptop can be off)
+
+Nova Agent itself (Agent, quests and reminders, Calendar's own notes, Board, Files, the Index cache,
+Console, the Fixer, the Acuity helper, the watchdog) can run on the VPS too, so nothing needs the
+studio PC. Run these on the studio PC, in `nb/novacane-worker`:
+
+| Command | What it does |
+|---|---|
+| `vps/agent-setup.sh` | Gets the VPS ready (safe to run again): user `nova-agent`, `/srv/nova-agent` (git copies of Nova Agent and Nova Bot, `na-release`, `data/`, `fixer-jobs/`), packages with node-pty, hidden Chromium, Claude Code, `nova-agent.service` (not started), two sudo rules, `/usr/local/sbin/nova-deploy-here`, and `/etc/nova-agent/agent.env` (root only: the PC's `na/.env` + `NOVA_ON_SERVER=1`). |
+| `vps/agent-switch.sh` | **The move** (asks for yes): backs up the PC's data to `~/an/pj/ns/backups/agent-move-…`, stops the PC's Nova Agent and keeps it off, copies the code and then the data, starts Nova Agent on the server, waits for "Nova Agent is online", then runs the full laptop-off test. `--rehearse` does all that, then comes straight back. |
+| `vps/agent-switch-back.sh` | Back to the PC (asks for yes): stops the server's, brings its data and the Fixer's merged code back, starts the PC's. |
+| `vps/full-laptop-off-test.sh` | PASS/FAIL for everything, through https://nova.novacane.co.uk as a temporary admin (removed after). Also on the status page. |
+| `vps/agent-sync.sh [--reverse]` | Just the data, PC → server (or back). |
+| `vps/agent-code-sync.sh` | Just the code: the Fixer's merges on the server come to the PC, the PC's work goes to the server (fast-forward only; it stops if both changed). Run it before working on the PC's code while Nova Agent is on the server; `deploy-live.sh` refuses to undo the server's changes. |
+
+- **Only one Nova Agent.** The link says which one it is; Nova Bot keeps the server's and turns a PC's
+  away (4002), and the PC's then stops and stays off (`~/.config/nova/agent-on-server`, plus a
+  systemd condition). The server's only starts while `/srv/nova-agent/.live` exists.
+- **The Fixer on the server** prepares fixes with Claude Code there. Sign it in once:
+  `ssh root@185.185.126.195`, then `sudo -iu nova-agent claude` and `/login`. Until then a fix says
+  "Claude Code isn't signed in on the server". Its deploys run `nova-deploy-here` (the app only, no ssh).
+- **Console:** online it's Nova commands only, as before. + Shell is the server's own shell, opened on
+  your computer through a tunnel: `ssh -L 4545:localhost:4545 root@185.185.126.195`, then
+  http://localhost:4545/console/?here=1.
+- **Restart it:** `ssh root@185.185.126.195 systemctl restart nova-agent`. Logs: `journalctl -u nova-agent`.
