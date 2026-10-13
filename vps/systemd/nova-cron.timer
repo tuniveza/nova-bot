@@ -1,0 +1,10 @@
+[Unit]
+Description=Every minute: Nova Bot's jobs (Desk)
+
+[Timer]
+OnCalendar=*:*:00
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

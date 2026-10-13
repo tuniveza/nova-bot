@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Desk: back up Nova Bot's database and Durable Objects (every SQLite file under /srv/nova/state),
+# safely while it runs (sqlite3 .backup), into /srv/nova/backups/<UTC time>.tar.gz; keeps 14.
+set -euo pipefail
+umask 077
+STATE=/srv/nova/state
+OUT=/srv/nova/backups
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+work=$(mktemp -d /srv/nova/backups/.work.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+cd "$STATE"
+find . -name '*.sqlite' -type f | while read -r f; do
+  mkdir -p "$work/$(dirname "$f")"
+  sqlite3 "$f" ".backup '$work/$f'"
+done
+tar -czf "$OUT/nova-$stamp.tar.gz" -C "$work" .
+ls -1t "$OUT"/nova-*.tar.gz | tail -n +15 | xargs -r rm -f
+date -u +%Y-%m-%dT%H:%M:%SZ > /srv/nova/state/.last-backup
+echo "Backed up to nova-$stamp.tar.gz"

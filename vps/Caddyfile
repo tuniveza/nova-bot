@@ -1,0 +1,19 @@
+# Desk's web address (vps/README.md). To use your own domain later, change the address on the
+# next line (and in /srv/nova/desk.env), then: systemctl reload caddy && systemctl restart nova
+{$DESK_HOSTNAME} {
+	encode zstd gzip
+	# The runtime's own test door for the timed jobs: only from the VPS itself, never from outside
+	@inside path /__scheduled* /cdn-cgi/*
+	respond @inside 404
+	reverse_proxy 127.0.0.1:8787 {
+		# Who's asking (the Worker reads it as Cloudflare's header for its rate limits)
+		header_up CF-Connecting-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+	log {
+		output file /var/log/caddy/desk.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}

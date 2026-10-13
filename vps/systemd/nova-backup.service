@@ -1,0 +1,7 @@
+[Unit]
+Description=Nova Bot: back up the database (Desk)
+
+[Service]
+Type=oneshot
+User=nova
+ExecStart=/srv/nova/bin/backup

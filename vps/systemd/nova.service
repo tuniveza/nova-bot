@@ -1,0 +1,31 @@
+# Nova Bot on the VPS (vps/README.md): the same Worker, run by Cloudflare's own runtime (workerd,
+# through `wrangler dev --local`), its database (D1 → SQLite) and Durable Objects kept on disk in
+# /srv/nova/state. Only Caddy talks to it (127.0.0.1:8787).
+[Unit]
+Description=Nova Bot (Desk)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nova
+Group=nova
+WorkingDirectory=/srv/nova/app
+Environment=HOME=/srv/nova
+Environment=WRANGLER_SEND_METRICS=false
+Environment=CI=1
+Environment=NODE_ENV=production
+EnvironmentFile=/srv/nova/desk.env
+ExecStart=/usr/bin/npx --no-install wrangler dev -c wrangler.vps.jsonc --local --ip 127.0.0.1 --port 8787 --persist-to /srv/nova/state --test-scheduled --local-upstream ${DESK_ADDRESS} --show-interactive-dev-session=false --log-level warn
+Restart=always
+RestartSec=3
+# Plenty for a small studio; workerd stays well under this
+MemoryMax=2G
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/nova
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

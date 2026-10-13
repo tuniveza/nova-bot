@@ -1,0 +1,11 @@
+# The Worker's every-minute jobs (wrangler.jsonc "triggers": "* * * * *"), fired on the VPS.
+# Only switched on at cutover (vps/README.md), so the VPS and Cloudflare never both send.
+[Unit]
+Description=Nova Bot's every-minute jobs (Desk)
+After=nova.service
+Requires=nova.service
+
+[Service]
+Type=oneshot
+User=nova
+ExecStart=/usr/bin/curl -fsS -m 55 -o /dev/null "http://127.0.0.1:8787/__scheduled?cron=*+*+*+*+*"
