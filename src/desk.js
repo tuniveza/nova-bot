@@ -74,13 +74,60 @@ async function here(env) {
     } catch {}
   }
   const v = env.CF_VERSION_METADATA || {};
+  const where = env.DESK_HOST === "vps" ? "vps" : "cloudflare";
   return {
-    where: env.DESK_HOST === "vps" ? "vps" : "cloudflare",
+    where,
+    // Which one people are using: Cloudflare's own Nova Bot, or (after vps/switch.sh) the VPS behind
+    // Cloudflare's address. A VPS still on its own address is standing by.
+    live: where === "cloudflare" ? "cloudflare" : onLiveAddress(env) ? "vps" : "standby",
+    switchHelp: { to: "vps/switch.sh", back: "vps/switch-back.sh", from: "the studio PC, in nb/novacane-worker" },
+    warnings: await warnings(env),
     url: publicUrl(env),
     version: v.id ? { id: String(v.id).slice(0, 8), at: v.timestamp || null } : null,
     pc,
     jobs,
   };
+}
+
+const LIVE_HOST = "novacane-worker.novacane-studio.workers.dev";
+function onLiveAddress(env) {
+  try {
+    return new URL(publicUrl(env)).host === LIVE_HOST;
+  } catch {
+    return false;
+  }
+}
+
+// Things that won't work as they are, in plain words (newsletters need a Resend key from the account
+// that has the studio's domain). Resend is asked at most every 6 hours; the answer is kept in settings.
+const RESEND_CHECK = "desk_resend_domains";
+async function warnings(env) {
+  const out = [];
+  const from = String(env.CAMPAIGN_FROM || "").match(/@([a-z0-9.-]+)/i);
+  const domain = from ? from[1].toLowerCase() : "novacane.co.uk";
+  if (!env.RESEND_MARKETING_KEY) {
+    out.push("Newsletters are off: there's no full-access Resend key (RESEND_MARKETING_KEY).");
+    return out;
+  }
+  let check = null;
+  try {
+    check = JSON.parse((await env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(RESEND_CHECK).first("value")) || "null");
+  } catch {}
+  if (!check || Date.now() - (check.at || 0) > 6 * 3600 * 1000) {
+    try {
+      const res = await fetch("https://api.resend.com/domains", { headers: { Authorization: `Bearer ${env.RESEND_MARKETING_KEY}` }, signal: AbortSignal.timeout(6000) });
+      const data = await res.json().catch(() => ({}));
+      const names = res.ok ? (data.data || []).filter((d) => d.status === "verified").map((d) => String(d.name).toLowerCase()) : null;
+      check = { at: Date.now(), names };
+      await env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(RESEND_CHECK, JSON.stringify(check)).run();
+    } catch {
+      check = null;
+    }
+  }
+  if (check && Array.isArray(check.names) && !check.names.includes(domain)) {
+    out.push(`Newsletters won't send: the Resend key here is from a Resend account without ${domain}. Make a new full-access key in the Resend account that has ${domain}, then on the VPS: set-key RESEND_MARKETING_KEY.`);
+  }
+  return out;
 }
 
 // Portal's /app/api/desk… (app-page.js has checked the sign-in). -> a Response, or null
