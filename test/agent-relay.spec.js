@@ -67,6 +67,15 @@ describe("which addresses go to the PC", () => {
     expect(relayRule("POST", "/actions/quests/q-123")).toBeTruthy();
     expect(relayRule("POST", "/actions/missions/m-1/refine")).toBeTruthy();
     expect(relayRule("PUT", "/calendar-api/data")).toBeTruthy();
+    // Board: each person's boards and what's dropped on them (never another file of the PC's)
+    expect(relayRule("GET", "/board-api/boards")).toBeTruthy();
+    expect(relayRule("GET", "/board-api/link")).toBeTruthy();
+    expect(relayRule("PUT", "/board-api/boards/abcdef123456")).toBeTruthy();
+    expect(relayRule("POST", "/actions/board/abcdef123456/remove")).toBeTruthy();
+    expect(relayRule("POST", "/actions/board-files")).toBeTruthy();
+    expect(relayRule("GET", "/board-files/b-20261013-0123456789ab")).toBeTruthy();
+    expect(relayRule("GET", "/board-files/../data/staff.json")).toBeNull();
+    expect(relayRule("DELETE", "/board-api/boards/abcdef123456")).toBeNull();
     expect(relayRule("GET", "/files/abc/report.pdf")).toBeTruthy();
     expect(relayRule("GET", "/events").admin).toBe(true);
     expect(relayRule("GET", "/actions/chat")).toBeNull();

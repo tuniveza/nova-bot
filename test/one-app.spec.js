@@ -22,6 +22,8 @@ describe("a panel opened on its own opens inside Nova Agent", () => {
   it.each([
     ["/calendar/", "/calendar/"],
     ["/notes/", "/notes/"],
+    ["/board/", "/board/"],
+    ["/agent/board", "/board/"],
     ["/app/memory/?scope=studio", "/app/memory/?scope=studio"],
     ["/observatory/", "/observatory/"],
     ["/lossless/?room=abc", "/lossless/?room=abc"],

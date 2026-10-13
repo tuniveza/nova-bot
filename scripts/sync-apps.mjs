@@ -12,6 +12,7 @@
 //                                         still use: its push helper (sw.js), manifest and icons
 //   na/web/index     → public/app/memory/ Index
 //   na/web/calendar  → public/calendar/   Calendar (online, it saves in the browser)
+//   na/web/board     → public/board/      Board (online, it saves on the studio PC through the link)
 //   na/web/notes     → public/notes/      Notes
 //   na/web/shared    → public/shared/     the look, sounds, badge and manual they share
 //   na/web/observatory → public/observatory/ Observatory (its projects and media only for signed-in staff)
@@ -44,6 +45,7 @@ const copies = [
   ["web/calendar/", "../public/calendar/", "Calendar"],
   ["web/calendar/js/recur.js", "../src/calendar/recur.js", "Calendar's repeat rules (for reminders on phones)"],
   ["web/notes/", "../public/notes/", "Notes"],
+  ["web/board/", "../public/board/", "Board"],
   ["web/shared/", "../public/shared/", "the shared look, badge and manual"],
   ["web/portal/planet/", "../src/portal/planet/", "the planet generator"],
   ["web/observatory/", "../public/observatory/", "Observatory"],
