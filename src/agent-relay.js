@@ -50,6 +50,10 @@ export const RELAYED = [
   { methods: ["POST"], path: /^\/actions\/board\/[a-z0-9-]{6,40}\/remove$/ },
   { methods: ["POST"], path: /^\/actions\/board-files$/ },
   { methods: ["GET"], path: /^\/board-files\/b-\d{8}-[a-f0-9]{12}$/ },
+  // Console (Nova Agent's src/console.ts): online it's Nova commands only; its state and, for
+  // admins, the recent log. Terminals are never passed on (they open on the studio PC itself).
+  { methods: ["GET"], path: /^\/console-api\/state$/ },
+  { methods: ["GET"], path: /^\/console-api\/logs$/, admin: true },
   { methods: ["GET"], path: /^\/(events|cache|tasks)$/, admin: true },
   { methods: ["POST"], path: /^\/actions\/(run\/[\w-]+|forget)$/, admin: true },
   // Test stuff on the PC (quests, calendar notes, Fixer jobs, files that look like tests): admins only

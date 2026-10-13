@@ -76,6 +76,13 @@ describe("which addresses go to the PC", () => {
     expect(relayRule("GET", "/board-files/b-20261013-0123456789ab")).toBeTruthy();
     expect(relayRule("GET", "/board-files/../data/staff.json")).toBeNull();
     expect(relayRule("DELETE", "/board-api/boards/abcdef123456")).toBeNull();
+    // Console: its state and (admins) the log; never a terminal or the VPS's address
+    expect(relayRule("GET", "/console-api/state")).toBeTruthy();
+    expect(relayRule("GET", "/console-api/logs")?.admin).toBe(true);
+    expect(relayRule("POST", "/console-api/term")).toBeNull();
+    expect(relayRule("POST", "/console-api/vps")).toBeNull();
+    expect(relayRule("GET", "/console-api/term/abc/stream")).toBeNull();
+    expect(relayRule("POST", "/console-api/term/abc/input")).toBeNull();
     expect(relayRule("GET", "/files/abc/report.pdf")).toBeTruthy();
     expect(relayRule("GET", "/events").admin).toBe(true);
     expect(relayRule("GET", "/actions/chat")).toBeNull();
