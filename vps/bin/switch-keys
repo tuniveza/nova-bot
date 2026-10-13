@@ -43,8 +43,15 @@ for (const [name, label] of [["ACUITY_WEBHOOK_KEY", "acuity-webhook-v1"], ["ACUI
     done.push(name);
   }
 }
+if (!done.length) {
+  console.log("Keys already in place");
+  process.exit(0);
+}
+// Written beside it, then swapped in, kept as it was (mode 600, the same owner: Nova Bot reads it)
+const owner = fs.existsSync(FILE) ? fs.statSync(FILE) : null;
 const old = process.umask(0o077);
 fs.writeFileSync(FILE + ".new", lines.join("\n") + "\n");
+if (owner) fs.chownSync(FILE + ".new", owner.uid, owner.gid);
 fs.renameSync(FILE + ".new", FILE);
 process.umask(old);
-console.log(done.length ? `Set: ${done.join(", ")}` : "Keys already in place");
+console.log(`Set: ${done.join(", ")}`);
