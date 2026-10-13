@@ -257,9 +257,16 @@ function fakeFetch() {
 			if (f) {
 				const file = G.files.get(decodeURIComponent(f[1]));
 				if (!file) return ok({ error: { message: "Not Found" } }, 404);
-				if (url.searchParams.get("alt") === "media") return new Response(file.bytes, { headers: { "Content-Type": file.type || "image/jpeg", "Content-Length": String(file.bytes.byteLength) } });
+				if (url.searchParams.get("alt") === "media") {
+					const range = /^bytes=(\d+)-(\d+)$/.exec((init.headers && init.headers.Range) || "");
+					if (range) {
+						const part = file.bytes.subarray(Number(range[1]), Number(range[2]) + 1);
+						return new Response(part, { status: 206, headers: { "Content-Type": file.type || "image/jpeg", "Content-Length": String(part.byteLength), "Content-Range": `bytes ${range[1]}-${range[2]}/${file.bytes.byteLength}` } });
+					}
+					return new Response(file.bytes, { headers: { "Content-Type": file.type || "image/jpeg", "Content-Length": String(file.bytes.byteLength) } });
+				}
 				if (method === "PATCH") Object.assign(file, await bodyOf(init));
-				return ok({ id: file.id, trashed: Boolean(file.trashed), name: file.name, mimeType: file.mimeType || (file.doc ? "application/vnd.google-apps.document" : undefined), modifiedTime: file.modifiedTime || "2026-10-01T00:00:00.000Z", webViewLink: "https://docs.google.com/document/d/" + file.id + "/edit", capabilities: { canEdit: !file.readOnly } });
+				return ok({ id: file.id, trashed: Boolean(file.trashed), parents: file.parents, name: file.name, mimeType: file.mimeType || (file.doc ? "application/vnd.google-apps.document" : undefined), modifiedTime: file.modifiedTime || "2026-10-01T00:00:00.000Z", webViewLink: "https://docs.google.com/document/d/" + file.id + "/edit", capabilities: { canEdit: !file.readOnly } });
 			}
 		}
 		if (url.host === "www.googleapis.com" && p === "/upload/drive/v3/files") {
@@ -464,6 +471,37 @@ describe("Drive and Sheets", () => {
 		await setOptions(env, { drive: false });
 		const off = await agent(`/nova-agent/google/drive/put?kind=media&id=${"b".repeat(32)}&type=image%2Fjpeg`, bytes, { "Content-Type": "image/jpeg" });
 		expect((await off.json()).skipped).toBe(true);
+	});
+
+	it("a Board's big file: the PC uploads it to Drive itself, and Board shows it from there online (Range works)", async () => {
+		const id = "b-20261013-0123456789ab";
+		const bytes = new Uint8Array(50_000);
+		bytes.set(new TextEncoder().encode("\0\0\0\x18ftypisom"), 0);
+		for (let i = 16; i < bytes.length; i++) bytes[i] = i & 255;
+		// The PC asks for an upload, sends the file straight to Google, then says which file it became
+		const start = await (await agent("/nova-agent/google/drive/start", { kind: "board", id, name: "set.mp4", type: "video/mp4", size: bytes.byteLength })).json();
+		expect(start.session).toMatch(/^https:\/\/www\.googleapis\.com\/upload\//);
+		const made = await (await globalThis.fetch(start.session, { method: "PUT", headers: { "Content-Type": "video/mp4" }, body: bytes })).json();
+		const linked = await (await agent("/nova-agent/google/drive/link", { kind: "board", id, driveId: made.id, name: "set.mp4" })).json();
+		expect(linked, JSON.stringify(linked)).toMatchObject({ ok: true });
+		// Online, signed in: from Drive, whole or a part
+		const whole = await call(`/board-files/${id}`);
+		expect(whole.status).toBe(200);
+		expect(whole.headers.get("X-Nova-From")).toBe("google-drive");
+		expect(whole.headers.get("Content-Security-Policy")).toContain("sandbox");
+		expect(new Uint8Array(await whole.arrayBuffer())).toEqual(bytes);
+		const part = await call(`/board-files/${id}`, { headers: { Range: "bytes=100-199" } });
+		expect(part.status).toBe(206);
+		expect(part.headers.get("Content-Range")).toBe(`bytes 100-199/${bytes.byteLength}`);
+		expect(new Uint8Array(await part.arrayBuffer())).toEqual(bytes.subarray(100, 200));
+		// Not signed in: nothing
+		expect((await call(`/board-files/${id}`, { cookie: "" })).status).not.toBe(200);
+		// Only Board's own uploads can be linked (not some other file in the studio's Drive)
+		G.files.set("someone-elses-file", { id: "someone-elses-file", parents: ["elsewhere"] });
+		expect((await agent("/nova-agent/google/drive/link", { kind: "board", id: "b-20261013-aaaaaaaaaaaa", driveId: "someone-elses-file" })).status).toBe(400);
+		// Only board files, by their made-up names
+		expect((await agent("/nova-agent/google/drive/start", { kind: "media", id, size: 10 })).status).toBe(400);
+		expect((await agent("/nova-agent/google/drive/start", { kind: "board", id: "../x", size: 10 })).status).toBe(400);
 	});
 
 	it("writes Money into one sheet as plain values, and only when something changed", async () => {

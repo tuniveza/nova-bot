@@ -322,7 +322,7 @@ export async function handleGoogleForAgent(request, env, pathname, body) {
         if (!Number.isFinite(size) || size <= 0 || size > 5 * 1024 ** 3) return json({ error: "The file's size, please (5 GB at most)." }, 400);
         return json({ ok: true, session: await startUpload(env, { kind: "board", name, type, size }) });
       }
-      if (!/^[\w-]{10,200}$/.test(String(body.driveId || ""))) return json({ error: "Which Drive file?" }, 400);
+      if (!/^[\w-]{1,200}$/.test(String(body.driveId || ""))) return json({ error: "Which Drive file?" }, 400);
       return json({ ok: true, fileId: await keepUploaded(env, { kind: "board", novaId: body.id, driveId: body.driveId, name }) });
     } catch (err) {
       return json({ error: "Google Drive didn't take it: " + String(err.message || err).slice(0, 160) }, err.status === 400 ? 400 : 502);
