@@ -7,6 +7,25 @@
 	handle @inside {
 		respond 404
 	}
+	# The VPS's desktop (Computer panel; vps/desktop-setup.sh): signed-in admins only, asked of Nova Bot first.
+	# (Here too, not only added by desktop-setup.sh: vps/deploy.sh writes this file afresh on every deploy)
+	@desk path /vps-desktop /vps-desktop/*
+	handle @desk {
+		forward_auth 127.0.0.1:8787 {
+			uri /app/api/admin-check
+			# A plain question, not a page: without these Nova Bot would send a browser's page request on to Nova Agent
+			header_up -Sec-Fetch-Dest
+			header_up -Sec-Fetch-Mode
+			header_up Accept application/json
+		}
+		handle /vps-desktop/websockify {
+			reverse_proxy 127.0.0.1:6081
+		}
+		handle_path /vps-desktop/* {
+			root * /usr/share/novnc
+			file_server
+		}
+	}
 	# Computer's status service (token only: vps/desk-status/server.mjs)
 	handle /desk-status/* {
 		reverse_proxy 127.0.0.1:8788
