@@ -202,5 +202,8 @@ public/shared/
 public/observatory/
 public/lossless/
 public/fixer/
+public/quests/
+public/board/
+public/console/
 VERSION
 wrangler.passthrough.jsonc

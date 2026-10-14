@@ -23,6 +23,8 @@ describe("a panel opened on its own opens inside Nova Agent", () => {
     ["/calendar/", "/calendar/"],
     ["/notes/", "/notes/"],
     ["/board/", "/board/"],
+    ["/quests/", "/quests/"],
+    ["/agent/quests", "/quests/"],
     ["/console/", "/console/"],
     ["/agent/board", "/board/"],
     ["/agent/console", "/console/"],
