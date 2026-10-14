@@ -1,6 +1,5 @@
-// The VPS's own mail server (vps/mail): every email goes to MAIL_API_URL with MAIL_KEY (the old
-// names, RESEND_API_URL and RESEND_API_KEY, still work while the server's settings are renamed);
-// with MAIL_FIRST=vps, approved emails try it before Gmail.
+// The VPS's own mail server (vps/mail): every email goes to MAIL_API_URL with MAIL_KEY; with
+// MAIL_FIRST=vps, approved emails try it before Gmail.
 import { env } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mailApiUrl, mailKey, mailReady, sendEmail } from "../src/enquiries.js";
@@ -12,13 +11,11 @@ const msg = { to: ["sam@example.com"], subject: "Hello", text: "Hi Sam" };
 afterEach(() => vi.restoreAllMocks());
 
 describe("where single emails go", () => {
-	it("only to MAIL_API_URL (a bad address counts as none), with the old names as a fallback", () => {
+	it("only to MAIL_API_URL (a bad address counts as none), with MAIL_KEY", () => {
 		expect(mailApiUrl({})).toBe("");
 		expect(mailApiUrl({ MAIL_API_URL: "ftp://nope" })).toBe("");
 		expect(mailApiUrl(LOCAL)).toBe("http://127.0.0.1:8790");
-		expect(mailApiUrl({ RESEND_API_URL: "http://127.0.0.1:8790" })).toBe("http://127.0.0.1:8790");
-		expect(mailKey({ RESEND_API_KEY: " old " })).toBe("old");
-		expect(mailKey({ MAIL_KEY: "new", RESEND_API_KEY: "old" })).toBe("new");
+		expect(mailKey({ MAIL_KEY: " key " })).toBe("key");
 		expect(mailReady({})).toBe(false);
 		expect(mailReady({ MAIL_KEY: "k" })).toBe(false);
 		expect(mailReady(LOCAL)).toBe(true);

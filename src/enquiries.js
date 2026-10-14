@@ -228,13 +228,12 @@ export async function sendTestEmail(env) {
 // alongside the text.
 //
 // MAIL_API_URL (e.g. http://127.0.0.1:8790) is where it's handed over and MAIL_KEY the key it
-// wants. (The names before: RESEND_API_URL and RESEND_API_KEY, still read so nothing breaks while
-// the server's settings are renamed.)
+// wants (vps/deploy.sh sets both).
 export function mailApiUrl(env) {
-  const base = String(env.MAIL_API_URL || env.RESEND_API_URL || "").trim().replace(/\/+$/, "");
+  const base = String(env.MAIL_API_URL || "").trim().replace(/\/+$/, "");
   return /^https?:\/\//.test(base) ? base : "";
 }
-export const mailKey = (env) => String(env.MAIL_KEY || env.RESEND_API_KEY || "").trim();
+export const mailKey = (env) => String(env.MAIL_KEY || "").trim();
 // The mail server is set up: where it is, and its key
 export const mailReady = (env) => Boolean(mailApiUrl(env) && mailKey(env));
 

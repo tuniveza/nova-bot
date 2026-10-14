@@ -218,7 +218,7 @@ describe("Computer: the VPS only", () => {
 
 	it("warns when newsletters can't go (no mail server here)", async () => {
 		globalThis.fetch = vi.fn(async () => Response.json({}, { status: 401 }));
-		const d = await desk({ MAIL_KEY: "", RESEND_API_KEY: "", CAMPAIGN_FROM: "Novacane <hello@novacane.co.uk>" });
+		const d = await desk({ MAIL_KEY: "", CAMPAIGN_FROM: "Novacane <hello@novacane.co.uk>" });
 		expect(d.here.warnings.join(" ")).toContain("Newsletters are off");
 		const ok = await desk({ MAIL_KEY: "k", CAMPAIGN_FROM: "Novacane <hello@novacane.co.uk>" });
 		expect(ok.here.warnings).toEqual([]);
