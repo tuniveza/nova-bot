@@ -54,16 +54,41 @@ export async function readCalendar(env, id, action) {
   return false;
 }
 
-// Every booking in the feed, soonest first (for Portal's calendar and questions), or null if the feed isn't set up
-export async function listBookings(env) {
+// Every booking in the feed, soonest first (for Portal's calendar and questions), or null if the feed isn't set up.
+// { recent: true, ctx } (Portal's calendar, only for showing it): reading Acuity's feed takes 0.2-0.5 s,
+// so a copy from the last 10 minutes is shown straight away and a fresh one is read behind it (ready
+// for the next look, a few seconds later at most). Everything else reads the feed fresh, as before.
+export async function listBookings(env, { recent = false, ctx = null } = {}) {
   // No feed link: nothing to list
   if (!env.ACUITY_CALENDAR_URL) return null;
   // Read the feed
-  const events = await fetchCalendar(env);
+  const events = recent ? await recentCalendar(env, ctx) : await fetchCalendar(env);
   // Each booking with its number, soonest first
   return Object.entries(events)
     .map(([id, event]) => ({ id: Number(id), ...event }))
     .sort((a, b) => String(a.start).localeCompare(String(b.start)));
+}
+
+// The last copy of the feed read for showing the diary, and when (see listBookings)
+let lastRead = null; // { url, at, events }
+let reading = null;
+const FRESH_MS = 15_000;
+const KEEP_MS = 10 * 60_000;
+export async function recentCalendar(env, ctx, now = Date.now()) {
+  const url = env.ACUITY_CALENDAR_URL;
+  const read = () => fetchCalendar(env).then((events) => (lastRead = { url, at: Date.now(), events }).events);
+  if (lastRead && lastRead.url === url && now - lastRead.at < KEEP_MS) {
+    if (now - lastRead.at > FRESH_MS && !reading) {
+      reading = read().catch((err) => console.log("Couldn't refresh the Acuity calendar feed:", err)).finally(() => (reading = null));
+      if (ctx && ctx.waitUntil) ctx.waitUntil(reading);
+    }
+    return lastRead.events;
+  }
+  return read();
+}
+export function forgetRecentCalendar() {
+  lastRead = null;
+  reading = null;
 }
 
 // Read the whole feed: every booking in it, by booking number

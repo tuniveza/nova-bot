@@ -27,8 +27,9 @@
 // Lossless copies are, so this project still builds and tests on its own.
 // Observatory's scan (data/) and screenshots (media/) aren't in Nova Agent's git: they're made on
 // the studio PC. A clean worktree has none, so they come from the studio PC's own Nova Agent folder.
-import { cpSync, existsSync, rmSync } from "node:fs";
-import { resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
@@ -82,4 +83,33 @@ for (const part of ["data", "media"]) {
   }
   cpSync(from, to, { recursive: true });
   console.log(`Observatory: ${part}/ copied in from ${from}`);
+}
+
+// The list of Nova's own files with a fingerprint each (public/nova-build.json): Nova Agent's
+// service worker (web/agent/assets/sw.js) keeps these on the device and uses them straight away
+// while their fingerprint stays the same, so Nova and its panels open instantly; after a deploy only
+// the files that changed are fetched again. Pages, the website chat's files, the service workers
+// and Observatory's scan and media (signed-in only) are never on it.
+writeBuildList();
+function writeBuildList() {
+  const pub = here("../public/");
+  const FILE = /\.(?:m?js|css|svg|png|jpe?g|webp|gif|ico|woff2?|ttf|otf|wasm)$/i;
+  const NEVER = /^\/(?:novabot\.(?:js|css)$|observatory\/(?:data|media)\/)|(?:^|\/)sw\.js$/;
+  const files = {};
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else {
+        const path = "/" + relative(pub, full).split(sep).join("/");
+        if (!FILE.test(path) || NEVER.test(path)) continue;
+        const body = readFileSync(full);
+        files[path] = [createHash("sha1").update(body).digest("base64url").slice(0, 12), body.length];
+      }
+    }
+  };
+  walk(pub);
+  const build = createHash("sha1").update(JSON.stringify(Object.entries(files).sort())).digest("base64url").slice(0, 12);
+  writeFileSync(join(pub, "nova-build.json"), JSON.stringify({ build, files }) + "\n");
+  console.log(`Nova's files: ${Object.keys(files).length} listed for keeping on devices (build ${build})`);
 }

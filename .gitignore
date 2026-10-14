@@ -193,6 +193,7 @@ public/agent/
 public/calendar-sync.js
 public/manifest.webmanifest
 public/sw.js
+public/nova-build.json
 public/visualizer.html
 public/app/
 public/portal/

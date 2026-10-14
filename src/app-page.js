@@ -244,7 +244,7 @@ export async function handleApp(request, env, ctx, answer) {
     if (request.method !== "GET" && !app && request.headers.get("Origin") !== url.origin) return json({ error: "Forbidden" }, 403);
     return handleCalendarItems(request, env, route);
   }
-  if (route === "/calendar" && request.method === "GET") return calendar(env);
+  if (route === "/calendar" && request.method === "GET") return calendar(env, ctx);
   // Your own quests (admins: ?who=everyone for everyone's)
   if (route === "/quests" && request.method === "GET") return json(await questsForPortal(env, me, url.searchParams.get("who") === "everyone" ? "everyone" : "mine"));
   // Index: the suite's memory (browse, edit, approve)
@@ -489,11 +489,11 @@ async function testNotification(env) {
 // ===== CALENDAR =====
 
 // Every booking in Acuity's diary (from its private calendar feed)
-async function calendar(env) {
+async function calendar(env, ctx) {
   // Try it
   try {
-    // Read the diary
-    const bookings = (await usesNova(env)) ? await novaListBookings(env) : await listBookings(env);
+    // Read the diary (Acuity's: the last few minutes' copy at once, a fresh one read behind it)
+    const bookings = (await usesNova(env)) ? await novaListBookings(env) : await listBookings(env, { recent: true, ctx });
     // The feed isn't set up
     if (!bookings) return json({ bookings: [], setUp: false });
     // The bookings
