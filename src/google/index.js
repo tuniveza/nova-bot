@@ -40,7 +40,6 @@ import { findContacts, syncContacts } from "./contacts.js";
 import { backupIndex, dropFile, folderUrl, keepFile, keepUploaded, makeDoc, startUpload } from "./drive.js";
 import { refreshSheet, sheetStatus } from "./sheets.js";
 
-const PC_ORIGIN = "http://localhost:4545";
 const MAX_FILE = 100 * 1024 * 1024;
 
 // ===== THE PARTS =====
@@ -125,9 +124,9 @@ function setupSteps(origin) {
     },
     {
       title: "Make the key",
-      text: "Type: Web application. Name: Nova Agent. Add the two web addresses under Authorised JavaScript origins and the last one under Authorised redirect URIs, then press Create.",
+      text: "Type: Web application. Name: Nova Agent. Add the first web address under Authorised JavaScript origins and the second one under Authorised redirect URIs, then press Create.",
       open: { href: "https://console.cloud.google.com/auth/clients/create", label: "Make the key" },
-      copy: [origin, PC_ORIGIN, `${origin}/admin/google/callback`],
+      copy: [origin, `${origin}/admin/google/callback`],
     },
     { title: "Paste the key here", text: "Google shows a Client ID and a Client secret. Copy each one into the boxes below.", key: true, copy: [] },
     { title: "Connect the studio's Google account", text: "Press Connect Google and pick the studio's Google account. Tick every box. If Google says the app isn't verified, press Advanced, then Go to Nova Agent: that's expected.", connect: true, copy: [] },

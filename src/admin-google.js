@@ -52,8 +52,8 @@ export async function googleSetupPage(env, url, page) {
     {
       title: "Make the key",
       body: `<p>Type: <b>Web application</b>. Name: <b>Nova Agent</b>. Add these, then press <b>Create</b>.</p>
-        <p class="dim small">Authorised JavaScript origins (+ Add URI for each):</p>
-        ${copy(origin)}${copy(PC_ORIGIN)}
+        <p class="dim small">Authorised JavaScript origins (+ Add URI):</p>
+        ${copy(origin)}
         <p class="dim small">Authorised redirect URI (+ Add URI):</p>
         ${copy(origin + "/admin/google/callback")}
         <p>${open("https://console.cloud.google.com/auth/clients/create", "Make the key")}</p>`,

@@ -16,6 +16,9 @@
 			# Who's asking (the Worker reads it as Cloudflare's header for its rate limits)
 			header_up CF-Connecting-IP {remote_host}
 			header_up X-Forwarded-Proto {scheme}
+			# The runtime's own proxy (wrangler dev) answers on plain http, so the redirects it sends
+			# say http://<this address>/…; people only ever use https here, so say that (one hop less)
+			header_down Location "^http://((nova\.novacane\.co\.uk|[0-9-]+\.sslip\.io)(/|$))" "https://$1"
 		}
 	}
 	log {
