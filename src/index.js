@@ -770,7 +770,7 @@ export default {
     if (pathname.startsWith("/social/media/")) return handleSocialMedia(request, env, pathname);
     // Nova Agent, the one app: its page is the main address, and the panels open only inside it
     const novaAgent = novaAgentPage(request, env, pathname);
-    if (novaAgent) return novaAgent;
+    if (novaAgent) return withBuild(await novaAgent, request, env);
     // Addresses the panels had for a day go back to their own
     const moved = movedPage(request, env, pathname);
     if (moved) return moved;
@@ -1505,6 +1505,27 @@ function opened(panel, search) {
   if (panel === "/admin" || panel.startsWith("/admin/")) return "/portal/?view=manage&page=" + encodeURIComponent(panel);
   return panel + search;
 }
+// Nova's pages say which deploy's files they go with (X-Nova-Build, from public/nova-build.json,
+// written by scripts/sync-apps.mjs): Nova Agent's service worker then uses the files it keeps on the
+// device straight away when it already has that deploy's list, without asking for the list first
+let buildId = null;
+async function novaBuild(request, env) {
+  if (buildId === null)
+    buildId = env.ASSETS.fetch(new Request(new URL("/nova-build.json", request.url)))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => (j && typeof j.build === "string" ? j.build : ""))
+      .catch(() => "");
+  return buildId;
+}
+export async function withBuild(res, request, env) {
+  if (!res || !(res.headers.get("Content-Type") || "").includes("text/html")) return res;
+  const build = await novaBuild(request, env);
+  if (!build) return res;
+  const out = new Response(res.body, res);
+  out.headers.set("X-Nova-Build", build);
+  return out;
+}
+
 function novaAgentPage(request, env, pathname) {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
   const url = new URL(request.url);
