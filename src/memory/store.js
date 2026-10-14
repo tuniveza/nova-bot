@@ -220,13 +220,16 @@ const bump = () => {
 };
 // For the cleanup (src/memory/cleanup.js), which writes D1 itself
 export const forgetCached = () => bump();
+// Which "edition" of the memory this is: it goes up whenever anything is written (Ask Index's cache)
+export const memoryGeneration = () => generation;
 
 // ---- Reading ----
 
 // The listing for Index (no bodies, so it's quick to send)
 // q: only files whose name, description, aliases, owner, path or facts mention it
 // since: only files changed after this moment (ms), for Index's live feed
-export async function listFiles(env, { scopes, owner_id, q, since } = {}) {
+// withBody: each file's facts too (Ask Index reads them; the listing itself never sends them)
+export async function listFiles(env, { scopes, owner_id, q, since, withBody = false } = {}) {
   const want = (scopes && scopes.length ? scopes : SCOPES).filter((s) => SCOPES.includes(s));
   let where = `scope IN (${want.map(() => "?").join(",")})`;
   const binds = [...want];
@@ -252,7 +255,7 @@ export async function listFiles(env, { scopes, owner_id, q, since } = {}) {
   // With a search, say which lines matched (so the list can show them)
   const term = q && String(q).trim().toLowerCase();
   return results.map((r) => {
-    const f = shape(r, false);
+    const f = shape(r, withBody);
     if (term) f.matches = r.body.split("\n").filter((l) => l.toLowerCase().includes(term)).slice(0, 3);
     return f;
   });

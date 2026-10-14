@@ -16,7 +16,7 @@ import { addPending, cleanPath, factLine, getFile, isForbidden, junkReason, MAX_
 
 const MODEL = "claude-haiku-4-5";
 
-async function callTool(env, { system, prompt, tool }) {
+export async function callTool(env, { system, prompt, tool }) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },

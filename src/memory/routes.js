@@ -6,8 +6,9 @@
 //   PUT  /memory/file                               write a file ({ ..., if_version: "new" | token }; 409 + current on a clash)
 //   POST /memory/extract                            hand over a conversation chunk; learned in the background (202)
 //   GET  /memory/index?scope=                       the listing (no bodies)
+//   POST /memory/ask                                { q }: Ask Index (src/memory/ask.js), only from what this door may read
 // For Portal and Index (signed in), role "staff", under /app/api/memory/:
-//   index, file (GET/PUT/DELETE), pending (GET), pending/:id (POST approve/reject), stats
+//   index, file (GET/PUT/DELETE), pending (GET), pending/:id (POST approve/reject), stats, ask (POST)
 //   and, for admins only, the cleanup (src/memory/cleanup.js):
 //     POST cleanup/check                  the dry run: what WOULD be removed, with reasons (nothing changes)
 //     POST cleanup/apply                  { report_id, ids }: removes only those, each re-checked
@@ -15,6 +16,7 @@
 //     POST cleanup/removed/:id/restore    put one back
 // The website's NovaBot reads its own customer's slice in-process (see readForWebsite).
 
+import { askIndex } from "./ask.js";
 import { approve, learn, PATHS } from "./extract.js";
 import { speakerOf } from "../livechat.js";
 import { applyReport, checkForJunk, listRemoved, restoreRemoved } from "./cleanup.js";
@@ -41,6 +43,13 @@ async function serve(request, env, ctx, route, role, sourceApp, memberId = null,
     const restore = route.match(/^\/cleanup\/removed\/([\w-]{1,64})\/restore$/);
     if (restore && request.method === "POST") return done(await restoreRemoved(env, restore[1], by));
     return json({ error: "Not found" }, 404);
+  }
+  // Ask Index: answered only from what this person (or key) may read; it never writes anything
+  if (route === "/ask" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const readers = role === "member" ? [{ scope: "studio" }, { scope: "staff", owner_id: memberId }] : SCOPES.filter((s) => allowed(role, "read", s)).map((scope) => ({ scope }));
+    const res = await askIndex(env, { q: body.q, readers });
+    return res.error ? json({ error: res.error }, res.status || 400) : json(res);
   }
   // A member only ever sees their own staff partition
   if (role === "member") {

@@ -250,6 +250,8 @@ export async function handleApp(request, env, ctx, answer) {
   // Index: the suite's memory (browse, edit, approve)
   if (route.startsWith("/memory/")) {
     if (request.method !== "GET" && request.headers.get("Origin") !== url.origin) return json({ error: "Forbidden" }, 403);
+    // Ask Index calls a model: the same per-minute limit as Portal's own questions
+    if (route === "/memory/ask" && !(await allowed(env, request, "memory-ask:"))) return json({ error: "Too many questions. Wait a minute." }, 429);
     // An admin (or the shared studio password) sees everything; other staff see the studio's
     // memory and their own partition (Portal decides who's who)
     const who = await requireStaff(request, env);
