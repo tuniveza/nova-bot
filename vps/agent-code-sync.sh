@@ -59,6 +59,7 @@ if [ "$na_changed" = 1 ] && vps 'systemctl is-active --quiet nova-agent'; then
 set -euo pipefail
 cd /srv/nova-agent/na
 if [ "$(sha256sum package-lock.json | cut -c1-64)" != "$(cat /srv/nova-agent/.npm-na 2>/dev/null)" ]; then
+  systemctl stop nova-agent # (npm ci under a running Nova Agent can crash it half-way; it restarts below)
   sudo -u nova-agent -H npm ci --no-audit --no-fund --loglevel=error >/dev/null && sha256sum package-lock.json | cut -c1-64 > /srv/nova-agent/.npm-na
 fi
 systemctl restart nova-agent

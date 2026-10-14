@@ -71,5 +71,8 @@ for name in $([ "${DESK_COPY_PC_SECRETS:-0}" = 1 ] && echo AGENT_NOVA_KEY ANTHRO
 done
 
 echo "5/5 Packages and restart"
-ssh "$SSH" "cd /srv/nova/app && sudo -u nova -H npm ci --no-audit --no-fund --loglevel=error >/dev/null && systemctl enable --now nova >/dev/null 2>&1 && systemctl restart nova && systemctl enable --now nova-backup.timer >/dev/null 2>&1 && systemctl enable --now desk-status >/dev/null 2>&1 && systemctl restart desk-status && systemctl enable --now nova-mail >/dev/null 2>&1 && systemctl restart nova-mail && (systemctl reload caddy || systemctl restart caddy)"
-echo "Done: https://$ADDR (the every-minute jobs stay off until the cutover)"
+# Packages only when package-lock.json changed, with Nova Bot stopped first: npm ci empties node_modules,
+# and doing that under a running Nova Bot crashed it half-way (spawn ETXTBSY), which once left Nova
+# Agent's link half-open until both were restarted
+ssh "$SSH" "cd /srv/nova/app && lock=\$(sha256sum package-lock.json | cut -c1-64) && if [ \"\$lock\" != \"\$(cat /srv/nova/.packages-lock 2>/dev/null)\" ] || [ ! -d node_modules ]; then systemctl stop nova && sudo -u nova -H npm ci --no-audit --no-fund --loglevel=error >/dev/null && echo \"\$lock\" > /srv/nova/.packages-lock && echo '   packages updated'; fi && systemctl enable --now nova >/dev/null 2>&1 && systemctl restart nova && systemctl enable --now nova-backup.timer >/dev/null 2>&1 && systemctl enable --now desk-status >/dev/null 2>&1 && systemctl restart desk-status && systemctl enable --now nova-mail >/dev/null 2>&1 && systemctl restart nova-mail && (systemctl reload caddy || systemctl restart caddy)"
+echo "Done: https://$ADDR (every-minute jobs: $(ssh "$SSH" 'systemctl is-enabled nova-cron.timer 2>/dev/null || echo off'))"

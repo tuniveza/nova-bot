@@ -22,7 +22,14 @@ cd "$APP"
 sudo -u nova -H node vps/make-config.mjs "$url" > wrangler.vps.jsonc.new
 mv wrangler.vps.jsonc.new wrangler.vps.jsonc && chown nova:nova wrangler.vps.jsonc
 ln -sf /srv/nova/secrets.env "$APP/.dev.vars"
-sudo -u nova -H npm ci --no-audit --no-fund --loglevel=error >/dev/null
+# (packages only when package-lock.json changed, with Nova Bot stopped first: npm ci under a running
+# Nova Bot crashes it half-way; the same marker as vps/deploy.sh)
+lock=$(sha256sum package-lock.json | cut -c1-64)
+if [ "$lock" != "$(cat /srv/nova/.packages-lock 2>/dev/null)" ] || [ ! -d node_modules ]; then
+  systemctl stop nova
+  sudo -u nova -H npm ci --no-audit --no-fund --loglevel=error >/dev/null
+  echo "$lock" > /srv/nova/.packages-lock
+fi
 echo "3/3 Restarting Nova Bot"
 systemctl restart nova
 echo "Done: Nova Bot $rev is live"

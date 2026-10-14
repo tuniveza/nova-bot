@@ -21,6 +21,8 @@
 //   from the PC { t: "res", id, status, headers }  { t: "chunk", id, d }  { t: "done", id }
 //               { t: "error", id, message }
 //   "ping" → "pong" (answered by the runtime without waking the object)
+//   { t: "hello", id } → { t: "here", id, linked }   (answered by this object itself: Nova Agent asks now
+//               and then, so a link the runtime keeps open but this object has lost is noticed and redone)
 
 import { DurableObject } from "cloudflare:workers";
 import { requireStaff } from "./portal/auth.js";
@@ -383,6 +385,12 @@ export class AgentLink extends DurableObject {
     try {
       frame = JSON.parse(message);
     } catch {
+      return;
+    }
+    if (frame.t === "hello") {
+      try {
+        ws.send(JSON.stringify({ t: "here", id: frame.id, linked: this.ctx.getWebSockets("pc").includes(ws) }));
+      } catch {}
       return;
     }
     const entry = this.waiting.get(frame.id);

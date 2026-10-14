@@ -355,3 +355,13 @@ describe("only one Nova Agent", () => {
     server.ws.close();
   });
 });
+
+describe("the link check (hello → here)", () => {
+  it("answers a linked Nova Agent's hello with linked: true", async () => {
+    const pc = await connectPc(() => {});
+    const here = new Promise((resolve) => pc.ws.addEventListener("message", (e) => e.data !== "pong" && JSON.parse(e.data).t === "here" && resolve(JSON.parse(e.data))));
+    pc.send({ t: "hello", id: "h1" });
+    expect(await here).toEqual({ t: "here", id: "h1", linked: true });
+    pc.ws.close();
+  });
+});
