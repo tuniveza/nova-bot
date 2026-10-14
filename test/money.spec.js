@@ -5,6 +5,7 @@ import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { invoiceHash, readLines, taxYear, totals } from "../src/money.js";
+import { STAGES, stageEmail, stageOf, stageSums } from "../src/invoicer.js";
 import { sha256 } from "../src/portal/auth.js";
 import { makeStripe, stripeWebhook } from "./fakes.js";
 import { STAFF_COOKIE } from "./sign-in.js";
@@ -422,5 +423,66 @@ describe("expenses and totals", () => {
 		expect(res.text.split("\r\n")[0]).toBe("Number,Issued,Due,Client,Subtotal (£),VAT %,VAT (£),Total (£),Paid (£),Balance (£),Status,Sent");
 		expect(res.text).toContain(`"'=HYPERLINK(""x"")"`);
 		expect((await portal("money/export.csv?what=secrets")).status).toBe(400);
+	});
+});
+
+// ===== THE INVOICER (src/invoicer.js) =====
+
+describe("the Invoicer", () => {
+	it("works out each stage and its sums in whole pence", () => {
+		const inv = { number: "NS-0007", status: "sent", totalPence: 40001, paidPence: 0, issueDate: "2026-10-01", dueDate: "2026-10-10", billTo: { name: "Ada Client" }, lines: [] };
+		expect(stageOf(inv, "2026-10-05")).toBe("deposit");
+		expect(stageOf(inv, "2026-10-11")).toBe("overdue");
+		expect(stageOf({ ...inv, paidPence: 20001 }, "2026-10-05")).toBe("balance");
+		expect(stageOf({ ...inv, paidPence: 40001, status: "paid" }, "2026-10-20")).toBe("paid");
+		// 50% of £400.01, to the penny; the rest later
+		const dep = stageSums(inv, [], "deposit", "2026-10-05");
+		expect(dep).toMatchObject({ depositPence: 20001, dueNowPence: 20001, laterPence: 20000, dueBy: "2026-10-01" });
+		expect(dep.dueNowPence + dep.laterPence).toBe(40001);
+		const pays = [{ amountPence: 20001, paidOn: "2026-10-02", methodName: "Bank transfer" }, { amountPence: 500, paidOn: "2026-10-03", removed: true }];
+		expect(stageSums(inv, pays, "balance", "2026-10-05")).toMatchObject({ paidPence: 20001, dueNowPence: 20000 });
+		expect(stageSums(inv, pays, "overdue", "2026-10-13")).toMatchObject({ dueNowPence: 20000, daysOverdue: 3 });
+		expect(stageSums(inv, pays, "paid", "2026-10-13").dueNowPence).toBe(0);
+	});
+
+	it("writes an email for each stage with the right amounts, and never an empty one", () => {
+		const inv = { number: "NS-0007", status: "sent", totalPence: 40000, paidPence: 20000, issueDate: "2026-10-01", dueDate: "2026-10-10", billTo: { name: "Ada Client" }, lines: [], pageUrl: "https://nova.test/invoice/abc" };
+		for (const stage of STAGES) {
+			const email = stageEmail(inv, stageSums(inv, [], stage, "2026-10-13"), stage, {});
+			expect(email.subject).toContain("NS-0007");
+			expect(email.body.startsWith("Hi Ada,")).toBe(true);
+			expect(email.body.split(/\s+/).length).toBeLessThan(140);
+		}
+		expect(stageEmail(inv, stageSums(inv, [], "deposit", "2026-10-05"), "deposit", {}).body).toContain("£200.00");
+		expect(stageEmail(inv, stageSums(inv, [], "overdue", "2026-10-13"), "overdue", {}).body).toContain("3 days overdue");
+		expect(stageEmail(inv, stageSums(inv, [], "paid", "2026-10-13"), "paid", {}).body).not.toContain("https://");
+	});
+
+	it("shows the price list from the booking rules, and an invoice at any stage (team only)", async () => {
+		const list = await portal("money/catalogue");
+		expect(list.status).toBe(200);
+		expect(list.data.depositPercent).toBe(50);
+		expect(list.data.services.find((s) => /Rap Package - 1 song/.test(s.name)).pricePence).toBe(10000);
+		expect(list.data.services.some((s) => s.id === "master-3" && s.pricePence === 3000)).toBe(true);
+
+		const inv = await writeAndSend();
+		const auto = await portal(`money/invoices/${inv.id}/stage`);
+		expect(auto.status).toBe(200);
+		expect(auto.data).toMatchObject({ stage: "deposit", autoStage: "deposit" });
+		expect(auto.data.sums.dueNowPence).toBe(17500); // half of £349.99, rounded
+		await portal(`money/invoices/${inv.id}/payments`, { body: { amount: "175", method: "bank", paidOn: "2026-10-01" } });
+		expect((await portal(`money/invoices/${inv.id}/stage`)).data.autoStage).toBe("balance");
+		const doc = await portal(`money/invoices/${inv.id}/document?stage=paid`);
+		expect(doc.status).toBe(200);
+		expect(doc.headers.get("Content-Type")).toContain("text/html");
+		expect(doc.text).toContain("PAID");
+		expect(doc.text).toContain("£0.00");
+		expect(doc.text).toContain("10 Clyde Terrace");
+		const overdue = await portal(`money/invoices/${inv.id}/document?stage=overdue`);
+		expect(overdue.text).toContain("Overdue notice");
+		expect(overdue.text).toContain("£174.99");
+		// Signed out: nothing
+		expect((await portal(`money/invoices/${inv.id}/document`, { headers: {} })).status).toBe(401);
+		expect((await portal("money/catalogue", { headers: {} })).status).toBe(401);
 	});
 });

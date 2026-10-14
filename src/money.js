@@ -37,6 +37,7 @@ import { emailRecipients, mailReady, sendEmail } from "./enquiries.js";
 import { sendStudioEmail } from "./google/gmail.js";
 import { pounds as poundsText, toPence } from "./clients.js";
 import { createInvoiceCheckout, stripeOffline } from "./nova/stripe.js";
+import { STAGES, catalogue, invoiceDocument, stageEmail, stageOf, stageSums } from "./invoicer.js";
 
 export const CATEGORIES = [
   "Equipment",
@@ -134,7 +135,7 @@ export const invoiceNumber = (seq) => PREFIX + String(seq).padStart(4, "0");
 // ===== THE SETTINGS (studio details, bank details, VAT, payment terms) =====
 
 const DEFAULT_SETTINGS = {
-  business: { name: "Novacane Studios", address: "Forest Hill, London", email: "", vatNumber: "" },
+  business: { name: "Novacane Studios", address: "Forest Hill, London", email: "", vatNumber: "", phone: "", website: "" },
   bank: { accountName: "", sortCode: "", accountNumber: "", note: "" },
   vatRate: 0,
   dueDays: 14,
@@ -164,6 +165,8 @@ export async function saveSettings(env, me, input) {
       address: b.address !== undefined ? cleanText(b.address, MAX_ADDRESS) : s.business.address,
       email: b.email !== undefined ? oneLine(b.email, 200).toLowerCase() : s.business.email,
       vatNumber: b.vatNumber !== undefined ? oneLine(b.vatNumber, 30) : s.business.vatNumber,
+      phone: b.phone !== undefined ? oneLine(b.phone, 40) : s.business.phone,
+      website: b.website !== undefined ? oneLine(b.website, 120) : s.business.website,
     },
     bank: {
       accountName: k.accountName !== undefined ? oneLine(k.accountName, 120) : s.bank.accountName,
@@ -1198,6 +1201,25 @@ export async function handleMoneyForStaff(request, env, me, route) {
     if (!row) return json({ error: "That invoice doesn't exist." }, 404);
     const nonce = newNonce();
     return pageResponse(invoicePage(env, row, await readSettings(env), { preview: true, nonce }), nonce, 200, true);
+  }
+  // The Invoicer (src/invoicer.js): the price list, and an invoice at one of its stages (read-only)
+  if (route === "/money/catalogue" && get) return json(catalogue());
+  const staged = route.match(/^\/money\/invoices\/(\d{1,12})\/(stage|document)$/);
+  if (staged && get) {
+    const row = await readRow(env, Number(staged[1]));
+    if (!row) return json({ error: "That invoice doesn't exist." }, 404);
+    const today = ukToday();
+    const [settings, payments] = await Promise.all([readSettings(env), invoicePayments(env, row.id)]);
+    const invoice = publicInvoice(env, row, today);
+    const autoStage = stageOf(invoice, today);
+    const asked = url.searchParams.get("stage");
+    const stage = STAGES.includes(asked) ? asked : autoStage;
+    if (staged[2] === "document") {
+      const nonce = newNonce();
+      return pageResponse(invoiceDocument(invoice, payments, stage, settings, today), nonce, 200, true);
+    }
+    const sums = stageSums(invoice, payments, stage, today);
+    return json({ stage, autoStage, sums, email: stageEmail(invoice, sums, stage, settings), invoice, payments });
   }
   const one = route.match(/^\/money\/invoices\/(\d{1,12})$/);
   if (one && get) {
