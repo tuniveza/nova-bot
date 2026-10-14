@@ -143,6 +143,7 @@ import { handleCalendarItems } from "./calendar/items.js";
 import { bookingLink as novaBookingLink, getSessionTypes as novaSessionTypes } from "./nova/booking.js";
 import { listBookings as novaListBookings } from "./nova/booking-calendar.js";
 import { AUTO_DELETE_CHOICES, autoDeleteDays, deleteAlerts, forgetPhone, listAlerts, listPhones, notifyPhones, phoneName, savePhone, setAutoDelete, verifyBooking } from "./push.js";
+import { LOOKS_ID } from "./looks-account.js";
 
 // The old shared-password cookie: only ever cleared now (Portal is the one sign-in)
 const OLD_COOKIE = "nvadmin";
@@ -164,6 +165,9 @@ export async function handleApp(request, env, ctx, answer) {
   if (!me) return json({ error: "Please sign in", signIn: "/portal/" }, 401);
 
   if (route === "/me") return json({ ok: true });
+  // The VPS's desktop (Computer panel): Caddy asks here before letting a browser through to it.
+  // Admins signed in with Portal's cookie only (not the looks account, not a token)
+  if (route === "/admin-check" && request.method === "GET") return canDecide(me) && me.id !== LOOKS_ID ? new Response(null, { status: 204 }) : json({ error: "Admins only" }, 403);
   if (route === "/enquiries" && request.method === "GET") return listEnquiries(env, url);
   if (route === "/enquiries/status" && request.method === "POST") return done(await replies.setEnquiryStatus(env, await readJson(request)));
   if (route.startsWith("/enquiries/")) {
