@@ -200,7 +200,7 @@ describe("the VPS's front door", () => {
 	});
 });
 
-describe("Computer says which side is live", () => {
+describe("Computer: the VPS only", () => {
 	async function desk(extraEnv = {}) {
 		const ctx = createExecutionContext();
 		const res = await worker.fetch(new Request("https://novacane-worker.test/app/api/desk", { headers: { Cookie: STAFF_COOKIE } }), { ...env, ...extraEnv }, ctx);
@@ -208,11 +208,12 @@ describe("Computer says which side is live", () => {
 		return res.json();
 	}
 
-	it("on Cloudflare: Cloudflare is live, with the switch commands", async () => {
+	it("no old host: no live side, no switch-over commands, just moving Nova Agent", async () => {
 		globalThis.fetch = vi.fn(async () => Response.json({}, { status: 401 }));
 		const d = await desk();
-		expect(d.here.live).toBe("cloudflare");
-		expect(d.here.switchHelp).toMatchObject({ to: "vps/switch.sh", back: "vps/switch-back.sh" });
+		expect(d.here.live).toBeUndefined();
+		expect(d.here.switchHelp).toBeUndefined();
+		expect(d.here.agentSwitch.back).toBe("vps/agent-switch-back.sh");
 	});
 
 	it("warns when the newsletters' Resend key can't send as the studio's domain", async () => {

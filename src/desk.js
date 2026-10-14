@@ -1,10 +1,11 @@
-// Portal → Admin → Computer (admins): Nova Bot here (on Cloudflare, or on the VPS: DESK_HOST says
-// which) and the VPS (vps/README.md), side by side, with how each is doing.
+// Portal → Admin → Computer (admins): Nova's own computer, the studio's VPS (vps/README.md), and
+// how Nova Bot and Nova Agent on it are doing.
 //
-//   GET  /app/api/desk          { here, vps } — here: where this copy of Nova Bot runs, its version,
-//                               the PC link, each job's last run; vps: the VPS's own status
-//                               (vps/desk-status/server.mjs), or why it can't be reached
-//   POST /app/api/desk/action   { do: "restart" | "restart-web" | "backup" } — passed to the VPS
+//   GET  /app/api/desk          { here, vps } — here: Nova Bot's address and version, Nova Agent's
+//                               link (and where it runs: the server or the studio PC), each job's
+//                               last run, warnings, the commands to move Nova Agent; vps: the VPS's
+//                               own status (vps/desk-status/server.mjs), or why it can't be reached
+//   POST /app/api/desk/action   { do: "restart" | "restart-agent" | "restart-web" | "backup" } — passed to the VPS
 //
 // Admins only (and actions only from Portal open in a browser, the cookie). The VPS is asked with a
 // token made from AGENT_NOVA_KEY (HMAC-SHA256 of "desk-status"), so nothing else is needed; the
@@ -74,29 +75,15 @@ async function here(env) {
     } catch {}
   }
   const v = env.CF_VERSION_METADATA || {};
-  const where = env.DESK_HOST === "vps" ? "vps" : "cloudflare";
   return {
-    where,
-    // Which one people are using: Cloudflare's own Nova Bot, or (after vps/switch.sh) the VPS behind
-    // Cloudflare's address. A VPS still on its own address is standing by.
-    live: where === "cloudflare" ? "cloudflare" : onLiveAddress(env) ? "vps" : "standby",
-    switchHelp: { to: "vps/switch.sh", back: "vps/switch-back.sh", from: "the studio PC, in nb/novacane-worker" },
+    // Moving Nova Agent between the server and the studio PC (both ask before doing anything)
+    agentSwitch: { to: "vps/agent-switch.sh", back: "vps/agent-switch-back.sh", from: "the studio PC, in nb/novacane-worker" },
     warnings: await warnings(env),
     url: publicUrl(env),
     version: v.id ? { id: String(v.id).slice(0, 8), at: v.timestamp || null } : null,
     pc,
     jobs,
   };
-}
-
-// Nova's own address (and, while old links are moved over, the address it had before)
-const LIVE_HOSTS = ["nova.novacane.co.uk", "novacane-worker.novacane-studio.workers.dev"];
-function onLiveAddress(env) {
-  try {
-    return LIVE_HOSTS.includes(new URL(publicUrl(env)).host);
-  } catch {
-    return false;
-  }
 }
 
 // Things that won't work as they are, in plain words (newsletters need a Resend key from the account
@@ -146,7 +133,7 @@ export async function handleDeskForStaff(request, env, me, route) {
       body = (await request.json()) || {};
     } catch {}
     const what = String(body.do || "");
-    if (!["restart", "restart-web", "backup"].includes(what)) return json({ error: "Which? restart, restart-web or backup." }, 400);
+    if (!["restart", "restart-agent", "restart-web", "backup"].includes(what)) return json({ error: "Which? restart, restart-agent, restart-web or backup." }, 400);
     const r = await askVps(env, "POST", "/action", { do: what });
     console.log(`Computer: ${what} asked by ${me.id}: ${r.ok ? "done" : "refused"}`);
     return r.ok ? json({ ok: true, done: what }) : json({ error: r.reason }, 502);

@@ -1,4 +1,4 @@
-// Portal → Admin → Computer (src/desk.js): Nova Bot here and the VPS side by side, admins only,
+// Portal → Admin → Computer (src/desk.js): the VPS, and Nova Bot and Nova Agent on it, admins only,
 // the VPS asked with a token made from AGENT_NOVA_KEY, actions only from a browser sign-in.
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -44,7 +44,8 @@ describe("Computer", () => {
 		const res = await call("/app/api/desk");
 		expect(res.status).toBe(200);
 		const data = await res.json();
-		expect(data.here.where).toBe("cloudflare");
+		expect(data.here.agentSwitch).toMatchObject({ to: "vps/agent-switch.sh", back: "vps/agent-switch-back.sh" });
+		expect(JSON.stringify(data)).not.toMatch(/cloudflare/i);
 		expect(data.vps).toMatchObject({ reachable: true, host: "odysi", jobsOn: false });
 		expect(seen[0].url).toMatch(/\/desk-status\/status$/);
 		expect(seen[0].auth).toBe(`Bearer ${await deskToken(env.AGENT_NOVA_KEY)}`);
@@ -69,8 +70,9 @@ describe("Computer", () => {
 			return Response.json({ ok: true });
 		});
 		expect((await call("/app/api/desk/action", { method: "POST", body: { do: "backup" } })).status).toBe(200);
+		expect((await call("/app/api/desk/action", { method: "POST", body: { do: "restart-agent" } })).status).toBe(200);
 		expect((await call("/app/api/desk/action", { method: "POST", body: { do: "rm -rf" } })).status).toBe(400);
-		expect(asked).toEqual(["backup"]);
+		expect(asked).toEqual(["backup", "restart-agent"]);
 		expect((await call("/app/api/desk", { cookie: "" })).status).toBe(401);
 	});
 });

@@ -3,13 +3,12 @@
 // back up now. It listens only on 127.0.0.1:8788; Caddy passes /desk-status/* to it.
 //
 // Never public: every request needs `Authorization: Bearer <token>`, where the token is the
-// HMAC-SHA256 of "desk-status" with AGENT_NOVA_KEY (the key Nova Bot already has, both on
-// Cloudflare and here), compared in constant time. No key set here = everything refused.
+// HMAC-SHA256 of "desk-status" with AGENT_NOVA_KEY (the key Nova Bot already has), compared in constant time. No key set here = everything refused.
 //
-//   GET  /status           how the VPS and Nova Bot on it are doing (no secrets, no customer data),
+//   GET  /status           how the VPS and Nova Bot and Nova Agent on it are doing (no secrets, no customer data),
 //                          including its mail sender: running, how many emails wait, when the last went
 //                          (counts and times only — never an address)
-//   POST /action {do}      "restart" (Nova Bot) | "restart-web" (Caddy) | "backup"
+//   POST /action {do}      "restart" (Nova Bot) | "restart-agent" (Nova Agent) | "restart-web" (Caddy) | "backup"
 //
 // Runs as root (it reads the journal and restarts services), with no other powers than those.
 import { createServer } from "node:http";
@@ -22,7 +21,7 @@ const PORT = 8788;
 const SECRETS = "/srv/nova/secrets.env";
 const STATE = "/srv/nova/state";
 const BACKUPS = "/srv/nova/backups";
-const SERVICES = ["nova", "caddy", "nova-cron.timer", "nova-backup.timer", "desk-status", "nova-mail", "postfix"];
+const SERVICES = ["nova", "nova-agent", "caddy", "nova-cron.timer", "nova-backup.timer", "desk-status", "nova-mail", "postfix"];
 
 function key() {
   try {
@@ -76,6 +75,7 @@ async function status() {
   const active = {};
   for (const s of SERVICES) active[s] = (await run("systemctl", ["is-active", s])).out || "unknown";
   const since = (await run("systemctl", ["show", "nova", "-p", "ActiveEnterTimestamp", "--value"])).out || null;
+  const agentSince = (await run("systemctl", ["show", "nova-agent", "-p", "ActiveEnterTimestamp", "--value"])).out || null;
   const disk = (() => {
     try {
       const s = statfsSync("/srv/nova");
@@ -87,8 +87,8 @@ async function status() {
   const backups = existsSync(BACKUPS)
     ? readdirSync(BACKUPS).filter((f) => /^nova-.*\.tar\.gz$/.test(f)).sort().map((f) => ({ name: f, size: statSync(`${BACKUPS}/${f}`).size }))
     : [];
-  // Recent problems: warnings and errors from Nova Bot and Caddy in the last day (words only)
-  const log = await run("journalctl", ["-u", "nova", "-u", "caddy", "-p", "warning", "--since", "-24h", "-n", "15", "--no-pager", "-o", "short-iso"]);
+  // Recent problems: warnings and errors from Nova Bot, Nova Agent and Caddy in the last day (words only)
+  const log = await run("journalctl", ["-u", "nova", "-u", "nova-agent", "-u", "caddy", "-p", "warning", "--since", "-24h", "-n", "15", "--no-pager", "-o", "short-iso"]);
   const problems = log.out
     .split("\n")
     .filter((l) => l && !/^-- /.test(l))
@@ -100,6 +100,7 @@ async function status() {
     at: new Date().toISOString(),
     uptimeSeconds: Math.round(uptime()),
     novaSince: since,
+    agentSince: active["nova-agent"] === "active" ? agentSince : null,
     cpu: { count: cpus().length, load: loadavg().map((n) => Math.round(n * 100) / 100) },
     memory: { total: totalmem(), free: freemem() },
     disk,
@@ -117,6 +118,7 @@ async function status() {
 
 const ACTIONS = {
   restart: () => run("systemctl", ["restart", "nova"]),
+  "restart-agent": () => run("systemctl", ["restart", "nova-agent"]),
   "restart-web": () => run("systemctl", ["reload-or-restart", "caddy"]),
   backup: () => run("systemctl", ["start", "nova-backup.service"], 120000),
 };
