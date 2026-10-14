@@ -244,7 +244,7 @@ export async function handlePortal(request, env, ctx, pathname) {
 
   if (!id && method === "GET") {
     if (!isAdmin) return json({ error: "Admins only" }, 403);
-    const { results } = await env.DB.prepare("SELECT * FROM staff ORDER BY role = 'admin' DESC, display_name COLLATE NOCASE").all();
+    const { results } = await env.DB.prepare("SELECT * FROM staff WHERE id != 'fixer-looks' ORDER BY role = 'admin' DESC, display_name COLLATE NOCASE").all();
     return json({ staff: results.map((r) => ({ ...profile(r, { full: true }), invite_pending: r.status === "invited" })) });
   }
 

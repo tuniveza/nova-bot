@@ -158,7 +158,7 @@ export async function stateCounts(env) {
 
 // The team, for "who's on it"
 export async function team(env) {
-  const { results } = await env.DB.prepare("SELECT id, display_name AS name FROM staff WHERE status = 'active' ORDER BY display_name").all();
+  const { results } = await env.DB.prepare("SELECT id, display_name AS name FROM staff WHERE status = 'active' AND id != 'fixer-looks' ORDER BY display_name").all();
   return results;
 }
 

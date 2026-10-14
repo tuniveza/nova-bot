@@ -7,6 +7,8 @@
 // SHA-256 is stored, so the sessions table can't be used to sign in, and signing
 // out deletes the row, so it stops working everywhere at once.
 
+import { looksAllowed } from "../looks-account.js";
+
 export const COOKIE = "nova_session";
 export const SESSION_DAYS = 30;
 const ROUNDS = 100_000;
@@ -99,6 +101,8 @@ export async function requireStaff(request, env, { admin = false } = {}) {
   // Old read-only "connect" sessions (from before Portal was the one sign-in) don't count
   if (row.kind === "profile") return null;
   if (admin && row.role !== "admin") return null;
+  // The Fixer's looks check account only looks (src/looks-account.js)
+  if (!looksAllowed(row.id, request)) return null;
   // Note it's in use (at most every 10 minutes, to keep writes down). An app's sign-in (Nova
   // Agent on the studio PC) also keeps going while it's used: it lasts until someone signs out.
   if (Date.now() - Date.parse(row.last_seen_at) > 600_000) {

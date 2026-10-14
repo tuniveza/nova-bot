@@ -171,7 +171,7 @@ async function portalCheck(env) {
 
 async function signInCheck(env) {
   try {
-    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM staff WHERE status = 'active'").first("n");
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM staff WHERE status = 'active' AND id != 'fixer-looks'").first("n");
     return n > 0;
   } catch {
     return false;

@@ -110,6 +110,7 @@ import { handleMoneyForAgent } from "./money.js";
 import { handleGoogleForAgent } from "./google/index.js";
 import { tidyForAgent } from "./tidy.js";
 import { feedTimeToIso, listBookings } from "./booking-calendar.js";
+import { looksSession } from "./looks-account.js";
 
 // A job Nova Agent took but never reported on (e.g. it was restarted) is
 // offered again after this long
@@ -182,6 +183,8 @@ export async function handleAgentNova(request, env, pathname) {
   if (pathname === "/nova-agent/result") return reportResult(env, body);
   if (pathname === "/nova-agent/notify") return sendAlert(env, body);
   if (pathname === "/nova-agent/me") return agentStaff(env, body);
+  // The Fixer's looks check: a sign-in that only looks, for one check (src/looks-account.js)
+  if (pathname === "/nova-agent/looks-session") return looksSession(env, body);
   // Calendar: Nova Agent's copy on the PC and this one, kept the same (src/calendar/items.js)
   if (pathname === "/nova-agent/calendar") return syncFromAgent(env, body);
   // Enquiries: read them, and draft replies (never send: a person approves in Portal)
