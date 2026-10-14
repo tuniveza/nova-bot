@@ -66,7 +66,7 @@ After=nova-desktop.service
 [Service]
 User=nova-agent
 Group=nova-agent
-ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do (exec 3<>/dev/tcp/127.0.0.1/5901) 2>/dev/null && exit 0; sleep 0.25; done; exit 1'
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 60); do (exec 3<>/dev/tcp/127.0.0.1/5901) 2>/dev/null && exit 0; sleep 0.25; done; exit 1'
 ExecStart=/usr/bin/websockify --inetd --idle-timeout=900 127.0.0.1:5901
 StandardInput=socket
 StandardOutput=journal
@@ -87,7 +87,10 @@ block = '''	# The VPS's desktop (Computer panel; vps/desktop-setup.sh): signed-i
 	handle @desk {
 		forward_auth 127.0.0.1:8787 {
 			uri /app/api/admin-check
-			header_up X-Forwarded-Proto {scheme}
+			# A plain question, not a page: without these Nova Bot would send a browser's page request on to Nova Agent
+			header_up -Sec-Fetch-Dest
+			header_up -Sec-Fetch-Mode
+			header_up Accept application/json
 		}
 		handle /vps-desktop/websockify {
 			reverse_proxy 127.0.0.1:6081
