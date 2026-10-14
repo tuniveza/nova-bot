@@ -107,6 +107,10 @@ describe("which addresses go to the PC", () => {
     for (const path of ["/fixer-api/state", "/fixer-api/jobs/20261011-ab12cd34", "/fixer-api/shots/20261011-ab12cd34/after-notes-390.png"]) expect(relayRule("GET", path).admin).toBe(true);
     for (const path of ["/actions/fixer/check", "/actions/fixer/settings", "/actions/fixer/quests", "/actions/fixer/quests/q-1", "/actions/fixer/suggestions/q-1", "/actions/fixer/issues/i-1", "/actions/fixer/jobs/j-1"]) expect(relayRule("POST", path).admin).toBe(true);
     expect(relayRule("POST", "/fixer-api/state")).toBeNull();
+    // Computer: its one read-only address, admins only
+    expect(relayRule("GET", "/computer-api/state").admin).toBe(true);
+    expect(relayRule("POST", "/computer-api/state")).toBeNull();
+    expect(relayRule("GET", "/computer-api/other")).toBeNull();
     expect(relayRule("GET", "/actions/fixer/jobs/j-1")).toBeNull();
     expect(relayRule("GET", "/fixer-api/shots/j/../../x.png")).toBeNull();
     expect(relayRule("GET", "/fixer/")).toBeNull();

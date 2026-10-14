@@ -89,6 +89,13 @@ set -euo pipefail
 chown root:root /usr/local/sbin/nova-deploy-here && chmod 755 /usr/local/sbin/nova-deploy-here
 visudo -cqf /etc/nova-agent/sudoers.new
 install -m 440 -o root -g root /etc/nova-agent/sudoers.new /etc/sudoers.d/nova-agent && rm /etc/nova-agent/sudoers.new
+# Computer (na src/computer.ts) shows the Claude sessions running in nova-agent's tmux. The service
+# has its own private /tmp, so tmux's folder is shared into it (kept at boot, before tmux starts)
+uid=$(id -u nova-agent)
+echo "d /tmp/tmux-$uid 0700 nova-agent nova-agent -" > /etc/tmpfiles.d/nova-agent-tmux.conf
+systemd-tmpfiles --create /etc/tmpfiles.d/nova-agent-tmux.conf
+install -d /etc/systemd/system/nova-agent.service.d
+printf '[Service]\nBindPaths=-/tmp/tmux-%s\n' "$uid" > /etc/systemd/system/nova-agent.service.d/tmux.conf
 systemctl daemon-reload
 REMOTE
 
