@@ -111,6 +111,8 @@ describe("which addresses go to the PC", () => {
     expect(relayRule("GET", "/computer-api/state").admin).toBe(true);
     expect(relayRule("POST", "/computer-api/state")).toBeNull();
     expect(relayRule("GET", "/computer-api/other")).toBeNull();
+    for (const v of ["files", "file", "image", "procs", "disk"]) expect(relayRule("GET", `/computer-api/${v}`).admin).toBe(true);
+    expect(relayRule("POST", "/computer-api/files")).toBeNull();
     expect(relayRule("GET", "/actions/fixer/jobs/j-1")).toBeNull();
     expect(relayRule("GET", "/fixer-api/shots/j/../../x.png")).toBeNull();
     expect(relayRule("GET", "/fixer/")).toBeNull();

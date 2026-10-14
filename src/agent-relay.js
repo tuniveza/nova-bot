@@ -64,8 +64,8 @@ export const RELAYED = [
   // The Fixer: its state, pictures and taps (Approve, Reject, Ask for a tweak...) are for admins
   { methods: ["GET"], path: /^\/fixer-api\/(state|jobs\/[\w-]+|shots\/[\w-]+\/[\w-]+\.png)$/, admin: true },
   { methods: ["POST"], path: /^\/actions\/fixer\/(check|settings|quests|(quests|suggestions|issues|jobs)\/[\w-]+)$/, admin: true },
-  // Computer: the VPS at a glance (Nova Agent's src/computer.ts), read-only, admins only
-  { methods: ["GET"], path: /^\/computer-api\/state$/, admin: true },
+  // Computer: the VPS at a glance and its read-only views (Nova Agent's src/computer.ts and computer-explore.ts), admins only
+  { methods: ["GET"], path: /^\/computer-api\/(state|files|file|image|procs|disk)$/, admin: true },
   // Social posts' pictures and videos, kept on the studio computer (src/social-media.ts in Nova
   // Agent): see them, add one, take one out of a draft
   { methods: ["GET"], path: /^\/social-media\/[a-f0-9]{32}\.(jpg|png|webp|gif|mp4|mov)$/ },
