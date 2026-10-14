@@ -1518,7 +1518,9 @@ async function novaBuild(request, env) {
   return buildId;
 }
 export async function withBuild(res, request, env) {
-  if (!res || !(res.headers.get("Content-Type") || "").includes("text/html")) return res;
+  // (a page the browser already has comes back as 304 Not Modified: it says the deploy too, so the
+  // browser's copy is told about a newer deploy whose page didn't change but whose files did)
+  if (!res || !(res.status === 304 || (res.headers.get("Content-Type") || "").includes("text/html"))) return res;
   const build = await novaBuild(request, env);
   if (!build) return res;
   const out = new Response(res.body, res);

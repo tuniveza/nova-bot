@@ -63,6 +63,11 @@ describe("Nova's pages say their deploy", () => {
     expect(res.headers.get("X-Nova-Build")).toBe("abc123");
     expect(await res.text()).toBe("<!doctype html>");
   });
+  it("a page the browser already has (304) says it too, so a newer deploy is noticed even when the page didn't change", async () => {
+    const res = await withBuild(new Response(null, { status: 304 }), req, env);
+    expect(res.status).toBe(304);
+    expect(res.headers.get("X-Nova-Build")).toBe("abc123");
+  });
   it("anything that isn't a page (a redirect, a file) is left as it is", async () => {
     const moved = Response.redirect("https://nova.test/agent/?open=%2Fcalendar%2F", 302);
     expect(await withBuild(moved, req, env)).toBe(moved);
