@@ -40,7 +40,7 @@ if [ ! -s /srv/nova/mail.env ]; then umask 077; printf 'MAIL_KEY=%s\nMAIL_PORT=8
 chown nova:nova /srv/nova/mail.env; chmod 600 /srv/nova/mail.env
 mailkey=$(grep '^MAIL_KEY=' /srv/nova/mail.env | cut -d= -f2-)
 touch /srv/nova/secrets.env
-for kv in "RESEND_API_URL=http://127.0.0.1:8790" "RESEND_API_KEY=$mailkey" "MAIL_FIRST=vps"; do
+for kv in "MAIL_API_URL=http://127.0.0.1:8790" "MAIL_KEY=$mailkey" "MAIL_FIRST=vps"; do
   k=${kv%%=*}; { grep -v "^$k=" /srv/nova/secrets.env || true; echo "$kv"; } > /srv/nova/secrets.env.new && mv /srv/nova/secrets.env.new /srv/nova/secrets.env
 done
 unset mailkey

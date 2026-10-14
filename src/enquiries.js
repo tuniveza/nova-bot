@@ -173,7 +173,7 @@ export function consentSource(page) {
   return "NovaBot chat" + (page ? " on " + String(page).slice(0, 200) : "");
 }
 
-// Email a copy of the enquiry to the studio, if it's set up (Resend)
+// Email a copy of the enquiry to the studio, if it's set up (the studio's own mail server)
 async function emailTeam(env, enquiry) {
   if (!emailIsSetUp(env)) return;
   const lines = [
@@ -199,7 +199,7 @@ async function emailTeam(env, enquiry) {
 }
 
 export function emailIsSetUp(env) {
-  return Boolean(env.RESEND_API_KEY && env.ENQUIRY_EMAIL_TO);
+  return Boolean(mailReady(env) && env.ENQUIRY_EMAIL_TO);
 }
 
 export function emailRecipients(env) {
@@ -212,7 +212,7 @@ export function emailRecipients(env) {
 // For the "Send a test email" button on the admin page
 export async function sendTestEmail(env) {
   if (!emailIsSetUp(env)) {
-    return { ok: false, message: "Email copies aren't set up yet: add the RESEND_API_KEY and ENQUIRY_EMAIL_TO secrets (see README-ENQUIRIES.md)." };
+    return { ok: false, message: "Email copies aren't set up yet: the mail server (MAIL_API_URL, MAIL_KEY) and ENQUIRY_EMAIL_TO are needed." };
   }
   const result = await sendEmail(env, {
     subject: "NovaBot test email",
@@ -221,30 +221,35 @@ export async function sendTestEmail(env) {
   return result.ok ? { ok: true, message: `Test email sent to ${emailRecipients(env).join(", ")}. Check the inbox (and spam folder).` } : result;
 }
 
-// Send an email through Resend. To the studio, unless `to` says otherwise (a reply to a
-// customer goes to their address only). `idempotencyKey` makes Resend send it at most once
-// however many times it's asked; `headers` are extra email headers (e.g. List-Unsubscribe);
-// `html` is an HTML version alongside the text (a campaign's test email).
-// Where single emails are handed over: Resend, or (on the VPS, RESEND_API_URL) the VPS's own
-// mail service, which takes the very same request (vps/mail/server.mjs)
+// Send an email through the studio's own mail server (on the VPS: vps/mail/server.mjs, which hands
+// it to Postfix). To the studio, unless `to` says otherwise (a reply to a customer goes to their
+// address only). `idempotencyKey` makes the mail server send it at most once however many times
+// it's asked; `headers` are extra email headers (e.g. List-Unsubscribe); `html` is an HTML version
+// alongside the text.
+//
+// MAIL_API_URL (e.g. http://127.0.0.1:8790) is where it's handed over and MAIL_KEY the key it
+// wants. (The names before: RESEND_API_URL and RESEND_API_KEY, still read so nothing breaks while
+// the server's settings are renamed.)
 export function mailApiUrl(env) {
-  const base = String(env.RESEND_API_URL || "").trim().replace(/\/+$/, "");
-  return /^https?:\/\//.test(base) ? base : "https://api.resend.com";
+  const base = String(env.MAIL_API_URL || env.RESEND_API_URL || "").trim().replace(/\/+$/, "");
+  return /^https?:\/\//.test(base) ? base : "";
 }
-export const ownMailServer = (env) => mailApiUrl(env) !== "https://api.resend.com";
+export const mailKey = (env) => String(env.MAIL_KEY || env.RESEND_API_KEY || "").trim();
+// The mail server is set up: where it is, and its key
+export const mailReady = (env) => Boolean(mailApiUrl(env) && mailKey(env));
 
 export async function sendEmail(env, { subject, text, html, replyTo, to, from, headers, idempotencyKey }) {
-  const who = ownMailServer(env) ? "The studio's mail server" : "Resend";
+  if (!mailReady(env)) return { ok: false, message: "The studio's mail server isn't set up (MAIL_API_URL and MAIL_KEY)." };
   try {
     const res = await fetch(mailApiUrl(env) + "/emails", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY.trim()}`,
+        Authorization: `Bearer ${mailKey(env)}`,
         "Content-Type": "application/json",
         ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       },
       body: JSON.stringify({
-        from: from || env.ENQUIRY_EMAIL_FROM || "NovaBot <onboarding@resend.dev>",
+        from: from || env.ENQUIRY_EMAIL_FROM || "Novacane Studios <hello@novacane.co.uk>",
         to: to || emailRecipients(env),
         ...(replyTo ? { reply_to: replyTo } : {}),
         subject,
@@ -260,14 +265,14 @@ export async function sendEmail(env, { subject, text, html, replyTo, to, from, h
       } catch {}
       return { ok: true, id };
     }
-    // Resend explains what's wrong (e.g. sending to an address it doesn't allow yet)
+    // The mail server says what's wrong (e.g. an address it won't send to)
     let reason = `error ${res.status}`;
     try {
       reason = (await res.json()).message || reason;
     } catch {}
-    return { ok: false, message: `${who} didn't send it: ${reason}` };
+    return { ok: false, status: res.status, message: `The studio's mail server didn't send it: ${reason}` };
   } catch (err) {
-    return { ok: false, message: `Couldn't reach ${who === "Resend" ? "Resend" : "the studio's mail server"}: ` + err.message };
+    return { ok: false, status: 0, message: "Couldn't reach the studio's mail server: " + err.message };
   }
 }
 

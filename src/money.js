@@ -33,7 +33,7 @@
 
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
-import { emailRecipients, sendEmail } from "./enquiries.js";
+import { emailRecipients, mailReady, sendEmail } from "./enquiries.js";
 import { sendStudioEmail } from "./google/gmail.js";
 import { pounds as poundsText, toPence } from "./clients.js";
 import { createInvoiceCheckout, stripeOffline } from "./nova/stripe.js";
@@ -473,8 +473,8 @@ export async function editInvoice(env, by, id, input) {
 export function invoiceFrom(env) {
   return String(env.INVOICE_FROM || env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || "").trim();
 }
-export const emailReady = (env) => Boolean(env.RESEND_API_KEY && invoiceFrom(env));
-const NOT_READY = "Emails aren't set up: Nova Bot needs its Resend key (RESEND_API_KEY) and a from address (INVOICE_FROM, or the enquiry replies' ENQUIRY_REPLY_FROM).";
+export const emailReady = (env) => Boolean(mailReady(env) && invoiceFrom(env));
+const NOT_READY = "Emails aren't set up: Nova Bot needs the studio's mail server (MAIL_API_URL, MAIL_KEY) and a from address (INVOICE_FROM, or the enquiry replies' ENQUIRY_REPLY_FROM).";
 function replyTo(env, settings) {
   return settings.business.email || env.ENQUIRY_REPLY_TO || emailRecipients(env)[0] || undefined;
 }
@@ -611,7 +611,7 @@ export async function sendApprovedInvoice(env, id) {
   if (!emailReady(env)) return failWith(NOT_READY);
   const settings = await readSettings(env);
   const email = invoiceEmail(env, settings, row);
-  // (from the studio's Gmail when that's switched on: src/google/gmail.js; otherwise Resend)
+  // (the studio's own mail server, with Gmail as the backup: src/google/gmail.js)
   const result = await sendStudioEmail(env, {
     to: [row.bill_email],
     from: invoiceFrom(env),

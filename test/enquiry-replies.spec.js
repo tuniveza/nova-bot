@@ -10,22 +10,22 @@ import { STAFF_COOKIE } from "./sign-in.js";
 
 const BASE = "https://novacane-worker.test";
 const AGENT_KEY = "agent-nova-test-key";
-// Email set up (never real: every call to Resend is caught below)
-const EMAIL_ENV = { RESEND_API_KEY: "re_test_key", ENQUIRY_EMAIL_TO: "studio@novacane.test, owner@novacane.test", ENQUIRY_EMAIL_FROM: "Novacane Studios <hello@novacane.test>" };
+// Email set up (never real: every call to the mail server is caught below)
+const EMAIL_ENV = { MAIL_KEY: "re_test_key", ENQUIRY_EMAIL_TO: "studio@novacane.test, owner@novacane.test", ENQUIRY_EMAIL_FROM: "Novacane Studios <hello@novacane.test>" };
 
-// What Resend was asked to send, and how it answers next
-let resendCalls = [];
-let resendAnswer = () => new Response(JSON.stringify({ id: "email_" + resendCalls.length }), { status: 200 });
+// What the mail server was asked to send, and how it answers next
+let mailCalls = [];
+let mailAnswer = () => new Response(JSON.stringify({ id: "email_" + mailCalls.length }), { status: 200 });
 
 beforeEach(async () => {
-	resendCalls = [];
-	resendAnswer = () => new Response(JSON.stringify({ id: "email_" + resendCalls.length }), { status: 200 });
+	mailCalls = [];
+	mailAnswer = () => new Response(JSON.stringify({ id: "email_" + mailCalls.length }), { status: 200 });
 	vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-		if (String(url) === "https://api.resend.com/emails") {
-			resendCalls.push({ headers: init.headers, body: JSON.parse(init.body) });
+		if (String(url) === "http://mail.test/emails") {
+			mailCalls.push({ headers: init.headers, body: JSON.parse(init.body) });
 			// A little wait, so two presses at once really overlap
 			await new Promise((r) => setTimeout(r, 20));
-			return resendAnswer();
+			return mailAnswer();
 		}
 		throw new Error("Unexpected fetch in test: " + url);
 	});
@@ -95,7 +95,7 @@ describe("Staff replying from Portal", () => {
 		expect(res.status).toBe(200);
 		expect(res.data.message).toMatchObject({ direction: "out", status: "sent", created_by: "staff", author_staff_id: "test-admin", approved_by: "test-admin", attempts: 1 });
 		expect(res.data.message.sent_at).toMatch(/Z$/);
-		expect(resendCalls).toHaveLength(1);
+		expect(mailCalls).toHaveLength(1);
 		expect((await enquiry(id)).status).toBe("replied");
 		// The thread shows it, with who sent it
 		const thread = await app("enquiries/thread?id=" + id);
@@ -109,14 +109,14 @@ describe("Staff replying from Portal", () => {
 		expect((await app("enquiries/note", { body: { id, body: "Hello", key: key() }, cookie: null })).status).toBe(401);
 		expect((await app("enquiries/thread?id=" + id, { cookie: null })).status).toBe(401);
 		expect((await app("enquiries/reply", { body: { id, body: "Hello" }, cookie: "nova_session=not-a-real-session" })).status).toBe(401);
-		expect(resendCalls).toHaveLength(0);
+		expect(mailCalls).toHaveLength(0);
 		expect(await messages(id)).toHaveLength(0);
 	});
 
 	it("another website can't send for a signed-in browser (Origin check)", async () => {
 		const id = await addEnquiry();
 		expect((await app("enquiries/reply", { body: { id, body: "Hello", key: key() }, origin: "https://evil.example" })).status).toBe(403);
-		expect(resendCalls).toHaveLength(0);
+		expect(mailCalls).toHaveLength(0);
 	});
 
 	it("an app's sign-in token (not a browser) can read but can't send", async () => {
@@ -129,7 +129,7 @@ describe("Staff replying from Portal", () => {
 		const headers = { Authorization: "Bearer " + token };
 		expect((await app("enquiries/thread?id=" + id, { cookie: null, headers })).status).toBe(200);
 		expect((await app("enquiries/reply", { body: { id, body: "Hello", key: key() }, cookie: null, headers })).status).toBe(403);
-		expect(resendCalls).toHaveLength(0);
+		expect(mailCalls).toHaveLength(0);
 	});
 
 	it("a double click on Send (the same key twice, at once) sends one email", async () => {
@@ -138,7 +138,7 @@ describe("Staff replying from Portal", () => {
 		const [a, b] = await Promise.all([app("enquiries/reply", { body: { id, body: "Once only", key: k } }), app("enquiries/reply", { body: { id, body: "Once only", key: k } })]);
 		expect(a.status).toBe(200);
 		expect(b.status).toBe(200);
-		expect(resendCalls).toHaveLength(1);
+		expect(mailCalls).toHaveLength(1);
 		expect(await messages(id)).toHaveLength(1);
 	});
 
@@ -146,7 +146,7 @@ describe("Staff replying from Portal", () => {
 		const id = await addEnquiry();
 		const res = await app("enquiries/note", { body: { id, body: "Called them, they'll book Friday", key: key() } });
 		expect(res.data.message).toMatchObject({ direction: "note", status: null, author_name: "Test Admin" });
-		expect(resendCalls).toHaveLength(0);
+		expect(mailCalls).toHaveLength(0);
 		expect((await enquiry(id)).status).toBe("new");
 	});
 });
@@ -155,14 +155,14 @@ describe("Email: only to the customer, with why and how to stop", () => {
 	it("goes only to the enquiry's own address, from the studio, replies to the studio inbox", async () => {
 		const id = await addEnquiry({ email: "jordan@example.com" });
 		await app("enquiries/reply", { body: { id, body: "Hello Jordan", key: key() } });
-		const sent = resendCalls[0].body;
+		const sent = mailCalls[0].body;
 		expect(sent.to).toEqual(["jordan@example.com"]);
 		expect(sent.cc).toBeUndefined();
 		expect(sent.bcc).toBeUndefined();
 		expect(sent.from).toBe("Novacane Studios <hello@novacane.test>");
 		expect(sent.reply_to).toBe("studio@novacane.test");
 		expect(sent.subject).toBe("Re: EP mixing");
-		expect(resendCalls[0].headers["Idempotency-Key"]).toMatch(/^enquiry-reply-\d+-1$/);
+		expect(mailCalls[0].headers["Idempotency-Key"]).toMatch(/^enquiry-reply-\d+-1$/);
 		// Never the studio's own list
 		expect(JSON.stringify(sent.to)).not.toContain("owner@novacane.test");
 	});
@@ -170,7 +170,7 @@ describe("Email: only to the customer, with why and how to stop", () => {
 	it("says why they're getting it (the enquiry's UK date) and has a working stop link", async () => {
 		const id = await addEnquiry();
 		await app("enquiries/reply", { body: { id, body: "Hello Jordan", key: key() } });
-		const { text, headers } = resendCalls[0].body;
+		const { text, headers } = mailCalls[0].body;
 		expect(text).toContain("Hello Jordan");
 		// 23:30 UTC on the 9th is the 10th in London
 		expect(text).toContain("You're getting this because you sent Novacane Studios an enquiry on 10 October 2026");
@@ -194,7 +194,7 @@ describe("Email: only to the customer, with why and how to stop", () => {
 	it("an email app's one-click unsubscribe works too", async () => {
 		const id = await addEnquiry();
 		await app("enquiries/reply", { body: { id, body: "Hello", key: key() } });
-		const url = new URL(resendCalls[0].body.headers["List-Unsubscribe"].slice(1, -1));
+		const url = new URL(mailCalls[0].body.headers["List-Unsubscribe"].slice(1, -1));
 		const res = await page(url.pathname + url.search, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "List-Unsubscribe=One-Click" });
 		expect(res.status).toBe(200);
 		expect((await enquiry(id)).do_not_contact_at).not.toBeNull();
@@ -222,7 +222,7 @@ describe("Don't contact", () => {
 		expect((await app("enquiries/reply", { body: { id, body: "Hello", key: key() } })).status).toBe(409);
 		expect((await app("enquiries/draft/approve", { body: { messageId: draft.id } })).status).toBe(409);
 		expect((await agent(`/nova-agent/enquiries/${id}/drafts`, { body: "Another" })).status).toBe(409);
-		expect(resendCalls).toHaveLength(0);
+		expect(mailCalls).toHaveLength(0);
 		// Staff can switch their own one off again
 		expect((await app("enquiries/contact", { body: { id, doNotContact: false } })).status).toBe(200);
 		expect((await app("enquiries/reply", { body: { id, body: "Hello", key: key() } })).data.message.status).toBe("sent");
@@ -233,17 +233,17 @@ describe("Don't contact", () => {
 		await env.DB.prepare("UPDATE enquiries SET do_not_contact_at = ?, do_not_contact_by = 'customer' WHERE id = ?").bind(new Date().toISOString(), id).run();
 		expect((await app("enquiries/contact", { body: { id, doNotContact: false } })).status).toBe(409);
 		expect((await app("enquiries/reply", { body: { id, body: "Hello", key: key() } })).status).toBe(409);
-		expect(resendCalls).toHaveLength(0);
+		expect(mailCalls).toHaveLength(0);
 	});
 
 	it("a failed reply can't be retried once they've asked to stop", async () => {
 		const id = await addEnquiry();
-		resendAnswer = () => new Response(JSON.stringify({ message: "Rate limited" }), { status: 429 });
+		mailAnswer = () => new Response(JSON.stringify({ message: "Rate limited" }), { status: 429 });
 		const failed = (await app("enquiries/reply", { body: { id, body: "Hello", key: key() } })).data.message;
 		await app("enquiries/contact", { body: { id, doNotContact: true } });
-		resendAnswer = () => new Response("{}", { status: 200 });
+		mailAnswer = () => new Response("{}", { status: 200 });
 		expect((await app("enquiries/retry", { body: { messageId: failed.id } })).status).toBe(409);
-		expect(resendCalls).toHaveLength(1);
+		expect(mailCalls).toHaveLength(1);
 	});
 });
 
@@ -260,7 +260,7 @@ describe("Nova Agent's AI: drafts only", () => {
 		expect(res.data.portalUrl).toBe(`${BASE}/portal/?view=enquiries&enquiry=${id}`);
 		const [m] = await messages(id);
 		expect(m).toMatchObject({ status: "draft", created_by: "agent", author_staff_id: null, approved_by: null, sent_at: null });
-		expect(resendCalls).toHaveLength(0);
+		expect(mailCalls).toHaveLength(0);
 	});
 
 	it("can't approve or send through any route, with any body", async () => {
@@ -297,7 +297,7 @@ describe("Nova Agent's AI: drafts only", () => {
 			expect((await agent(path, { messageId: draft.id, id, body: "x" })).status, path).toBe(404);
 		}
 		expect((await messages(id)).map((m) => m.status)).toEqual(["draft"]);
-		expect(resendCalls).toHaveLength(0);
+		expect(mailCalls).toHaveLength(0);
 	});
 
 	it("staff see the draft, and Approve & send goes exactly once (double click)", async () => {
@@ -310,16 +310,16 @@ describe("Nova Agent's AI: drafts only", () => {
 			app("enquiries/draft/approve", { body: { messageId: draft.id, body: "Hi Jordan, see you Friday." } }),
 		]);
 		expect([a.status, b.status]).toEqual([200, 200]);
-		expect(resendCalls).toHaveLength(1);
+		expect(mailCalls).toHaveLength(1);
 		// What the person approved is what went
-		expect(resendCalls[0].body.text).toContain("Hi Jordan, see you Friday.");
+		expect(mailCalls[0].body.text).toContain("Hi Jordan, see you Friday.");
 		const [m] = await messages(id);
 		expect(m).toMatchObject({ status: "sent", created_by: "agent", approved_by: "test-admin", attempts: 1 });
 		// A later press (or a retry of the request) sends nothing more
 		const again = await app("enquiries/draft/approve", { body: { messageId: draft.id } });
 		expect(again.data.repeated).toBe(true);
 		expect((await app("enquiries/retry", { body: { messageId: draft.id } })).status).toBe(409);
-		expect(resendCalls).toHaveLength(1);
+		expect(mailCalls).toHaveLength(1);
 	});
 
 	it("drafts can be edited and discarded, and a discarded one can't be approved", async () => {
@@ -329,40 +329,40 @@ describe("Nova Agent's AI: drafts only", () => {
 		expect((await app("enquiries/draft/discard", { body: { messageId: draft.id } })).status).toBe(200);
 		expect((await app("enquiries/draft/approve", { body: { messageId: draft.id } })).status).toBe(404);
 		expect((await app("enquiries/thread?id=" + id)).data.messages).toHaveLength(0);
-		expect(resendCalls).toHaveLength(0);
+		expect(mailCalls).toHaveLength(0);
 	});
 });
 
 describe("Failed sends", () => {
-	it("are recorded with Resend's reason, and Retry sends them", async () => {
+	it("are recorded with the mail server's reason, and Retry sends them", async () => {
 		const id = await addEnquiry();
-		resendAnswer = () => new Response(JSON.stringify({ message: "The domain is not verified" }), { status: 403 });
+		mailAnswer = () => new Response(JSON.stringify({ message: "The domain is not verified" }), { status: 403 });
 		const failed = (await app("enquiries/reply", { body: { id, body: "Hello", key: key() } })).data.message;
 		expect(failed).toMatchObject({ status: "failed", attempts: 1 });
 		expect(failed.error).toContain("The domain is not verified");
 		expect((await enquiry(id)).status).toBe("new");
-		resendAnswer = () => new Response(JSON.stringify({ id: "ok" }), { status: 200 });
+		mailAnswer = () => new Response(JSON.stringify({ id: "ok" }), { status: 200 });
 		const retried = (await app("enquiries/retry", { body: { messageId: failed.id } })).data.message;
 		expect(retried).toMatchObject({ status: "sent", attempts: 2, error: null });
-		expect(resendCalls.map((c) => c.headers["Idempotency-Key"])).toEqual([`enquiry-reply-${failed.id}-1`, `enquiry-reply-${failed.id}-2`]);
+		expect(mailCalls.map((c) => c.headers["Idempotency-Key"])).toEqual([`enquiry-reply-${failed.id}-1`, `enquiry-reply-${failed.id}-2`]);
 		expect((await enquiry(id)).status).toBe("replied");
 	});
 
 	it("two Retry presses at once send one email", async () => {
 		const id = await addEnquiry();
-		resendAnswer = () => new Response("{}", { status: 500 });
+		mailAnswer = () => new Response("{}", { status: 500 });
 		const failed = (await app("enquiries/reply", { body: { id, body: "Hello", key: key() } })).data.message;
-		resendAnswer = () => new Response("{}", { status: 200 });
+		mailAnswer = () => new Response("{}", { status: 200 });
 		await Promise.all([app("enquiries/retry", { body: { messageId: failed.id } }), app("enquiries/retry", { body: { messageId: failed.id } })]);
-		expect(resendCalls).toHaveLength(2); // the failed try, then one retry
+		expect(mailCalls).toHaveLength(2); // the failed try, then one retry
 	});
 
 	it("with email not set up, the reply is kept as failed with the reason", async () => {
 		const id = await addEnquiry();
 		const res = await app("enquiries/reply", { body: { id, body: "Hello", key: key() }, extraEnv: {} });
 		expect(res.data.message.status).toBe("failed");
-		expect(res.data.message.error).toContain("RESEND_API_KEY");
-		expect(resendCalls).toHaveLength(0);
+		expect(res.data.message.error).toContain("MAIL_KEY");
+		expect(mailCalls).toHaveLength(0);
 	});
 });
 

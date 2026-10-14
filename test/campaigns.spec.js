@@ -1,48 +1,27 @@
-// Email campaigns on Resend, with an admin's approval (src/campaigns.js, src/resend-marketing.js,
-// src/fans.js, the /nova-agent/campaigns/* routes and Portal's /app/api/campaigns). Nothing goes to
-// Resend as a broadcast unless an admin, signed in to Portal in a browser, pressed Approve on
-// exactly what's saved. Only people who opted in are put into Resend, and unsubscribes come back.
+// Email campaigns through the studio's own mail server, with an admin's approval
+// (src/campaigns.js, src/fans.js, the /nova-agent/campaigns/* routes and Portal's
+// /app/api/campaigns). Nothing is sent unless an admin, signed in to Portal in a browser, pressed
+// Approve on exactly what's saved. Only people who opted in get it, a few at a time, each with
+// their own unsubscribe link that works.
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
-import { campaignEmail, campaignsOnSchedule, checkScheduled, refreshStats, sendApproved } from "../src/campaigns.js";
+import { campaignEmail, campaignsOnSchedule, sendApproved, unsubscribeUrl } from "../src/campaigns.js";
 import { sha256 } from "../src/portal/auth.js";
 import { STAFF_COOKIE } from "./sign-in.js";
 
 const BASE = "https://novacane-worker.test";
 const KEY = "agent-nova-test-key";
-const MARKETING_KEY = "re_test_marketing_secret_123";
-const SEND_KEY = "re_test_sending_secret_456";
-const RESEND_ENV = { RESEND_MARKETING_KEY: MARKETING_KEY, RESEND_API_KEY: SEND_KEY, CAMPAIGN_FROM: "Novacane Studios <news@novacane.co.uk>" };
+const MAIL_KEY = "mail_test_secret_456";
+const MAIL_ENV = { MAIL_KEY, CAMPAIGN_FROM: "Novacane Studios <news@novacane.co.uk>" };
 
-// ----- A fake Resend -----
+// ----- A fake mail server -----
 
-let segments; // id -> name
-let contacts; // id -> { id, email, first_name, last_name, unsubscribed, segments: Set, properties }
-let broadcasts; // id -> { id, segment_id, subject, html, text, from, status, scheduled_at, sent_at }
-let recipients; // broadcast id -> type -> [{ id, email }]
-let calls; // "METHOD /path" for every call to Resend
 let emails; // bodies POSTed to /emails
-let scripted; // answers to give first: [{ status, body, headers }]
-let nextId;
+let keys; // their Idempotency-Keys
+let answers; // answers to give first: [status]
 
-const reply = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", ...headers } });
-const findContact = (ref) => contacts.get(ref) || [...contacts.values()].find((c) => c.email === decodeURIComponent(ref).toLowerCase());
-const contactShape = (c) => ({ object: "contact", id: c.id, email: c.email, first_name: c.first_name || null, last_name: c.last_name || null, created_at: "2026-10-01 10:00:00.000+00", unsubscribed: c.unsubscribed });
-const page = (list, u) => {
-	const limit = Number(u.searchParams.get("limit")) || 20;
-	const after = u.searchParams.get("after");
-	const start = after ? list.findIndex((x) => x.id === after) + 1 : 0;
-	const data = list.slice(start, start + limit);
-	return reply({ object: "list", has_more: start + limit < list.length, data });
-};
-
-// A contact already in Resend (as if put there earlier)
-function resendContact(email, { unsubscribed = false, inSegments = [], properties = {} } = {}) {
-	const id = `contact-${nextId++}`;
-	contacts.set(id, { id, email, unsubscribed, segments: new Set(inSegments), properties });
-	return id;
-}
+const reply = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 
 beforeEach(async () => {
 	await env.DB.batch([
@@ -54,103 +33,26 @@ beforeEach(async () => {
 		env.DB.prepare("DELETE FROM clients"),
 		env.DB.prepare("DELETE FROM settings"),
 	]);
-	segments = new Map();
-	contacts = new Map();
-	broadcasts = new Map();
-	recipients = new Map();
-	calls = [];
 	emails = [];
-	scripted = [];
-	nextId = 1;
+	keys = [];
+	answers = [];
 	vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init = {}) => {
 		const u = new URL(String(url));
-		if (u.origin !== "https://api.resend.com") return reply({ error: "not_found" }, 404);
-		const method = init.method || "GET";
-		const path = u.pathname;
-		const body = init.body ? JSON.parse(init.body) : null;
-		calls.push(`${method} ${path}`);
-		if (path === "/emails") {
-			expect(init.headers.Authorization).toBe(`Bearer ${SEND_KEY}`);
-			emails.push(body);
-			return reply({ id: `email-${nextId++}` });
-		}
-		expect(init.headers.Authorization).toBe(`Bearer ${MARKETING_KEY}`);
-		if (scripted.length) {
-			const next = scripted.shift();
-			return reply(next.body ?? {}, next.status, next.headers);
-		}
-		if (path === "/segments" && method === "GET") return reply({ object: "list", data: [...segments].map(([id, name]) => ({ id, name })) });
-		if (path === "/segments" && method === "POST") {
-			const id = `segment-${nextId++}`;
-			segments.set(id, body.name);
-			return reply({ object: "segment", id, name: body.name });
-		}
-		if (path === "/contact-properties" && method === "POST") return reply({ object: "contact_property", id: `property-${body.key}` });
-		if (path === "/contacts" && method === "GET") {
-			const sid = u.searchParams.get("segment_id");
-			return page([...contacts.values()].filter((c) => c.segments.has(sid)).map(contactShape), u);
-		}
-		if (path === "/contacts" && method === "POST") {
-			if (findContact(body.email)) return reply({ statusCode: 409, name: "conflict", message: "Contact already exists" }, 409);
-			const id = resendContact(body.email, { unsubscribed: body.unsubscribed === true, inSegments: (body.segments || []).map((s) => s.id), properties: { ...body.properties } });
-			Object.assign(contacts.get(id), { first_name: body.first_name, last_name: body.last_name });
-			return reply({ object: "contact", id });
-		}
-		const inSegment = path.match(/^\/contacts\/([^/]+)\/segments\/([^/]+)$/);
-		if (inSegment) {
-			const c = findContact(inSegment[1]);
-			if (!c) return reply({ message: "not found" }, 404);
-			if (method === "POST") c.segments.add(decodeURIComponent(inSegment[2]));
-			if (method === "DELETE") c.segments.delete(decodeURIComponent(inSegment[2]));
-			return reply({ id: c.id });
-		}
-		const contact = path.match(/^\/contacts\/([^/]+)$/);
-		if (contact) {
-			const c = findContact(contact[1]);
-			if (!c) return reply({ message: "not found" }, 404);
-			if (method === "GET") return reply({ ...contactShape(c), properties: Object.fromEntries(Object.entries(c.properties).map(([k, v]) => [k, { value: v, type: "string" }])) });
-			if (method === "PATCH") {
-				if ("unsubscribed" in body) c.unsubscribed = body.unsubscribed;
-				Object.assign(c.properties, body.properties || {});
-				return reply({ object: "contact", id: c.id });
-			}
-		}
-		if (path === "/broadcasts" && method === "POST") {
-			const id = `broadcast-${nextId++}`;
-			broadcasts.set(id, { id, ...body, status: "draft", scheduled_at: null, sent_at: null });
-			return reply({ id });
-		}
-		const send = path.match(/^\/broadcasts\/([^/]+)\/send$/);
-		if (send && method === "POST") {
-			const b = broadcasts.get(send[1]);
-			if (!b || b.status !== "draft") return reply({ message: "not a draft" }, 422);
-			Object.assign(b, body?.scheduled_at ? { status: "scheduled", scheduled_at: body.scheduled_at } : { status: "sent", sent_at: "2026-10-11 12:00:00.000+00" });
-			return reply({ id: b.id });
-		}
-		const listed = path.match(/^\/broadcasts\/([^/]+)\/recipients$/);
-		if (listed) return page(recipients.get(listed[1])?.[u.searchParams.get("type")] || [], u);
-		const one = path.match(/^\/broadcasts\/([^/]+)$/);
-		if (one) {
-			const b = broadcasts.get(one[1]);
-			if (!b) return reply({ message: "not found" }, 404);
-			if (method === "GET") return reply({ object: "broadcast", ...b });
-			if (method === "DELETE") {
-				if (!["draft", "scheduled"].includes(b.status)) return reply({ message: "can't delete a sent broadcast" }, 422);
-				broadcasts.delete(one[1]);
-				return reply({ object: "broadcast", id: b.id, deleted: true });
-			}
-		}
-		return reply({ message: "unknown route" }, 404);
+		if (u.origin !== "http://mail.test" || u.pathname !== "/emails") return reply({ error: "not_found" }, 404);
+		expect(init.headers.Authorization).toBe(`Bearer ${MAIL_KEY}`);
+		const status = answers.length ? answers.shift() : 200;
+		if (status !== 200) return reply({ message: `No (${status})` }, status);
+		emails.push(JSON.parse(init.body));
+		keys.push(init.headers["Idempotency-Key"]);
+		return reply({ id: `email-${emails.length}` });
 	});
 });
 
-afterEach(() => {
-	vi.restoreAllMocks();
-});
+afterEach(() => vi.restoreAllMocks());
 
 // ----- Calling the Worker -----
 
-async function call(request, extraEnv = RESEND_ENV) {
+async function call(request, extraEnv = MAIL_ENV) {
 	const ctx = createExecutionContext();
 	const res = await worker.fetch(request, { ...env, AGENT_NOVA_KEY: KEY, ...extraEnv }, ctx);
 	await waitOnExecutionContext(ctx);
@@ -170,12 +72,17 @@ function portal(route, { body, headers = { Cookie: STAFF_COOKIE }, extraEnv } = 
 	return call(new Request(`${BASE}/app/api/${route}`, init), extraEnv);
 }
 
-const ENV = () => ({ ...env, ...RESEND_ENV });
+const ENV = (extra = {}) => ({ ...env, ...MAIL_ENV, ...extra });
 const row = (id) => env.DB.prepare("SELECT * FROM email_campaigns WHERE id = ?").bind(id).first();
-const broadcastCalls = () => calls.filter((c) => c.startsWith("POST /broadcasts"));
 const later = (hours) => new Date(Date.now() + hours * 3600000).toISOString();
-const segmentId = (name) => [...segments].find(([, n]) => n === name)?.[0];
-const segmentEmails = (name) => [...contacts.values()].filter((c) => c.segments.has(segmentId(name))).map((c) => c.email).sort();
+const sentTo = () => emails.map((e) => e.to[0]).sort();
+// The every-minute sender, run until nothing more goes (at most `minutes` times)
+async function minutes(n = 10, at = Date.now(), extra = {}) {
+	for (let i = 0; i < n; i++) {
+		const r = await campaignsOnSchedule(ENV(extra), at);
+		if (!r?.sent) break;
+	}
+}
 
 // ----- People -----
 
@@ -236,7 +143,7 @@ describe("approval", () => {
 		expect(viaKey.status).toBe(401);
 		expect((await row(c.id)).status).toBe("pending_approval");
 		expect((await row(c.id)).approved_hash).toBeNull();
-		expect(broadcastCalls()).toEqual([]);
+		await minutes();
 		expect(emails).toEqual([]);
 	});
 
@@ -260,11 +167,11 @@ describe("approval", () => {
 		const edited = await portal(`campaigns/${c.id}/edit`, { body: { subject: "New single out this Friday" }, headers: staff });
 		expect(edited.data.campaign.status).toBe("pending_approval");
 		expect((await row(c.id)).status).toBe("pending_approval");
-		expect(broadcastCalls()).toEqual([]);
+		await minutes();
 		expect(emails).toEqual([]);
 	});
 
-	it("draft, pending_approval, rejected and edited-after-approval campaigns are never sent or scheduled", async () => {
+	it("draft, pending_approval, rejected and edited-after-approval campaigns are never sent", async () => {
 		const pending = await draft();
 		const rejected = await draft({ subject: "Not this one" });
 		expect((await portal(`campaigns/${rejected.id}/reject`, { body: { note: "Too soon" } })).data.campaign).toMatchObject({ status: "rejected", note: "Too soon", decidedBy: "test-admin" });
@@ -275,18 +182,17 @@ describe("approval", () => {
 		)
 			.bind(now, now)
 			.first();
-		// Approved and scheduled, then edited: back to waiting, and Resend's scheduled send is cancelled
+		// Approved for later, then edited: back to waiting, its list dropped
 		const edited = await draft({ subject: "Later", sendAt: later(48) });
 		expect((await portal(`campaigns/${edited.id}/approve`, { body: {} })).data.campaign.status).toBe("scheduled");
-		const before = broadcastCalls().length;
 		const after = await agent(`/nova-agent/campaigns/${edited.id}/edit`, { body: "Changed after the approval, by the AI." });
 		expect(after.data.campaign).toMatchObject({ status: "pending_approval", decidedBy: null });
-		expect(broadcasts.size).toBe(0);
+		expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM settings WHERE key LIKE 'campaign_queue:%'").first("n")).toBe(0);
 
 		// The sender, the cron and the agent can't move any of them
 		for (const id of [pending.id, rejected.id, draftId, edited.id]) await sendApproved(ENV(), id);
-		await campaignsOnSchedule(ENV(), Date.now() + 49 * 3600000);
-		expect(broadcastCalls().length).toBe(before);
+		await minutes(10, Date.now() + 49 * 3600000);
+		expect(emails).toEqual([]);
 		expect((await row(pending.id)).status).toBe("pending_approval");
 		expect((await row(rejected.id)).status).toBe("rejected");
 		expect((await row(draftId)).status).toBe("draft");
@@ -307,22 +213,39 @@ describe("the approval hash", () => {
 		expect(approved.approved_hash).toMatch(/^[0-9a-f]{64}$/);
 
 		await portal(`campaigns/${c.id}/edit`, { body: { subject: "A new subject" } });
-		const edited = await row(c.id);
-		expect(edited).toMatchObject({ status: "pending_approval", approved_hash: null, decided_by: null, broadcast_id: null });
-		expect(calls).toContain(`DELETE /broadcasts/${approved.broadcast_id}`);
+		expect(await row(c.id)).toMatchObject({ status: "pending_approval", approved_hash: null, decided_by: null });
 
 		// Something changes what's saved while it's 'approved' (with the old approval's hash): refused
 		await env.DB.prepare("UPDATE email_campaigns SET status = 'approved', approved_hash = ? WHERE id = ?").bind(approved.approved_hash, c.id).run();
-		const before = broadcastCalls().length;
 		const result = await sendApproved(ENV(), c.id);
 		expect(result.status).toBe("pending_approval");
 		expect(result.error).toMatch(/changed after it was approved/);
-		expect(broadcastCalls().length).toBe(before);
 		expect((await row(c.id)).approved_hash).toBeNull();
+
+		// …or while it's going out (changed behind the sender's back): it stops
+		const d = await draft({ subject: "Second" });
+		await portal(`campaigns/${d.id}/approve`, { body: {} });
+		await env.DB.prepare("UPDATE email_campaigns SET body = 'Sneaky change to the text after approval.' WHERE id = ?").bind(d.id).run();
+		await minutes();
+		expect(emails).toEqual([]);
+		expect(await row(d.id)).toMatchObject({ status: "failed" });
+		expect((await row(d.id)).error).toMatch(/changed after it was approved/);
+	});
+
+	it("can't be changed once its emails have started going out", async () => {
+		for (let i = 0; i < 3; i++) await addFan(`f${i}@example.com`);
+		const c = await draft();
+		await portal(`campaigns/${c.id}/approve`, { body: {} });
+		await campaignsOnSchedule(ENV({ CAMPAIGN_BATCH: "1" }));
+		expect(emails).toHaveLength(1);
+		const tried = await portal(`campaigns/${c.id}/edit`, { body: { subject: "Too late" } });
+		expect(tried.status).toBe(409);
+		expect(tried.data.error).toMatch(/going out right now \(1 sent so far\)/);
+		expect((await row(c.id)).status).toBe("scheduled");
 	});
 });
 
-// ===== 3. EXACTLY ONCE =====
+// ===== 3. EXACTLY ONCE, A FEW AT A TIME =====
 
 describe("approve", () => {
 	it("two presses at once send it exactly once", async () => {
@@ -330,42 +253,89 @@ describe("approve", () => {
 		const c = await draft();
 		const [a, b] = await Promise.all([portal(`campaigns/${c.id}/approve`, { body: {} }), portal(`campaigns/${c.id}/approve`, { body: {} })]);
 		expect([a.status, b.status]).toEqual([200, 200]);
-		expect(calls.filter((x) => x === "POST /broadcasts")).toHaveLength(1);
-		expect(calls.filter((x) => /^POST \/broadcasts\/.+\/send$/.test(x))).toHaveLength(1);
-		const saved = await row(c.id);
-		expect(saved).toMatchObject({ status: "sent", recipients: 1, decided_by: "test-admin" });
+		expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM settings WHERE key LIKE 'campaign_queue:%'").first("n")).toBe(1);
+		// Two cron runs at once: one takes the list, the other finds it taken
+		await Promise.all([campaignsOnSchedule(ENV()), campaignsOnSchedule(ENV())]);
+		await minutes();
+		expect(sentTo()).toEqual(["fan@example.com"]);
+		expect(await row(c.id)).toMatchObject({ status: "sent", recipients: 1, decided_by: "test-admin" });
 		// Pressed again later: still once
 		expect((await portal(`campaigns/${c.id}/approve`, { body: {} })).data.repeated).toBe(true);
 		await sendApproved(ENV(), c.id);
-		expect(calls.filter((x) => x === "POST /broadcasts")).toHaveLength(1);
+		await minutes();
+		expect(emails).toHaveLength(1);
 		const events = (await portal(`campaigns/${c.id}`)).data.log.map((l) => l.event);
-		expect(events).toEqual(["created", "submitted", "approved", "sent"]);
+		expect(events).toEqual(["created", "submitted", "approved", "scheduled", "sent"]);
 	});
 
-	it("waits and tries again when Resend says 429", async () => {
-		await addFan("fan@example.com");
+	it("goes out a batch a minute, showing how far it's got", async () => {
+		for (let i = 0; i < 5; i++) await addFan(`f${i}@example.com`);
 		const c = await draft();
-		scripted.push({ status: 429, body: { message: "Too many requests" }, headers: { "Retry-After": "0" } });
-		const { data } = await portal(`campaigns/${c.id}/approve`, { body: {} });
-		expect(data.campaign.status).toBe("sent");
+		const approved = await portal(`campaigns/${c.id}/approve`, { body: {} });
+		expect(approved.data.campaign).toMatchObject({ status: "scheduled", recipients: 5, sending: { sent: 0, total: 5 } });
+		await campaignsOnSchedule(ENV({ CAMPAIGN_BATCH: "2" }));
+		expect(emails).toHaveLength(2);
+		expect((await portal(`campaigns/${c.id}`)).data.campaign.sending).toEqual({ sent: 2, total: 5 });
+		await campaignsOnSchedule(ENV({ CAMPAIGN_BATCH: "2" }));
+		await campaignsOnSchedule(ENV({ CAMPAIGN_BATCH: "2" }));
+		expect(sentTo()).toEqual(["f0@example.com", "f1@example.com", "f2@example.com", "f3@example.com", "f4@example.com"]);
+		const done = (await portal(`campaigns/${c.id}`)).data.campaign;
+		expect(done).toMatchObject({ status: "sent", recipients: 5, sending: null });
+		expect(done.stats).toMatchObject({ sent: 5, failed: 0, skipped: 0 });
 	});
 
-	it("refuses before approving when Resend isn't set up or nobody has opted in", async () => {
+	it("waits for the next minute when the mail server can't take one, and gives up on an address it refuses", async () => {
+		await addFan("a@example.com");
+		await addFan("b@example.com");
+		const c = await draft();
+		await portal(`campaigns/${c.id}/approve`, { body: {} });
+		answers.push(503);
+		await campaignsOnSchedule(ENV());
+		expect(emails).toEqual([]);
+		expect((await row(c.id)).status).toBe("scheduled");
+		answers.push(422); // the next address is refused outright
+		await minutes();
+		expect(emails).toHaveLength(1);
+		const saved = await row(c.id);
+		expect(saved).toMatchObject({ status: "sent", recipients: 1 });
+		expect(JSON.parse(saved.stats)).toMatchObject({ sent: 1, failed: 1 });
+		// The same email asked for twice gets the same idempotency key (so the mail server sends it once)
+		expect(new Set(keys).size).toBe(keys.length);
+		expect(keys[0]).toMatch(new RegExp(`^campaign-${c.id}-[0-9a-f]{12}-[0-9a-f]{16}$`));
+	});
+
+	it("refuses before approving when the mail server isn't set up or nobody has opted in", async () => {
 		const c = await draft();
 		expect((await portal(`campaigns/${c.id}/approve`, { body: {} })).status).toBe(409); // no fans yet
 		await addFan("fan@example.com");
-		const notSetUp = await portal(`campaigns/${c.id}/approve`, { body: {}, extraEnv: {} });
+		const notSetUp = await portal(`campaigns/${c.id}/approve`, { body: {}, extraEnv: { MAIL_KEY: "" } });
 		expect(notSetUp.status).toBe(409);
-		expect(notSetUp.data.error).toMatch(/RESEND_MARKETING_KEY/);
+		expect(notSetUp.data.error).toMatch(/MAIL_API_URL and MAIL_KEY/);
 		expect((await row(c.id)).status).toBe("pending_approval");
-		expect(calls).toEqual([]);
+		expect(emails).toEqual([]);
+	});
+
+	it("a scheduled one waits for its time", async () => {
+		await addFan("fan@example.com");
+		const c = await draft({ sendAt: later(3) });
+		const approved = await portal(`campaigns/${c.id}/approve`, { body: {} });
+		expect(approved.data.campaign).toMatchObject({ status: "scheduled", recipients: 1, sentAt: null, sending: null });
+		await minutes();
+		expect(emails).toEqual([]);
+		// Its time has come (the real cron)
+		const ctx = createExecutionContext();
+		await worker.scheduled({ scheduledTime: Date.now() + 4 * 3600000, cron: "* * * * *" }, ENV(), ctx);
+		await waitOnExecutionContext(ctx);
+		await minutes(10, Date.now() + 4 * 3600000);
+		expect(sentTo()).toEqual(["fan@example.com"]);
+		expect((await row(c.id)).status).toBe("sent");
 	});
 });
 
 // ===== 4. ONLY OPTED-IN PEOPLE =====
 
-describe("who goes into Resend", () => {
-	it("confirmed fans and clients who said yes; pending or unsubscribed fans and clients who said no are left out or taken out", async () => {
+describe("who gets it", () => {
+	it("confirmed fans and clients who said yes; never pending or unsubscribed fans or clients who said no", async () => {
 		await addFan("fan@example.com", "confirmed", "Ava Stone");
 		await addFan("pending@example.com", "pending");
 		await addFan("gone@example.com", "unsubscribed");
@@ -374,81 +344,107 @@ describe("who goes into Resend", () => {
 		await addClient("both@example.com", 1);
 		await addFan("both@example.com");
 		const c = await draft({ audience: "everyone" });
-		const { data } = await portal(`campaigns/${c.id}/approve`, { body: {} });
-		expect(data.campaign).toMatchObject({ status: "sent", recipients: 3 });
-		expect(segmentEmails("Nova · Everyone")).toEqual(["both@example.com", "client@example.com", "fan@example.com"]);
-		const ava = [...contacts.values()].find((x) => x.email === "fan@example.com");
-		expect(ava).toMatchObject({ first_name: "Ava", last_name: "Stone", unsubscribed: false });
-		expect(ava.properties.why).toBe("you signed up for Novacane Studios news on 3 Oct 2026");
-		expect([...contacts.values()].find((x) => x.email === "client@example.com").properties.why).toBe("you said yes to studio news from Novacane Studios on 3 Oct 2026");
+		expect((await portal(`campaigns/${c.id}/approve`, { body: {} })).data.campaign).toMatchObject({ status: "scheduled", recipients: 3 });
+		await minutes();
+		expect(sentTo()).toEqual(["both@example.com", "client@example.com", "fan@example.com"]);
+		const ava = emails.find((e) => e.to[0] === "fan@example.com");
+		expect(ava.text).toContain("You're getting this because you signed up for Novacane Studios news on 3 Oct 2026.");
+		expect(emails.find((e) => e.to[0] === "client@example.com").text).toContain("you said yes to studio news from Novacane Studios on 3 Oct 2026");
 
-		// A client withdraws consent in Nova: the next send takes them out of the segment
+		// A client withdraws consent: the next one leaves them out
 		await env.DB.prepare("UPDATE clients SET marketing_consent = 0 WHERE email = 'client@example.com'").run();
+		emails = [];
 		const next = await draft({ audience: "everyone", subject: "Studio offer" });
-		expect((await portal(`campaigns/${next.id}/approve`, { body: {} })).data.campaign).toMatchObject({ status: "sent", recipients: 2 });
-		expect(segmentEmails("Nova · Everyone")).toEqual(["both@example.com", "fan@example.com"]);
+		await portal(`campaigns/${next.id}/approve`, { body: {} });
+		await minutes();
+		expect(sentTo()).toEqual(["both@example.com", "fan@example.com"]);
 		// Clients only: the one who's still a client and said yes
+		emails = [];
 		const third = await draft({ audience: "clients", subject: "Clients only" });
-		expect((await portal(`campaigns/${third.id}/approve`, { body: {} })).data.campaign).toMatchObject({ status: "sent", recipients: 1 });
-		expect(segmentEmails("Nova · Studio clients")).toEqual(["both@example.com"]);
-		// Nobody pending, unsubscribed or without consent was ever added
-		const all = [...contacts.values()].map((x) => x.email);
-		for (const email of ["pending@example.com", "gone@example.com", "no@example.com"]) expect(all).not.toContain(email);
-		// The segments were made once
-		expect(calls.filter((x) => x === "POST /segments")).toHaveLength(3);
+		await portal(`campaigns/${third.id}/approve`, { body: {} });
+		await minutes();
+		expect(sentTo()).toEqual(["both@example.com"]);
+	});
+
+	it("someone who unsubscribes while it's going out is skipped", async () => {
+		await addFan("a@example.com");
+		await addFan("b@example.com");
+		const c = await draft();
+		await portal(`campaigns/${c.id}/approve`, { body: {} });
+		await env.DB.prepare("UPDATE fans SET status = 'unsubscribed' WHERE email = 'b@example.com'").run();
+		await minutes();
+		expect(sentTo()).toEqual(["a@example.com"]);
+		expect(JSON.parse((await row(c.id)).stats)).toMatchObject({ sent: 1, skipped: 1 });
+		expect((await portal(`campaigns/${c.id}`)).data.log.at(-1).detail).toMatch(/1 unsubscribed before it reached them/);
 	});
 });
 
-// ===== 5. UNSUBSCRIBES COME BACK =====
+// ===== 5. UNSUBSCRIBING =====
 
-describe("unsubscribes", () => {
-	it("a fan who unsubscribed in Resend becomes 'unsubscribed'; a client's consent goes to no, logged as theirs", async () => {
+describe("unsubscribing", () => {
+	it("every email has its own link and the one-click headers; the link asks first, then a fan is unsubscribed", async () => {
 		await addFan("fan@example.com");
-		const clientId = await addClient("client@example.com", 1);
 		await addFan("stays@example.com");
-		const c = await draft({ audience: "everyone" });
+		const c = await draft();
 		await portal(`campaigns/${c.id}/approve`, { body: {} });
-		for (const x of contacts.values()) if (x.email !== "stays@example.com") x.unsubscribed = true;
+		await minutes();
+		const mine = emails.find((e) => e.to[0] === "fan@example.com");
+		const link = mine.headers["List-Unsubscribe"].slice(1, -1);
+		expect(link).toBe(await unsubscribeUrl(ENV(), "fan@example.com", c.id));
+		expect(mine.headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
+		expect(mine.text).toContain(`Unsubscribe: ${link}`);
+		expect(mine.html).toContain(`href="${link.replace(/&/g, "&amp;")}"`);
+		expect(mine.html).not.toContain("{{{");
+		// Someone else's link is a different one
+		expect(emails.find((e) => e.to[0] === "stays@example.com").headers["List-Unsubscribe"]).not.toContain(link);
 
-		await campaignsOnSchedule(ENV(), Date.now());
+		// Opening it (or a link scanner opening it) changes nothing
+		const opened = await call(new Request(link));
+		expect(opened.status).toBe(200);
+		expect(opened.text).toContain('action="/unsubscribe"');
+		expect((await env.DB.prepare("SELECT status FROM fans WHERE email = 'fan@example.com'").first()).status).toBe("confirmed");
+		// Pressing the button
+		const u = new URL(link);
+		const pressed = await call(new Request(`${BASE}/unsubscribe`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(Object.fromEntries(u.searchParams)).toString() }));
+		expect(pressed.status).toBe(200);
+		expect(pressed.text).toContain("You&#39;re unsubscribed");
 		expect((await env.DB.prepare("SELECT status, unsubscribed_at FROM fans WHERE email = 'fan@example.com'").first()).status).toBe("unsubscribed");
 		expect((await env.DB.prepare("SELECT status FROM fans WHERE email = 'stays@example.com'").first()).status).toBe("confirmed");
+		expect(JSON.parse((await row(c.id)).stats).unsubscribed).toBe(1);
+	});
+
+	it("an email app's one-click unsubscribe works straight away; a client's consent goes to no, logged as theirs", async () => {
+		const clientId = await addClient("client@example.com", 1);
+		const link = await unsubscribeUrl(ENV(), "client@example.com", 7);
+		const res = await call(new Request(link, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "List-Unsubscribe=One-Click" }));
+		expect(res.status).toBe(200);
 		const client = await env.DB.prepare("SELECT marketing_consent, consent_source, consent_by FROM clients WHERE id = ?").bind(clientId).first();
 		expect(client).toEqual({ marketing_consent: 0, consent_source: "Unsubscribed from a Nova email", consent_by: "customer" });
 		const log = await env.DB.prepare('SELECT consent, source, "by" FROM client_consent_log WHERE client_id = ? ORDER BY id DESC').bind(clientId).first();
 		expect(log).toEqual({ consent: 0, source: "Unsubscribed from a Nova email", by: "customer" });
-
-		// The next sync takes them out of the segment, and never subscribes them again
-		const next = await draft({ audience: "everyone", subject: "Another" });
-		expect((await portal(`campaigns/${next.id}/approve`, { body: {} })).data.campaign.recipients).toBe(1);
-		expect(segmentEmails("Nova · Everyone")).toEqual(["stays@example.com"]);
-		expect([...contacts.values()].filter((x) => x.email !== "stays@example.com").every((x) => x.unsubscribed)).toBe(true);
 	});
 
-	it("a client who says yes again later is subscribed again (only after a newer yes)", async () => {
-		const clientId = await addClient("client@example.com", 1);
-		const c = await draft({ audience: "clients" });
-		await portal(`campaigns/${c.id}/approve`, { body: {} });
-		[...contacts.values()][0].unsubscribed = true;
-		await campaignsOnSchedule(ENV(), Date.now());
-		expect((await env.DB.prepare("SELECT marketing_consent FROM clients WHERE id = ?").bind(clientId).first("marketing_consent"))).toBe(0);
-
-		const edited = await portal(`clients/${clientId}`, { body: { consent: { yes: true, source: "Said yes again at the studio" } } });
-		expect(edited.status).toBe(200);
-		const next = await draft({ audience: "clients", subject: "Welcome back" });
-		expect((await portal(`campaigns/${next.id}/approve`, { body: {} })).data.campaign.recipients).toBe(1);
-		expect([...contacts.values()][0].unsubscribed).toBe(false);
+	it("a changed or made-up link does nothing", async () => {
+		await addFan("fan@example.com");
+		await addFan("other@example.com");
+		const link = new URL(await unsubscribeUrl(ENV(), "fan@example.com", 3));
+		const other = btoa("other@example.com").replace(/=+$/, "");
+		for (const bad of [`${BASE}/unsubscribe?e=${other}&c=3&s=${link.searchParams.get("s")}`, `${BASE}/unsubscribe?e=${link.searchParams.get("e")}&c=4&s=${link.searchParams.get("s")}`, `${BASE}/unsubscribe`, `${BASE}/unsubscribe?e=x&c=1&s=nope`]) {
+			const r = await call(new Request(bad, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "List-Unsubscribe=One-Click" }));
+			expect(r.status).toBe(404);
+		}
+		expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM fans WHERE status = 'confirmed'").first("n"))).toBe(2);
 	});
 });
 
 // ===== 6. THE EMAIL =====
 
 describe("the email", () => {
-	it("has the header, the paragraphs, who it's from, why they're getting it and Resend's unsubscribe link", async () => {
+	it("has the header, the paragraphs, who it's from, why they're getting it and an unsubscribe link", async () => {
 		const { html, text } = campaignEmail({ subject: "News <3", audience: "fans", body: "Hi **all**!\n\nSee [our page](https://novacane.co.uk/a?b=1&c=2) or https://novacane.co.uk/x.\nNew line <script>" });
 		expect(html).toContain("Novacane Studios</div>");
-		expect(html).toContain("You're getting this because {{{contact.why|you signed up for news from Novacane Studios}}}. Novacane Studios, London. Unsubscribe:");
-		expect(html).toContain('href="{{{RESEND_UNSUBSCRIBE_URL}}}"');
+		expect(html).toContain("You're getting this because {{{why|you signed up for news from Novacane Studios}}}. Novacane Studios, London. Unsubscribe:");
+		expect(html).toContain('href="{{{unsubscribe_url}}}"');
 		expect(html).toContain("<strong>all</strong>");
 		expect(html).toContain('<a href="https://novacane.co.uk/a?b=1&amp;c=2"');
 		expect(html).toContain('<a href="https://novacane.co.uk/x"');
@@ -456,20 +452,19 @@ describe("the email", () => {
 		expect(html).not.toContain("<script>");
 		expect(html).toContain("<title>News &lt;3</title>");
 		expect(text).toContain("our page (https://novacane.co.uk/a?b=1&c=2)");
-		expect(text).toMatch(/Unsubscribe: \{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}$/);
+		expect(text).toMatch(/Unsubscribe: \{\{\{unsubscribe_url\}\}\}$/);
 	});
 
-	it("the broadcast Resend gets is that email, from the studio's address, to the audience's segment; Portal's preview fills in the placeholders", async () => {
+	it("goes from the studio's address with the reply-to; Portal's preview fills in the placeholders", async () => {
 		await addFan("fan@example.com");
 		const c = await draft();
 		const detail = await portal(`campaigns/${c.id}`);
 		expect(detail.data.previewHtml).toContain("Our new single is out on <strong>Friday</strong>");
 		expect(detail.data.previewHtml).not.toContain("{{{");
 		await portal(`campaigns/${c.id}/approve`, { body: {} });
-		const [b] = [...broadcasts.values()];
-		expect(b).toMatchObject({ from: "Novacane Studios <news@novacane.co.uk>", subject: "New single out Friday", segment_id: segmentId("Nova · Fans") });
-		expect(b.html).toContain("{{{RESEND_UNSUBSCRIBE_URL}}}");
-		expect(b.html).toContain("You're getting this because {{{contact.why|");
+		await minutes(10, Date.now(), { CAMPAIGN_REPLY_TO: "admin@kulturekingdom.uk" });
+		expect(emails[0]).toMatchObject({ from: "Novacane Studios <news@novacane.co.uk>", to: ["fan@example.com"], subject: "New single out Friday", reply_to: "admin@kulturekingdom.uk" });
+		expect(emails[0].html).toContain("Our new single is out on <strong>Friday</strong>");
 	});
 
 	it("Send me a test: once, to the admin's own address only, marked [TEST]; the campaign doesn't change", async () => {
@@ -481,7 +476,6 @@ describe("the email", () => {
 		expect(emails[0].html).not.toContain("{{{");
 		expect((await portal("campaigns/test-send", { body: { id: c.id } })).status).toBe(429);
 		expect((await row(c.id)).status).toBe("pending_approval");
-		expect(broadcastCalls()).toEqual([]);
 	});
 });
 
@@ -571,63 +565,35 @@ describe("fan sign-up (/join)", () => {
 	});
 });
 
-// ===== 8 AND 9. THE NUMBERS, AND SCHEDULED ONES =====
+// ===== 8. NOVA AGENT'S CONTEXT =====
 
 describe("after sending", () => {
-	it("the numbers are fetched from Resend (with pagination) and stored", async () => {
+	it("Nova Agent's context has the opted-in counts and how recent ones went", async () => {
 		await addFan("fan@example.com");
 		const c = await draft();
 		await portal(`campaigns/${c.id}/approve`, { body: {} });
-		const { broadcast_id } = await row(c.id);
-		const people = (n, type) => Array.from({ length: n }, (_, i) => ({ id: `${type}-${i}`, email: `p${i}@example.com` }));
-		recipients.set(broadcast_id, { sent: people(150, "s"), delivered: people(140, "d"), opened: people(60, "o"), clicked: people(12, "c"), bounced: people(2, "b"), unsubscribed: people(1, "u") });
-		await refreshStats(ENV());
-		const { stats } = (await portal(`campaigns/${c.id}`)).data.campaign;
-		expect(stats).toMatchObject({ sent: 150, delivered: 140, opened: 60, clicked: 12, bounced: 2, unsubscribed: 1, complained: 0 });
-		expect(stats.fetchedAt).toBeTruthy();
-		expect((await portal(`campaigns/${c.id}`)).data.log.at(-1)).toMatchObject({ event: "stats", by: "resend" });
-		// Nova Agent's context has it too
+		await minutes();
 		const context = await agent("/nova-agent/campaigns/context");
 		expect(context.data.audiences).toEqual({ fans: 1, clients: 0, everyone: 1 });
-		expect(context.data.recent[0].stats.opened).toBe(60);
+		expect(context.data.recent[0]).toMatchObject({ status: "sent", recipients: 1 });
+		expect(context.data.recent[0].stats.sent).toBe(1);
 		expect(context.data.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-	});
-
-	it("a scheduled campaign becomes 'sent' once Resend says so (the cron)", async () => {
-		await addFan("fan@example.com");
-		const c = await draft({ sendAt: later(3) });
-		const approved = await portal(`campaigns/${c.id}/approve`, { body: {} });
-		expect(approved.data.campaign).toMatchObject({ status: "scheduled", recipients: 1, sentAt: null });
-		const { broadcast_id } = await row(c.id);
-		expect(broadcasts.get(broadcast_id).scheduled_at).toBe((await row(c.id)).send_at);
-
-		// Not yet due: nothing
-		expect(await checkScheduled(ENV())).toBe(0);
-		// Its time has come, and Resend sent it
-		await env.DB.prepare("UPDATE email_campaigns SET send_at = ? WHERE id = ?").bind(new Date(Date.now() - 60000).toISOString(), c.id).run();
-		Object.assign(broadcasts.get(broadcast_id), { status: "sent", sent_at: "2026-10-11 15:00:00.123+00" });
-		const ctx = createExecutionContext();
-		await worker.scheduled({ scheduledTime: Date.now(), cron: "* * * * *" }, ENV(), ctx);
-		await waitOnExecutionContext(ctx);
-		expect(await row(c.id)).toMatchObject({ status: "sent", sent_at: "2026-10-11T15:00:00.123Z" });
-		expect((await portal(`campaigns/${c.id}`)).data.log.map((l) => l.event)).toContain("sent");
 	});
 });
 
 // ===== 10. HOW IT WORKS =====
 
 describe("How it works", () => {
-	it("lists Email newsletters on Resend without showing any key", async () => {
+	it("lists Email newsletters on the studio's own mail server without showing any key", async () => {
 		const { data, text } = await portal("services");
 		const line = data.services.find((s) => s.id === "newsletters");
 		expect(line).toMatchObject({ name: "Email newsletters", ready: true });
-		expect(line.tech).toMatch(/^Resend/);
+		expect(line.tech).toMatch(/own mail server/);
 		expect(line.detail).toContain("news@novacane.co.uk");
-		expect(text).not.toContain(MARKETING_KEY);
-		expect(text).not.toContain(SEND_KEY);
-		const bare = await portal("services", { extraEnv: {} });
+		expect(text).not.toContain(MAIL_KEY);
+		const bare = await portal("services", { extraEnv: { MAIL_KEY: "" } });
 		expect(bare.data.services.find((s) => s.id === "newsletters")).toMatchObject({ ready: false });
-		expect(bare.data.services.find((s) => s.id === "newsletters").detail).toMatch(/RESEND_MARKETING_KEY/);
+		expect(bare.data.services.find((s) => s.id === "newsletters").detail).toMatch(/MAIL_API_URL and MAIL_KEY/);
 	});
 });
 

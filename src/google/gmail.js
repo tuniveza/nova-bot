@@ -1,18 +1,18 @@
 // Gmail: approved emails go from the studio's Gmail, and customers' replies come back into
 // Enquiries (Portal → Admin → Google → "Send approved emails from Gmail", "Customers' replies").
 //
-// Sending: sendStudioEmail() takes the place of Resend for the emails a person approved (enquiry
-// replies, one-to-one emails, invoices and their reminders). With Gmail connected and switched on,
-// they go from the studio's Gmail, so they're in its Sent folder and a reply comes straight back
-// to it; each one remembers its Gmail thread, so the next email about the same thing joins it.
-// Otherwise (or if Gmail turns it down) they go through Resend, as before. Nothing here decides
-// whether something may be sent: the callers only call it after an admin's approval.
-// Campaigns stay on Resend (it handles unsubscribes for lists).
+// Sending: sendStudioEmail() sends the emails a person approved (enquiry replies, one-to-one
+// emails, invoices and their reminders). With MAIL_FIRST=vps the studio's own mail server sends
+// them and Gmail is the backup. Otherwise, with Gmail connected and switched on, they go from the
+// studio's Gmail, so they're in its Sent folder and a reply comes straight back to it; each one
+// remembers its Gmail thread, so the next email about the same thing joins it. If Gmail turns one
+// down, the studio's mail server sends it. Nothing here decides whether something may be sent: the
+// callers only call it after an admin's approval. Campaigns go through the mail server (src/campaigns.js).
 //
 // Reading replies (every hour, gmail.readonly: nothing in Gmail is changed):
 //   - every thread an approved email started (or joined) in the last 45 days, and
-//   - emails from the people with open enquiries (sent through Resend, they reply to the studio's
-//     inbox),
+//   - emails from the people with open enquiries (sent by the studio's mail server, they reply to
+//     the studio's inbox),
 // and each new message from them lands in the right enquiry as their reply (a reply about a
 // one-to-one email or an invoice starts a new enquiry), with a quiet ping to the team.
 //
@@ -20,7 +20,7 @@
 
 import { buildMime, base64Url, canUse, connectedAccount, google, GoogleError } from "../nova/google.js";
 import { spamCheck, spamReason } from "../inbox.js";
-import { ownMailServer, sendEmail as resendEmail } from "../enquiries.js";
+import { mailReady, sendEmail as mailServerSend } from "../enquiries.js";
 import { notifyPhones } from "../push.js";
 import { flush, forgetLink, getLink, keepLink, later, links, low, partOn, prep, putLink, readSetting, spendDb, writeSetting } from "./common.js";
 
@@ -30,14 +30,14 @@ const SEARCH_PER_RUN = 12;
 
 // ===== SENDING =====
 
-// Send one approved email. `msg`: what Resend's sendEmail takes ({ to, from, replyTo, subject,
+// Send one approved email. `msg`: what enquiries.js's sendEmail takes ({ to, from, replyTo, subject,
 // text, html, headers, idempotencyKey }). `ref`: what it's about ({ kind: "enquiry" | "outreach" |
-// "invoice", id }). -> { ok, id, via: "gmail" | "resend" } or { ok: false, message }
+// "invoice", id }). -> { ok, id, via: "gmail" | "vps" } or { ok: false, message }
 export async function sendStudioEmail(env, msg, ref = null) {
   // On the VPS with its own mail server first (MAIL_FIRST=vps): that sends it; if it can't, Gmail
   // (when connected and switched on) is the backup
-  if (env.MAIL_FIRST === "vps" && ownMailServer(env)) {
-    const own = await resendEmail(env, msg);
+  if (env.MAIL_FIRST === "vps" && mailReady(env)) {
+    const own = await mailServerSend(env, msg);
     if (own.ok) return { ...own, via: "vps" };
     console.log("The studio's mail server didn't take an email; trying Gmail instead");
     if (await partOn(env, "send").catch(() => false)) {
@@ -53,15 +53,15 @@ export async function sendStudioEmail(env, msg, ref = null) {
     try {
       return await gmailSend(env, msg, ref);
     } catch (err) {
-      // Gmail answered no (not a time-out, when it may have gone): Resend tries instead
+      // Gmail answered no (not a time-out, when it may have gone): the mail server tries instead
       if (!(err instanceof GoogleError) || !err.status) {
         return { ok: false, message: "Gmail didn't answer in time: it may or may not have gone. Check the studio's Sent folder before trying again." };
       }
-      console.log(`Gmail turned an email down (${err.status}); sending through Resend instead`);
+      console.log(`Gmail turned an email down (${err.status}); sending through the studio's mail server instead`);
     }
   }
-  const result = await resendEmail(env, msg);
-  return result.ok ? { ...result, via: ownMailServer(env) ? "vps" : "resend" } : result;
+  const result = await mailServerSend(env, msg);
+  return result.ok ? { ...result, via: "vps" } : result;
 }
 
 async function gmailSend(env, msg, ref) {

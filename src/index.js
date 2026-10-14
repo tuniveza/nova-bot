@@ -68,7 +68,7 @@ import { handleSharedNotes } from "./notes-shared.js";
 import { handleMusicWorld } from "./music-world.js";
 import { sendCalendarReminders } from "./calendar/reminders.js";
 import { syncClientsOnSchedule } from "./clients.js";
-import { campaignsOnSchedule } from "./campaigns.js";
+import { campaignsOnSchedule, handleUnsubscribe } from "./campaigns.js";
 import { handleSocialMedia, socialOnSchedule } from "./social.js";
 import { googleOnSchedule } from "./google/index.js";
 import { relayWithDrive } from "./google/relay.js";
@@ -732,8 +732,8 @@ export default {
         learnFromWebsiteChats(env).catch((err) => console.log("Memory from website chats failed:", err)),
         // The client list: Acuity's calendar feed and the enquiries, every 30 minutes (src/clients.js)
         syncClientsOnSchedule(env, at).catch((err) => console.log("Client list sync failed:", err?.name)),
-        // Email campaigns (src/campaigns.js): scheduled ones become 'sent' once Resend sends them; every
-        // hour, unsubscribes come back from Resend and the numbers (opened, clicked…) are refreshed
+        // Email campaigns (src/campaigns.js): the next small batch of each one going out, through the
+        // studio's own mail server
         campaignsOnSchedule(env, at).catch((err) => console.log("Campaigns cron failed:", err?.name)),
         // Social posts (src/social.js): approved ones whose time has come go out (Instagram videos
         // carry on until they're ready); every hour, results, followers and new comments from Meta
@@ -822,6 +822,8 @@ export default {
     if (pathname === "/join" || pathname === "/join/confirm") return handleJoin(request, env, ctx, pathname);
     // "Don't email me again", from the link at the bottom of a one-to-one email (src/outreach.js)
     if (pathname === "/no-thanks") return handleNoThanks(request, env);
+    // Unsubscribing from the studio's news: the link in every campaign email (src/campaigns.js)
+    if (pathname === "/unsubscribe") return handleUnsubscribe(request, env);
     // A client's invoice: see it, print it, pay it (src/money.js; the link's random secret is the key)
     if (pathname.startsWith("/invoice/")) return handleInvoicePage(request, env, pathname);
 

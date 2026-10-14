@@ -1,22 +1,35 @@
-// The VPS's own mail server (vps/mail): single emails go to RESEND_API_URL when it's set (the same
-// request Resend takes), Resend otherwise; with MAIL_FIRST=vps, approved emails try it before Gmail.
+// The VPS's own mail server (vps/mail): every email goes to MAIL_API_URL with MAIL_KEY (the old
+// names, RESEND_API_URL and RESEND_API_KEY, still work while the server's settings are renamed);
+// with MAIL_FIRST=vps, approved emails try it before Gmail.
 import { env } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mailApiUrl, ownMailServer, sendEmail } from "../src/enquiries.js";
+import { mailApiUrl, mailKey, mailReady, sendEmail } from "../src/enquiries.js";
 import { sendStudioEmail } from "../src/google/gmail.js";
 
-const LOCAL = { RESEND_API_URL: "http://127.0.0.1:8790/", RESEND_API_KEY: "local", ENQUIRY_EMAIL_FROM: "Novacane Studios <hello@novacane.co.uk>", ENQUIRY_EMAIL_TO: "admin@example.com" };
+const LOCAL = { MAIL_API_URL: "http://127.0.0.1:8790/", MAIL_KEY: "local", ENQUIRY_EMAIL_FROM: "Novacane Studios <hello@novacane.co.uk>", ENQUIRY_EMAIL_TO: "admin@example.com" };
 const msg = { to: ["sam@example.com"], subject: "Hello", text: "Hi Sam" };
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("where single emails go", () => {
-	it("Resend unless RESEND_API_URL is set (and a bad address is ignored)", () => {
-		expect(mailApiUrl({})).toBe("https://api.resend.com");
-		expect(mailApiUrl({ RESEND_API_URL: "ftp://nope" })).toBe("https://api.resend.com");
+	it("only to MAIL_API_URL (a bad address counts as none), with the old names as a fallback", () => {
+		expect(mailApiUrl({})).toBe("");
+		expect(mailApiUrl({ MAIL_API_URL: "ftp://nope" })).toBe("");
 		expect(mailApiUrl(LOCAL)).toBe("http://127.0.0.1:8790");
-		expect(ownMailServer({})).toBe(false);
-		expect(ownMailServer(LOCAL)).toBe(true);
+		expect(mailApiUrl({ RESEND_API_URL: "http://127.0.0.1:8790" })).toBe("http://127.0.0.1:8790");
+		expect(mailKey({ RESEND_API_KEY: " old " })).toBe("old");
+		expect(mailKey({ MAIL_KEY: "new", RESEND_API_KEY: "old" })).toBe("new");
+		expect(mailReady({})).toBe(false);
+		expect(mailReady({ MAIL_KEY: "k" })).toBe(false);
+		expect(mailReady(LOCAL)).toBe(true);
+	});
+
+	it("isn't sent anywhere when the mail server isn't set up", async () => {
+		const spy = vi.spyOn(globalThis, "fetch");
+		const r = await sendEmail({ MAIL_KEY: "k", MAIL_API_URL: "" }, msg);
+		expect(r).toMatchObject({ ok: false });
+		expect(r.message).toMatch(/isn't set up/);
+		expect(spy).not.toHaveBeenCalled();
 	});
 
 	it("posts the same request to the VPS's mail server, and says who refused it", async () => {

@@ -49,7 +49,7 @@ CREATE TABLE invoices (
   decision_note    TEXT,
   approved_hash    TEXT,                               -- SHA-256 of exactly what was approved
   sent_at          TEXT,
-  email_id         TEXT,                               -- Resend's id for the email
+  email_id         TEXT,                               -- the mail server's id for the email
   paid_pence       INTEGER NOT NULL DEFAULT 0,         -- sum of its payments
   paid_at          TEXT,                               -- when it became fully paid
   voided_at        TEXT,

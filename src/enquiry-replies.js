@@ -34,7 +34,7 @@ const MAX_WAITING_DRAFTS = 5;
 // later: { ready(env), send(env, message, enquiry, attempt) } returning { ok, id } or
 // { ok: false, message }, plus its secrets (see README-ENQUIRIES.md).
 export const CHANNELS = {
-  email: { ready: (env) => emailIsSetUp(env), notReady: "Email isn't set up yet (it needs the RESEND_API_KEY and ENQUIRY_EMAIL_TO secrets).", send: sendByEmail },
+  email: { ready: (env) => emailIsSetUp(env), notReady: "Email isn't set up yet (it needs the mail server (MAIL_API_URL, MAIL_KEY) and ENQUIRY_EMAIL_TO).", send: sendByEmail },
 };
 
 const nowIso = () => new Date().toISOString();
@@ -250,7 +250,7 @@ export async function retrySend(env, me, { messageId }) {
   }
   const now = nowIso();
   // failed → approved, once (two Retry presses can't both win). A stuck one keeps its attempt,
-  // so Resend sees the same idempotency key and won't send it twice if the first one went.
+  // so the mail server sees the same idempotency key and won't send it twice if the first one went.
   const { meta } = await env.DB.prepare(
     `UPDATE enquiry_messages SET status = 'approved', error = NULL, approved_by = ?, approved_at = ?, updated_at = ?
      WHERE id = ? AND status = ? AND updated_at = ?`
@@ -463,13 +463,13 @@ async function sendByEmail(env, m, attempt) {
   const to = String(m.email || "").trim().toLowerCase();
   if (!to) return { ok: false, message: "This enquiry has no email address." };
   const mail = replyEmail(env, m, await stopLink(env, m.enquiry_id));
-  // (from the studio's Gmail when that's switched on: src/google/gmail.js; otherwise Resend)
+  // (the studio's own mail server, with Gmail as the backup: src/google/gmail.js)
   const result = await sendStudioEmail(env, {
     ...mail,
     to: [to],
-    from: env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || "Novacane Studios <onboarding@resend.dev>",
+    from: env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || "Novacane Studios <hello@novacane.co.uk>",
     replyTo: env.ENQUIRY_REPLY_TO || emailRecipients(env)[0],
-    // Resend sends a request with the same key at most once (a retry after a failure gets a new one)
+    // The mail server sends a request with the same key at most once (a retry after a failure gets a new one)
     idempotencyKey: `enquiry-reply-${m.id}-${attempt}`,
   }, { kind: "enquiry", id: m.enquiry_id });
   return result.ok ? { ok: true, id: result.id, to } : result;

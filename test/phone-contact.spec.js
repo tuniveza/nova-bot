@@ -8,14 +8,14 @@ import { STAFF_COOKIE } from "./sign-in.js";
 
 const BASE = "https://novacane-worker.test";
 const AGENT_KEY = "agent-nova-test-key";
-const EMAIL_ENV = { RESEND_API_KEY: "re_test_key", ENQUIRY_EMAIL_TO: "studio@novacane.test", ENQUIRY_EMAIL_FROM: "Novacane Studios <hello@novacane.test>" };
+const EMAIL_ENV = { MAIL_KEY: "re_test_key", ENQUIRY_EMAIL_TO: "studio@novacane.test", ENQUIRY_EMAIL_FROM: "Novacane Studios <hello@novacane.test>" };
 
-let resendCalls = [];
+let mailCalls = [];
 beforeEach(async () => {
-	resendCalls = [];
+	mailCalls = [];
 	vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-		if (String(url) === "https://api.resend.com/emails") {
-			resendCalls.push(JSON.parse(init.body));
+		if (String(url) === "http://mail.test/emails") {
+			mailCalls.push(JSON.parse(init.body));
 			return new Response(JSON.stringify({ id: "email_1" }), { status: 200 });
 		}
 		throw new Error("Unexpected fetch in test: " + url);
@@ -79,7 +79,7 @@ describe("a WhatsApp message or text sent from the person's phone", () => {
 		const r = await app("enquiries/logged", { body: { id, kind: "whatsapp", body: "Hi Jordan, Tuesday works!", key: "press-whatsapp-1" } });
 		expect(r.status).toBe(200);
 		expect(r.data.message).toMatchObject({ direction: "out", channel: "whatsapp", status: "sent", body: "Hi Jordan, Tuesday works!", author_name: "Test Admin" });
-		expect(resendCalls).toHaveLength(0);
+		expect(mailCalls).toHaveLength(0);
 		expect(await status(id)).toBe("replied");
 		const row = await env.DB.prepare("SELECT sent_to, approved_by FROM enquiry_messages WHERE enquiry_id = ?").bind(id).first();
 		expect(row).toEqual({ sent_to: "+447700900123", approved_by: "test-admin" });
@@ -146,7 +146,7 @@ describe("How it works", () => {
 		const r = await app("services", { extraEnv: { ...EMAIL_ENV, ANTHROPIC_API_KEY: "sk-ant-secret-value", VAPID_PUBLIC_KEY: "pub", VAPID_PRIVATE_KEY: "priv-secret" } });
 		expect(r.status).toBe(200);
 		const email = r.data.services.find((s) => s.id === "email");
-		expect(email).toMatchObject({ name: "Enquiry emails", tech: "Resend (resend.com)", ready: true, test: true });
+		expect(email).toMatchObject({ name: "Enquiry emails", tech: "The studio's own mail server (on the VPS)", ready: true, test: true });
 		expect(email.detail).toContain("hello@novacane.test");
 		expect(r.data.services.find((s) => s.id === "ai")).toMatchObject({ tech: "Anthropic Claude", ready: true });
 		const text = JSON.stringify(r.data);
@@ -164,19 +164,19 @@ describe("How it works", () => {
 		expect((await app("services", { headers: {} })).status).toBe(401);
 	});
 
-	it("Send me a test email goes to the person who pressed it, through Resend, at most once a minute", async () => {
+	it("Send me a test email goes to the person who pressed it, through the mail server, at most once a minute", async () => {
 		const r = await app("services/test-email", { body: {} });
 		expect(r.status).toBe(200);
-		expect(resendCalls).toHaveLength(1);
-		expect(resendCalls[0]).toMatchObject({ to: ["test-admin@novacane.test"], from: "Novacane Studios <hello@novacane.test>" });
+		expect(mailCalls).toHaveLength(1);
+		expect(mailCalls[0]).toMatchObject({ to: ["test-admin@novacane.test"], from: "Novacane Studios <hello@novacane.test>" });
 		const again = await app("services/test-email", { body: {} });
 		expect(again.status).toBe(429);
-		expect(resendCalls).toHaveLength(1);
+		expect(mailCalls).toHaveLength(1);
 	});
 
 	it("Send me a test email says so when email isn't set up", async () => {
 		const r = await app("services/test-email", { body: {}, extraEnv: {} });
 		expect(r.status).toBe(409);
-		expect(resendCalls).toHaveLength(0);
+		expect(mailCalls).toHaveLength(0);
 	});
 });

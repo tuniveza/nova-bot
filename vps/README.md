@@ -48,7 +48,7 @@ Workers AI (voice) only exists on Cloudflare, so on the VPS voice falls back to 
 Cloudflare never gives secrets back, so they're typed in once on the VPS (`set-secrets`) into
 `/srv/nova/secrets.env` (mode 600). The list: AGENT_NOVA_KEY (must be **the same** as Cloudflare's and
 the studio PC's `na/.env`, because Google's saved keys in the database are locked with it, and Computer
-uses it), ANTHROPIC_API_KEY, RESEND_API_KEY, RESEND_MARKETING_KEY, CAMPAIGN_FROM, ENQUIRY_EMAIL_FROM,
+uses it), ANTHROPIC_API_KEY, CAMPAIGN_FROM, ENQUIRY_EMAIL_FROM,
 ENQUIRY_EMAIL_TO, ACUITY_USER_ID, ACUITY_API_KEY, ACUITY_CALENDAR_URL, and optional Stripe, Meta and TURN keys.
 VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY, ACUITY_WEBHOOK_KEY and ACUITY_EMAIL_KEY are made by
 `switch-keys` at the switch-over (see below).
@@ -95,7 +95,8 @@ How the pieces fit:
 - **Down:** when the VPS can't be reached (or Caddy has no Nova Bot behind it), the pass-through
   answers a calm "Nova is restarting" page (or JSON, for the apps) that refreshes by itself.
 - **Computer** shows which side is live, the commands, and warnings (e.g. newsletters won't send while
-  RESEND_MARKETING_KEY is from a Resend account without novacane.co.uk).
+  the mail server isn't set up). Every email, newsletters too, goes through the VPS's own mail server:
+  `deploy.sh` sets MAIL_API_URL and MAIL_KEY for Nova Bot.
 
 **Later, your own address:** point e.g. `desk.novacane.co.uk` at 185.185.126.195 (one DNS A record),
 then deploy with `DESK_ADDRESS=desk.novacane.co.uk`. Caddy gets the certificate by itself.

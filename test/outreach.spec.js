@@ -1,5 +1,5 @@
 // One-to-one emails with an admin's approval (src/outreach.js, the /nova-agent/outreach/* routes,
-// Portal's /app/api/outreach and the /no-thanks page). Nothing goes to Resend unless an admin,
+// Portal's /app/api/outreach and the /no-thanks page). Nothing goes to the mail server unless an admin,
 // signed in to Portal in a browser, pressed Approve on exactly what's saved, and only to people the
 // studio may email (UK GDPR / PECR).
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
@@ -12,9 +12,9 @@ import { STAFF_COOKIE } from "./sign-in.js";
 const BASE = "https://novacane-worker.test";
 const KEY = "agent-nova-test-key";
 const SEND_KEY = "re_test_sending_secret_456";
-const RESEND_ENV = { RESEND_API_KEY: SEND_KEY, ENQUIRY_REPLY_FROM: "Novacane Studios <hello@novacane.co.uk>", ENQUIRY_EMAIL_TO: "studio@novacane.co.uk" };
+const MAIL_ENV = { MAIL_KEY: SEND_KEY, ENQUIRY_REPLY_FROM: "Novacane Studios <hello@novacane.co.uk>", ENQUIRY_EMAIL_TO: "studio@novacane.co.uk" };
 
-let emails; // bodies POSTed to Resend's /emails
+let emails; // bodies POSTed to the mail server's /emails
 let failNext;
 
 beforeEach(async () => {
@@ -33,7 +33,7 @@ beforeEach(async () => {
 	failNext = false;
 	vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init = {}) => {
 		const u = new URL(String(url));
-		if (u.origin === "https://api.resend.com" && u.pathname === "/emails") {
+		if (u.origin === "http://mail.test" && u.pathname === "/emails") {
 			expect(init.headers.Authorization).toBe(`Bearer ${SEND_KEY}`);
 			if (failNext) {
 				failNext = false;
@@ -50,7 +50,7 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-async function call(request, extraEnv = RESEND_ENV) {
+async function call(request, extraEnv = MAIL_ENV) {
 	const ctx = createExecutionContext();
 	const res = await worker.fetch(request, { ...env, AGENT_NOVA_KEY: KEY, ...extraEnv }, ctx);
 	await waitOnExecutionContext(ctx);
@@ -70,7 +70,7 @@ function portal(route, { body, headers = { Cookie: STAFF_COOKIE }, extraEnv } = 
 	return call(new Request(`${BASE}/app/api/${route}`, init), extraEnv);
 }
 
-const ENV = () => ({ ...env, ...RESEND_ENV });
+const ENV = () => ({ ...env, ...MAIL_ENV });
 const row = (id) => env.DB.prepare("SELECT * FROM outreach_emails WHERE id = ?").bind(id).first();
 
 const VENUE = { kind: "business", toEmail: "Bookings@TheVenue.co.uk", toName: "Sam", organisation: "The Venue", subject: "Live session idea", body: "Hi Sam,\n\nWe'd love to record a live session at The Venue.\n\nNovacane Studios" };
@@ -156,7 +156,7 @@ describe("approval", () => {
 		expect(emails).toHaveLength(1);
 	});
 
-	it("a rejected one never sends; Resend failing marks it 'failed' with the reason", async () => {
+	it("a rejected one never sends; the mail server failing marks it 'failed' with the reason", async () => {
 		const o = await draft();
 		expect((await portal(`outreach/${o.id}/reject`, { body: { note: "Not yet" } })).data.outreach).toMatchObject({ status: "rejected", note: "Not yet" });
 		expect((await portal(`outreach/${o.id}/approve`, { body: {} })).status).toBe(409);
@@ -170,9 +170,9 @@ describe("approval", () => {
 
 	it("not set up (no sending key): Approve says so and nothing changes", async () => {
 		const o = await draft();
-		const r = await portal(`outreach/${o.id}/approve`, { body: {}, extraEnv: { RESEND_API_KEY: "" } });
+		const r = await portal(`outreach/${o.id}/approve`, { body: {}, extraEnv: { MAIL_KEY: "" } });
 		expect(r.status).toBe(409);
-		expect(r.data.error).toMatch(/RESEND_API_KEY/);
+		expect(r.data.error).toMatch(/MAIL_KEY/);
 		expect((await row(o.id)).status).toBe("pending_approval");
 	});
 });

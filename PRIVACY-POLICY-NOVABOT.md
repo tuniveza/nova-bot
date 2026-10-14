@@ -11,7 +11,7 @@ Before publishing:
   Use the one you actually read in both places. This section uses
   info@novacane.co.uk.
 - Only keep the "Email copies" bullet if you've set up email copies of
-  enquiries (Resend).
+  enquiries (the studio's own mail server).
 - This is a plain-English description of what NovaBot does, not legal advice.
 
 ---
@@ -39,7 +39,7 @@ Who processes it for us
 
 - Anthropic, whose AI model (Claude) writes NovaBot's replies. Your messages are sent to Anthropic to generate each reply.
 - Cloudflare, which runs NovaBot and stores the conversations and enquiries. If you use the microphone or voice replies, Cloudflare's AI services turn your speech into text and NovaBot's replies into speech. Recordings aren't stored.
-- Email copies: Resend, which emails your enquiry to our team.
+- Email copies: our own mail server, which emails your enquiry to our team.
 
 Some of these providers may process data outside the UK, with safeguards in place as required by UK data protection law.
 

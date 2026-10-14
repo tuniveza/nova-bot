@@ -24,36 +24,21 @@ enquiry is never saved twice.
 
 ### Getting an email for each enquiry (optional, recommended)
 
-Squarespace manages the novacane.co.uk domain and Google handles its email, so
-the Worker sends email through [Resend](https://resend.com) (free for up to
-3,000 emails a month):
+Emails go through the studio's own mail server on the VPS (vps/mail: Postfix, signed with
+DKIM as novacane.co.uk; see vps/README.md and vps/mail-dns.txt). `vps/deploy.sh` sets
+`MAIL_API_URL` and `MAIL_KEY` for Nova Bot. Where the copies go is `ENQUIRY_EMAIL_TO`
+(several addresses, separated by commas), and the from address `ENQUIRY_EMAIL_FROM`
+(e.g. `Novacane Studios <hello@novacane.co.uk>`), both in `/srv/nova/secrets.env`.
 
-1. Sign up at resend.com with the email address that should receive enquiries.
-2. Create an API key (API Keys → Create).
-3. Run these from the `novacane-worker` folder:
-
-   ```sh
-   npx wrangler secret put RESEND_API_KEY      # paste the API key
-   npx wrangler secret put ENQUIRY_EMAIL_TO    # the address you signed up with
-   ```
-
-Each enquiry then arrives by email from "NovaBot" with the details. Pressing
-reply answers the visitor directly.
+Each enquiry then arrives by email with the details. Pressing reply answers the visitor
+directly.
 
 **Test it:** open the Enquiries tab on the admin page. The top line says whether
 email copies are on. Click **Send a test email**: you'll get a "NovaBot test
 email" within a minute (check spam the first time). If something's wrong, the
-page shows Resend's reason. Then try the real thing: ask NovaBot on the website
+page shows the mail server's reason. Then try the real thing: ask NovaBot on the website
 to send an enquiry for you. It should appear on the Enquiries tab (marked
 "Email copy sent") and in your inbox.
-
-Until you verify a domain in Resend, it can only send to the address you signed
-up with. To send from an address like `novabot@novacane.co.uk`, or to more than
-one address, verify `novacane.co.uk` in Resend (it gives you DNS records to add
-in Squarespace → Domains → DNS). Then also run
-`npx wrangler secret put ENQUIRY_EMAIL_FROM` with e.g.
-`NovaBot <novabot@novacane.co.uk>`. `ENQUIRY_EMAIL_TO` can then hold several
-addresses separated by commas.
 
 Enquiries are always saved on the admin page, even if the email fails.
 
@@ -64,7 +49,7 @@ whole conversation: replies sent, internal notes, and drafts from Agent.
 
 - **Send** emails the customer from the studio address, to their address only, with
   reply-to set to the studio inbox (their answers land there). Each reply shows
-  Sending… / Sent ✓ / Didn't send (with Resend's reason and **Retry**).
+  Sending… / Sent ✓ / Didn't send (with the mail server's reason and **Retry**).
 - **Note** is for the team only, never sent.
 - **Agent** (Nova Agent's AI) can only **draft**. A draft waits in the conversation (and on
   a card under Agent's reply) until a signed-in person presses **Approve & send**. Staff
@@ -107,9 +92,8 @@ migrations/0030_inbox.sql). Every enquiry is in one place, and moving it is one 
 
 ### What it needs
 
-1. **A verified domain in Resend** (see above). Until then Resend only delivers to the
-   account owner's own address, so replies to customers fail with Resend's reason.
-2. `npx wrangler secret put ENQUIRY_EMAIL_FROM`, e.g. `Novacane Studios <hello@novacane.co.uk>`
+1. **The studio's mail server** (see above): `MAIL_API_URL` and `MAIL_KEY`.
+2. `ENQUIRY_EMAIL_FROM` in `/srv/nova/secrets.env`, e.g. `Novacane Studios <hello@novacane.co.uk>`
    (optional: `ENQUIRY_REPLY_FROM` for a different sender on replies, and
    `ENQUIRY_REPLY_TO` for the inbox replies go to; it defaults to the first
    `ENQUIRY_EMAIL_TO` address).
@@ -143,10 +127,10 @@ out", and a webhook for STOP replies that sets "don't contact".
 
 ### How it works (Portal → You)
 
-Portal's You page lists each part of Nova and the service behind it (Resend for email,
-Anthropic Claude for the AI, Stripe, Cloudflare…) with a green dot when it's set up
+Portal's You page lists each part of Nova and the service behind it (the studio's own mail server for email,
+Anthropic Claude for the AI, Stripe…) with a green dot when it's set up
 (`GET /app/api/services`, `src/services.js`; only yes/no and plain addresses, never a key).
-**Send me a test email** emails whoever pressed it through Resend, at most once a minute.
+**Send me a test email** emails whoever pressed it through the studio's mail server, at most once a minute.
 
 ## Booking links (getting bookings into Acuity)
 

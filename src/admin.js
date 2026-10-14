@@ -373,7 +373,7 @@ async function enquiriesPage(env, url) {
 
   const emailStatus = emailIsSetUp(env)
     ? `Email copies: <strong>on</strong>, sent to ${e(emailRecipients(env).join(", "))}.`
-    : `Email copies: <strong>off</strong>. Enquiries only show here until the Resend secrets are set (see README-ENQUIRIES.md).`;
+    : `Email copies: <strong>off</strong>. Enquiries only show here until the mail server (MAIL_API_URL, MAIL_KEY) and ENQUIRY_EMAIL_TO are set.`;
 
   return page(env, "Enquiries", url, `
   <div class="card email-status">

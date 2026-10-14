@@ -26,7 +26,7 @@
 //   POST /app/api/enquiries/logged      { id, kind: "whatsapp" | "sms" | "call", body, outcome, key }
 //                                       -> a WhatsApp, text or call the person made from their own phone
 //   GET  /app/api/services              what each part of Nova runs on, and whether it's set up
-//   POST /app/api/services/test-email   emails the person signed in, through Resend
+//   POST /app/api/services/test-email   emails the person signed in, through the studio's mail server
 //     (Sending needs a browser's Portal sign-in, the cookie: never an app's token or Nova Agent's key.
 //      See src/enquiry-replies.js.)
 //   GET  /app/api/sessions              the session types, for booking links
@@ -69,7 +69,7 @@
 //   POST /app/api/campaigns             { subject, body, audience, sendAt? } -> { campaign } waiting for approval
 //   POST /app/api/campaigns/:id/edit    { subject?, body?, audience?, sendAt? } -> { campaign } back to waiting
 //                                       for approval (the approval is cleared; a scheduled send is cancelled)
-//   POST /app/api/campaigns/:id/approve {} -> { campaign } approves it, then Resend sends it (or schedules it)
+//   POST /app/api/campaigns/:id/approve {} -> { campaign } approves it, then the studio's mail server sends it (now, or at its time)
 //   POST /app/api/campaigns/:id/reject  { note? }
 //   POST /app/api/campaigns/test-send   { id } -> emails it once to the admin who pressed it, marked [TEST]
 //   GET  /app/api/money                 -> { summary, invoices, expenses, reminders, settings, canDecide, … }
@@ -95,7 +95,7 @@
 //   POST /app/api/outreach/:id/edit     { …the same, any of them } -> { outreach } back to waiting
 //   POST /app/api/outreach/optouts      { email } -> someone replied "no thanks": never emailed this way again
 //   (an admin in a browser only:)
-//   POST /app/api/outreach/:id/approve  {} -> { outreach } approves it, then Resend sends it
+//   POST /app/api/outreach/:id/approve  {} -> { outreach } approves it, then the studio's mail server sends it
 //   POST /app/api/outreach/:id/reject   { note? }
 //   POST /app/api/outreach/test-send    { id } -> emails it once to the admin who pressed it, marked [TEST]
 //     (Approve, reject and test-send need an admin with Portal open in a browser, the cookie: never an

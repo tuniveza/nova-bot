@@ -1,5 +1,6 @@
 -- One-to-one emails ("outreach"): a personal email to one person, written by Nova Agent's AI or
--- anyone in the team, sent through Resend only after an admin approves it
+-- anyone in the team, sent only after an admin approves it (now by the studio's own mail server;
+-- resend_id below is the mail server's id for the email, a name kept from when Resend sent them)
 --
 -- It works like email campaigns (migrations/0025_email_campaigns.sql): a new email waits as
 -- 'pending_approval' until an admin, signed in to Portal in a browser, presses Approve. Approving

@@ -14,7 +14,7 @@
 //
 // Logs say ids and counts only, never anyone's details.
 
-import { sendEmail } from "./enquiries.js";
+import { mailReady, sendEmail } from "./enquiries.js";
 import { publicUrl } from "./nova/booking.js";
 import { campaignFrom } from "./campaigns.js";
 
@@ -126,8 +126,8 @@ async function signUp(request, env, ctx) {
       () => console.log("Fan sign-up: the confirmation email didn't go")
     );
     // Sent in the background, so the page answers just as fast either way
-    if (env.RESEND_API_KEY) ctx.waitUntil(work);
-    else console.log("Fan sign-up: email isn't set up (RESEND_API_KEY), so no confirmation email");
+    if (mailReady(env)) ctx.waitUntil(work);
+    else console.log("Fan sign-up: the mail server isn't set up (MAIL_API_URL, MAIL_KEY), so no confirmation email");
   }
   return checkInbox();
 }
@@ -191,6 +191,8 @@ function formPage({ error = "", name = "", email = "", ticked = false } = {}, st
 </form>`;
   return page("News from Novacane Studios", "New releases from the studio and the occasional studio offer, now and then. No spam, and you can unsubscribe from any email.", { form, error }, status);
 }
+
+export { page as fanPage };
 
 function page(title, text, { form = "", error = "", link = false } = {}, status = 200) {
   const html = `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">

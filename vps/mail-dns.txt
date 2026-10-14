@@ -1,8 +1,7 @@
 Computer mail: the DNS records for the VPS's own mail server (send-only), 2026-10-13
 =================================================================================
 Add these at Squarespace (Domains → novacane.co.uk → DNS → Custom records). They don't touch
-incoming mail: novacane.co.uk's MX stays Google Workspace, and Resend keeps its own records
-(resend._domainkey and the send. subdomain).
+incoming mail: novacane.co.uk's MX stays Google Workspace.
 
 1) SPF — TXT at the root (Host: @). There's no SPF record yet, so add this ONE (only one SPF
    record may exist; if one appears later, merge them):

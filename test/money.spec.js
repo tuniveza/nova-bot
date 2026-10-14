@@ -11,9 +11,9 @@ import { STAFF_COOKIE } from "./sign-in.js";
 
 const BASE = "https://novacane-worker.test";
 const KEY = "agent-nova-test-key";
-const EMAIL_ENV = { RESEND_API_KEY: "re_test_send_123", INVOICE_FROM: "Novacane Studios <studio@novacane.co.uk>" };
+const EMAIL_ENV = { MAIL_KEY: "re_test_send_123", INVOICE_FROM: "Novacane Studios <studio@novacane.co.uk>" };
 
-let emails; // bodies POSTed to Resend's /emails
+let emails; // bodies POSTed to the mail server's /emails
 let stripe;
 let emailFails;
 
@@ -34,7 +34,7 @@ beforeEach(async () => {
 	stripe = makeStripe();
 	vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init = {}) => {
 		const u = new URL(String(url));
-		if (u.origin === "https://api.resend.com" && u.pathname === "/emails") {
+		if (u.origin === "http://mail.test" && u.pathname === "/emails") {
 			if (emailFails) return Response.json({ message: "domain not verified" }, { status: 422 });
 			emails.push({ ...JSON.parse(init.body), key: init.headers["Idempotency-Key"] });
 			return Response.json({ id: `email-${emails.length}` });
@@ -222,7 +222,7 @@ describe("approval", () => {
 		expect((await portal(`money/invoices/${noEmail.id}/approve`, { body: {} })).status).toBe(409);
 	});
 
-	it("a Resend failure leaves it 'failed' with the reason; saving it again sends it for approval again", async () => {
+	it("a mail server failure leaves it 'failed' with the reason; saving it again sends it for approval again", async () => {
 		const inv = await write();
 		emailFails = true;
 		const res = await portal(`money/invoices/${inv.id}/approve`, { body: {} });

@@ -43,7 +43,7 @@ function freshGoogle() {
 		people: new Map(),
 		files: new Map(),
 		sheets: new Map(),
-		resend: [],
+		mail: [],
 		calls: [],
 		labels: [],
 		modified: [],
@@ -68,9 +68,9 @@ function fakeFetch() {
 		const p = url.pathname;
 		G.calls.push(`${method} ${url.host}${p}`);
 		if (url.host === "oauth2.googleapis.com") return ok({ access_token: "access", expires_in: 3600 });
-		if (url.host === "api.resend.com") {
-			G.resend.push(await bodyOf(init));
-			return ok({ id: "resend-1" });
+		if (url.host === "mail.test") {
+			G.mail.push(await bodyOf(init));
+			return ok({ id: "mail-1" });
 		}
 		// ---- Calendar ----
 		if (url.host === "www.googleapis.com" && p.startsWith("/calendar/v3")) {
@@ -393,7 +393,7 @@ describe("Calendar: Nova and Google, both ways", () => {
 });
 
 describe("Gmail: approved emails from the studio's Gmail, replies back into Enquiries", () => {
-	it("sends from Gmail when it's on (remembering the thread), and through Resend when Google isn't connected", async () => {
+	it("sends from Gmail when it's on (remembering the thread), and through the studio's mail server when Google isn't connected", async () => {
 		const sent = await sendStudioEmail(genv(), { to: ["kai@example.com"], subject: "Your session", text: "Hi", html: "<p>Hi</p>", headers: { "List-Unsubscribe": "<https://x.test/stop>" } }, { kind: "enquiry", id: 7 });
 		expect(sent).toMatchObject({ ok: true, via: "gmail" });
 		expect(G.sent[0].raw).toContain("To: kai@example.com");
@@ -403,10 +403,10 @@ describe("Gmail: approved emails from the studio's Gmail, replies back into Enqu
 		await sendStudioEmail(genv(), { to: ["kai@example.com"], subject: "Re: Your session", text: "More" }, { kind: "enquiry", id: 7 });
 		expect(G.sent[1].threadId).toBe(G.sent[0].threadId);
 		expect(G.sent[1].raw).toMatch(/In-Reply-To: <nova-/);
-		// Not connected: Resend, as before
-		const viaResend = await sendStudioEmail({ ...env, GOOGLE_REFRESH_TOKEN: "", RESEND_API_KEY: "re_test" }, { to: ["kai@example.com"], subject: "S", text: "T" });
-		expect(viaResend.via).toBe("resend");
-		expect(G.resend).toHaveLength(1);
+		// Not connected: the studio's mail server
+		const viaMail = await sendStudioEmail({ ...env, GOOGLE_REFRESH_TOKEN: "", MAIL_KEY: "test" }, { to: ["kai@example.com"], subject: "S", text: "T" });
+		expect(viaMail.via).toBe("vps");
+		expect(G.mail).toHaveLength(1);
 	});
 
 	it("brings a customer's reply into their enquiry once, and opens it again", async () => {

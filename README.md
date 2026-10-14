@@ -79,7 +79,7 @@ any accounts.
   Worker checks the time again before anything happens.
 - **Enquiries** (`src/enquiries.js`): NovaBot can take an enquiry, show the visitor a
   summary, and send it to the team once they confirm. It's saved for Portal and the
-  admin pages, and can be emailed (Resend).
+  admin pages, and can be emailed (the studio's own mail server).
 - **Safety**: per-visitor rate limits, only allowed websites can use the chat, spam
   limits on enquiries, and IP addresses stored only as a hash.
 
@@ -338,7 +338,7 @@ Everything secret is a **Wrangler secret** (`npx wrangler secret put NAME`), or 
 | `ACUITY_EMAIL_KEY` | The Google Apps Script that forwards Acuity's emails (`tools/acuity-email-forwarder.gs`) |
 | `AGENT_NOVA_KEY` | Nova Agent's routes (`/nova-agent/*`; `/memory/*`), and its online link (`/nova-agent/link`, the AgentLink Durable Object in `src/agent-relay.js`: Nova Agent's chat, Missions, Quests, Calendar and Visualizer online, through the studio PC) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Phone notifications (Web Push) |
-| `RESEND_API_KEY`, `ENQUIRY_EMAIL_TO`, `ENQUIRY_EMAIL_FROM` | Emailing enquiries (optional) |
+| `MAIL_API_URL`, `MAIL_KEY`, `ENQUIRY_EMAIL_TO`, `ENQUIRY_EMAIL_FROM` | Emailing (the studio's own mail server on the VPS; enquiries, replies, invoices, newsletters) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional: Admin → Google keeps the same key without them (Notes' Google Docs, Calendar and Gmail for bookings; Google is never a way to sign in, Portal is) |
 | `GOOGLE_REFRESH_TOKEN`, `GOOGLE_CALENDAR_ID`, `GOOGLE_ACCOUNT` | Optional overrides; normally set by "Connect Google" on `/admin/connections` |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Nova Bot's own booking system: deposits (optional) |
@@ -435,7 +435,7 @@ npx vitest run      # once
 
 388 tests across 27 files, fully offline: they run inside the Workers runtime
 (`@cloudflare/vitest-plugin`) with a local database and fake versions of Claude, Acuity,
-Google, Stripe and Resend (`test/fakes.js`). Every key in `vitest.config.mjs` is a
+Google, Stripe and the mail server (`test/fakes.js`). Every key in `vitest.config.mjs` is a
 test-only stand-in. The original Acuity tests run against the default; `test/*-nova.spec.js`
 run with the switch on Nova, and `test/switch.spec.js` tests the switch itself. The memory
 engine and Portal have their own (`test/memory.spec.js`, `test/portal.spec.js`).

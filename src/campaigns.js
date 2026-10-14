@@ -1,5 +1,6 @@
-// Email campaigns (Quest 3): newsletters to fans and studio clients, on Resend, only after an
-// admin approves them (migrations/0025_email_campaigns.sql)
+// Email campaigns (Quest 3): newsletters to fans and studio clients, sent by the studio's own mail
+// server (on the VPS: vps/mail/server.mjs, through Postfix), only after an admin approves them
+// (migrations/0025_email_campaigns.sql)
 //
 // Who can do what is decided here and in the routes, whatever any AI says:
 //
@@ -13,38 +14,39 @@
 // Approving is one guarded UPDATE (… WHERE status = <what the admin saw> AND updated_at = <when
 // it last changed>), so two presses at once approve it once, and only the request that approved
 // it runs the sender. The approval stores a hash of exactly what was approved (subject, body,
-// audience, send time). The sender sends only from status 'approved' with a matching hash; any
-// edit puts the campaign back to 'pending_approval' with the approval cleared (a scheduled one is
-// cancelled in Resend first).
+// audience, send time). Nothing goes unless the status is 'scheduled' (only approving gets it
+// there) and the hash still matches; any edit puts the campaign back to 'pending_approval' with
+// the approval cleared (a scheduled one can be changed until its first email has gone).
 //
-// The sender: puts the audience's opted-in people into its Resend segment (and everyone else
-// out), makes the broadcast, and sends it now or schedules it for send_at -> 'sent' or
-// 'scheduled' (or 'failed', with the reason).
+// The sender: approving makes the campaign's list (everyone on the audience who has opted in, kept
+// in settings as campaign_queue:<id>) and the campaign becomes 'scheduled'. Every minute (index.js)
+// a small batch goes out, with a pause between emails (CAMPAIGN_BATCH emails, 10 by default;
+// CAMPAIGN_GAP_MS apart, 3 s by default), so the studio's new mail server builds a good name with
+// Gmail and the rest instead of looking like a spammer. Before each batch everyone left is checked
+// again, so anyone who unsubscribed in the meantime is skipped. Each email has its own idempotency
+// key, so a batch cut off part-way and run again doesn't send anyone a second copy. When the list
+// is done -> 'sent', with how many it went to.
 //
 // Who's on the lists (UK GDPR / PECR): confirmed fans (the /join page, double opt-in) and
-// clients with marketing_consent = 1. Every email says who it's from and why they're getting it
-// (a contact property, `why`, set when they're put into Resend) and has Resend's unsubscribe
-// link. Unsubscribes come back every hour: a fan becomes 'unsubscribed'; a client's consent goes
+// clients with marketing_consent = 1. Every email says who it's from and why they're getting it,
+// and has its own unsubscribe link (signed, so nobody can unsubscribe someone else) plus the
+// List-Unsubscribe and List-Unsubscribe-Post headers, so email apps show their own Unsubscribe
+// button. /unsubscribe asks first (a link scanner can't press the button); an email app's one-click
+// unsubscribe (a POST) works straight away. A fan becomes 'unsubscribed'; a client's consent goes
 // to NO with a client_consent_log entry (by 'customer').
-//
-// Every minute (index.js): scheduled campaigns whose time has come become 'sent' once Resend
-// says so. Every hour: unsubscribes come back, scheduled campaigns' lists are brought up to
-// date, and the numbers (delivered, opened, clicked…) are refreshed for campaigns sent in the
-// last 14 days.
 //
 // Logs say ids and counts only, never anyone's details or a key. Times are UTC; emails and
 // Portal show UK time.
 
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
-import { emailRecipients, sendEmail } from "./enquiries.js";
+import { emailRecipients, mailReady, sendEmail } from "./enquiries.js";
 import { readTime } from "./acuity/api.js";
-import { ResendError, listAll, marketingKey, resendApi, resendReason } from "./resend-marketing.js";
+import { fanPage } from "./fans.js";
 
 export const AUDIENCES = ["fans", "clients", "everyone"];
 const AUDIENCE_NAMES = { fans: "fans", clients: "studio clients", everyone: "fans and studio clients" };
-const SEGMENT_NAMES = { fans: "Nova · Fans", clients: "Nova · Studio clients", everyone: "Nova · Everyone" };
-// What the email says when a contact has no `why` (it always should)
+// What the email says when someone has no `why` (they always should)
 const WHY_FALLBACK = { fans: "you signed up for news from Novacane Studios", clients: "you said yes to news from Novacane Studios", everyone: "you said yes to news from Novacane Studios" };
 
 const MAX_SUBJECT = 150;
@@ -56,14 +58,17 @@ const STUCK_MS = 10 * 60 * 1000;
 // A send time must be at least this far ahead to be scheduled (sooner = send now)
 const SCHEDULE_MIN_MS = 2 * 60 * 1000;
 const MAX_AHEAD_MS = 365 * 86400000;
-// The numbers are refreshed for campaigns sent this recently, counting at most this many per kind
-const STATS_DAYS = 14;
-const STATS_CAP = 2000;
-const STAT_TYPES = ["sent", "delivered", "opened", "clicked", "bounced", "unsubscribed", "complained"];
+// Sending: this many emails a minute, this far apart (CAMPAIGN_BATCH, CAMPAIGN_GAP_MS), each address
+// tried this many times at most; a batch holds the list for this long (so two never run at once)
+const BATCH = 10;
+const GAP_MS = 3000;
+const MAX_TRIES = 3;
+const LEASE_MS = 5 * 60 * 1000;
 // One test email per person per this long
 const TEST_GAP_MS = 30 * 1000;
 
-const RESEND_SETUP_KEY = "campaign_resend";
+const queueKey = (id) => `campaign_queue:${id}`;
+const UNSUB_SECRET_KEY = "campaign_unsubscribe_secret";
 const HOURLY_KEY = "campaigns_hourly_at";
 const CLIENT_UNSUB_SOURCE = "Unsubscribed from a Nova email";
 
@@ -138,12 +143,12 @@ function inlineHtml(text) {
 
 const paragraphs = (body) => String(body).split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
 
-// The footer's "why", as Resend fills it in from the contact's `why` property
-const whyTag = (audience) => `{{{contact.why|${WHY_FALLBACK[audience] || WHY_FALLBACK.everyone}}}}`;
-const UNSUBSCRIBE_TAG = "{{{RESEND_UNSUBSCRIBE_URL}}}";
+// The footer's "why" and unsubscribe link: filled in for each person as their email is sent
+const whyTag = (audience) => `{{{why|${WHY_FALLBACK[audience] || WHY_FALLBACK.everyone}}}}`;
+const UNSUBSCRIBE_TAG = "{{{unsubscribe_url}}}";
 
 // The email: Novacane Studios header, the paragraphs, and the footer (who it's from, why
-// they're getting it, and Resend's unsubscribe link). -> { html, text }
+// they're getting it, and their unsubscribe link). -> { html, text }
 export function campaignEmail(row) {
   const why = whyTag(row.audience);
   const html = `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(row.subject)}</title></head>
@@ -163,13 +168,15 @@ ${paragraphs(row.body).map((p) => `<p style="margin:0 0 16px;">${inlineHtml(p)}<
   return { html, text };
 }
 
-// The email as Portal previews it (and a test email): the placeholders filled in
-function filledIn(content, { why, unsubscribe }) {
-  return content.replace(/\{\{\{contact\.why\|([^}]*)\}\}\}/g, (_, fallback) => why || fallback).split(UNSUBSCRIBE_TAG).join(unsubscribe);
+// One person's email (and Portal's preview, and a test email): the placeholders filled in (made
+// safe for HTML in the HTML version)
+export function filledIn(content, { why, unsubscribe }, { html = false } = {}) {
+  const safe = (v) => (html ? esc(v) : String(v));
+  return content.replace(/\{\{\{why\|([^}]*)\}\}\}/g, (_, fallback) => safe(why || fallback)).split(UNSUBSCRIBE_TAG).join(safe(unsubscribe));
 }
 
 export function previewHtml(row) {
-  return filledIn(campaignEmail(row).html, { why: "", unsubscribe: "#unsubscribe" });
+  return filledIn(campaignEmail(row).html, { why: "", unsubscribe: "#unsubscribe" }, { html: true });
 }
 
 // ===== READING =====
@@ -190,6 +197,7 @@ const isStuck = (row) => row.status === "approved" && Date.now() - Date.parse(ro
 export function publicCampaign(env, row) {
   if (!row) return null;
   const stuck = isStuck(row);
+  const stats = parseStats(row.stats);
   return {
     id: row.id,
     subject: row.subject,
@@ -207,8 +215,10 @@ export function publicCampaign(env, row) {
     note: row.decision_note || null,
     recipients: row.recipients ?? null,
     sentAt: row.sent_at || null,
-    error: stuck ? "It didn't finish sending (Nova Bot stopped part-way). Check Resend's Broadcasts before sending it again." : row.error || null,
-    stats: parseStats(row.stats),
+    error: stuck ? "It didn't finish getting ready to send (Nova Bot stopped part-way). Save it again to send it for approval again." : row.error || null,
+    stats,
+    // Going out now (a scheduled one whose time has come): how many have gone, of how many
+    sending: row.status === "scheduled" && (!row.send_at || Date.parse(row.send_at) <= Date.now()) ? { sent: Number(stats?.sent) || 0, total: row.recipients ?? 0 } : null,
     portalUrl: `${publicUrl(env)}/portal/?view=campaigns&campaign=${row.id}`,
   };
 }
@@ -317,9 +327,8 @@ export async function createCampaign(env, input, by) {
   return { campaign };
 }
 
-// Change a campaign: back to 'pending_approval', approval cleared. A scheduled one is cancelled
-// in Resend first (if Resend won't, nothing changes). Sent ones, and one being sent right now,
-// can't change.
+// Change a campaign: back to 'pending_approval', approval cleared (a scheduled one's list is
+// dropped). Sent ones, and one whose emails have started going out, can't change.
 export async function editCampaign(env, by, id, input) {
   id = positiveId(id);
   if (!id) return fail(400, "Which campaign?");
@@ -332,28 +341,24 @@ export async function editCampaign(env, by, id, input) {
   const changed = ["subject", "body", "audience", "send_at"].filter((key) => (fields[key] ?? null) !== (row[key] ?? null));
   if (!changed.length && ["draft", "pending_approval", "scheduled"].includes(row.status)) return { campaign: publicCampaign(env, row), unchanged: true };
 
-  // Scheduled in Resend: take it back first
-  if (row.status === "scheduled" && row.broadcast_id) {
-    let answer;
-    try {
-      answer = await resendApi(env, "DELETE", `/broadcasts/${encodeURIComponent(row.broadcast_id)}`);
-    } catch (err) {
-      return fail(503, `${err.message} It's still scheduled; try the change again in a minute.`);
-    }
-    if (!answer.ok && answer.status !== 404) return fail(409, `Resend wouldn't cancel the scheduled send, so nothing changed. ${resendReason(answer)}`);
+  // Scheduled: only while none of its emails have gone (and no batch is running)
+  if (row.status === "scheduled") {
+    const queue = await readQueue(env, id);
+    if (queue && (queue.sent || queue.failed || queue.busyUntil > Date.now())) return fail(409, `It's going out right now (${queue.sent} sent so far), so it can't change.`);
   }
   const now = nowIso();
   const { meta } = await env.DB.prepare(
     `UPDATE email_campaigns SET subject = ?, body = ?, audience = ?, send_at = ?, status = 'pending_approval', approved_hash = NULL,
-       decided_by = NULL, decided_at = NULL, broadcast_id = NULL, recipients = NULL, error = NULL, updated_at = ?, submitted_at = ?
+       decided_by = NULL, decided_at = NULL, broadcast_id = NULL, recipients = NULL, stats = NULL, error = NULL, updated_at = ?, submitted_at = ?
      WHERE id = ? AND status = ? AND updated_at = ?`
   )
     .bind(fields.subject, fields.body, fields.audience, fields.send_at, now, now, id, row.status, row.updated_at)
     .run();
   if (!meta.changes) return fail(409, "Someone else changed it at the same moment. Look at it again.");
+  if (row.status === "scheduled") await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(queueKey(id)).run();
   const what = changed.length ? `Changed: ${changed.map((k) => (k === "send_at" ? "send time" : k)).join(", ")}` : "Sent for approval again";
   await env.DB.batch([
-    logEntry(env, id, "edited", String(by), what + (row.status === "scheduled" ? " (the scheduled send was cancelled)" : row.status === "rejected" ? " (after it was rejected)" : "")),
+    logEntry(env, id, "edited", String(by), what + (row.status === "scheduled" ? " (it was taken back before it went)" : row.status === "rejected" ? " (after it was rejected)" : "")),
     logEntry(env, id, "submitted", String(by)),
   ]);
   const campaign = await getCampaign(env, id);
@@ -369,12 +374,12 @@ export function campaignFrom(env) {
   return String(env.CAMPAIGN_FROM || env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || "").trim();
 }
 
-// Resend is set up for campaigns: a key and the from address
+// Campaigns can go: the studio's mail server and the from address
 export function campaignsReady(env) {
-  return Boolean(marketingKey(env) && campaignFrom(env));
+  return Boolean(mailReady(env) && campaignFrom(env));
 }
 
-const NOT_READY = "Email campaigns aren't set up yet: they need a full-access Resend key (RESEND_MARKETING_KEY) and the from address (CAMPAIGN_FROM).";
+const NOT_READY = "Email campaigns aren't set up yet: they need the studio's mail server (MAIL_API_URL and MAIL_KEY) and the from address (CAMPAIGN_FROM).";
 
 // Approve, then send (or schedule) straight away. Only from 'pending_approval' (or 'draft').
 export async function approveCampaign(env, me, { id }) {
@@ -438,7 +443,7 @@ export async function testSendCampaign(env, me, { id }) {
   if (!id) return fail(400, "Which campaign?");
   const row = await readRow(env, id);
   if (!row) return fail(404, "That campaign doesn't exist.");
-  if (!env.RESEND_API_KEY && !marketingKey(env)) return fail(409, NOT_READY);
+  if (!campaignsReady(env)) return fail(409, NOT_READY);
   const to = String(me.email || "").trim().toLowerCase();
   if (!to || !to.includes("@")) return fail(409, "Your account has no email address.");
   const key = "campaign_test_" + me.id;
@@ -447,17 +452,14 @@ export async function testSendCampaign(env, me, { id }) {
   await env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(key, nowIso()).run();
   const email = campaignEmail(row);
   const fill = { why: `this is a test of campaign #${id}, sent only to you from Portal`, unsubscribe: `${publicUrl(env)}/join` };
-  const result = await sendEmail(
-    { ...env, RESEND_API_KEY: env.RESEND_API_KEY || marketingKey(env) },
-    {
-      to: [to],
-      from: campaignFrom(env) || undefined,
-      replyTo: replyTo(env),
-      subject: `[TEST] ${row.subject}`,
-      text: filledIn(email.text, fill),
-      html: filledIn(email.html, fill),
-    }
-  );
+  const result = await sendEmail(env, {
+    to: [to],
+    from: campaignFrom(env),
+    replyTo: replyTo(env),
+    subject: `[TEST] ${row.subject}`,
+    text: filledIn(email.text, fill),
+    html: filledIn(email.html, fill, { html: true }),
+  });
   return result.ok ? { ok: true, to, message: `Test sent to ${to}. Check the inbox (and spam).` } : fail(502, result.message);
 }
 
@@ -467,16 +469,17 @@ function replyTo(env) {
 
 // ===== SENDING =====
 
-// Send (or schedule) an approved campaign. Only status 'approved' with an approval hash that
-// still matches what's saved goes; anything else is handed back untouched (or, if it changed
-// after approval, back to 'pending_approval'). Called only by the request whose press approved it.
+// Hand an approved campaign to the every-minute sender: its list (everyone on the audience who
+// has opted in), and status 'scheduled'. Only status 'approved' with an approval hash that still
+// matches what's saved goes on; anything else is handed back untouched (or, if it changed after
+// approval, back to 'pending_approval'). Called only by the request whose press approved it.
 export async function sendApproved(env, id) {
   const row = await readRow(env, id);
   if (!row || row.status !== "approved") return publicCampaign(env, row);
-  const failWith = async (error, { keepBroadcast = false } = {}) => {
+  const failWith = async (error) => {
     const now = nowIso();
     await env.DB.batch([
-      env.DB.prepare(`UPDATE email_campaigns SET status = 'failed', error = ?, ${keepBroadcast ? "" : "broadcast_id = NULL, "}updated_at = ? WHERE id = ? AND status = 'approved'`).bind(error, now, id),
+      env.DB.prepare("UPDATE email_campaigns SET status = 'failed', error = ?, updated_at = ? WHERE id = ? AND status = 'approved'").bind(error, now, id),
       logEntry(env, id, "failed", "nova", error),
     ]);
     console.log(`Campaign ${id}: failed`);
@@ -495,66 +498,164 @@ export async function sendApproved(env, id) {
     console.log(`Campaign ${id}: refused, it changed after approval`);
     return getCampaign(env, id);
   }
-  if (row.broadcast_id) return publicCampaign(env, row);
   if (!campaignsReady(env)) return failWith(NOT_READY);
-  const scheduleAt = row.send_at && Date.parse(row.send_at) > Date.now() + SCHEDULE_MIN_MS ? row.send_at : null;
+  const people = [...(await optedInPeople(env)).values()].filter((p) => inAudience(p, row.audience));
+  if (!people.length) return failWith(`Nobody on the ${AUDIENCE_NAMES[row.audience]} list has opted in, so it wasn't sent.`);
 
-  let broadcastId = null;
-  try {
-    const setup = await resendSetup(env);
-    const recipients = await syncAudience(env, row.audience, setup);
-    if (!recipients) return failWith(`Nobody on the ${AUDIENCE_NAMES[row.audience]} list has opted in, so it wasn't sent.`);
-    const { html, text } = campaignEmail(row);
-    const created = await resendApi(env, "POST", "/broadcasts", {
-      segment_id: setup.segments[row.audience],
-      from: campaignFrom(env),
-      subject: row.subject,
-      html,
-      text,
-      name: `Nova #${id}: ${row.subject}`.slice(0, 200),
-      ...(replyTo(env) ? { reply_to: replyTo(env) } : {}),
-    });
-    if (!created.ok || !created.data.id) return failWith(`Resend didn't make the broadcast. ${resendReason(created)}`);
-    broadcastId = String(created.data.id);
-    // Claim it: only one broadcast per approval, and only while what's saved is still what was approved
-    const { meta } = await env.DB.prepare("UPDATE email_campaigns SET broadcast_id = ?, updated_at = ? WHERE id = ? AND status = 'approved' AND broadcast_id IS NULL AND approved_hash = ?")
-      .bind(broadcastId, nowIso(), id, row.approved_hash)
-      .run();
-    const latest = await readRow(env, id);
-    if (!meta.changes || !latest || (await campaignHash(latest)) !== row.approved_hash) {
-      await resendApi(env, "DELETE", `/broadcasts/${encodeURIComponent(broadcastId)}`).catch(() => null);
-      return getCampaign(env, id);
-    }
-    let sent;
-    try {
-      sent = await resendApi(env, "POST", `/broadcasts/${encodeURIComponent(broadcastId)}/send`, scheduleAt ? { scheduled_at: scheduleAt } : {});
-    } catch (err) {
-      return failWith(`${err.message} It may or may not have gone: check Resend's Broadcasts before sending it again.`, { keepBroadcast: true });
-    }
-    if (!sent.ok) {
-      await resendApi(env, "DELETE", `/broadcasts/${encodeURIComponent(broadcastId)}`).catch(() => null);
-      return failWith(`Resend didn't send it. ${resendReason(sent)}`);
-    }
-    const now = nowIso();
-    await env.DB.batch([
-      env.DB.prepare("UPDATE email_campaigns SET status = ?, recipients = ?, sent_at = ?, error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'").bind(
-        scheduleAt ? "scheduled" : "sent",
-        recipients,
-        scheduleAt ? null : now,
-        now,
-        id
-      ),
-      logEntry(env, id, scheduleAt ? "scheduled" : "sent", "nova", `${scheduleAt ? `Scheduled for ${ukWhen(scheduleAt)} (UK), to` : "Sent to"} ${recipients} ${recipients === 1 ? "person" : "people"} on the ${AUDIENCE_NAMES[row.audience]} list (${SEGMENT_NAMES[row.audience]})`),
-    ]);
-    console.log(`Campaign ${id}: ${scheduleAt ? "scheduled" : "sent"} to ${recipients}`);
+  await writeSetting(env, queueKey(id), JSON.stringify({ hash: row.approved_hash, left: people.map((p) => p.email), sent: 0, failed: 0, skipped: 0, tries: {}, busyUntil: 0 }));
+  const now = nowIso();
+  const { meta } = await env.DB.prepare(
+    "UPDATE email_campaigns SET status = 'scheduled', recipients = ?, stats = ?, error = NULL, updated_at = ? WHERE id = ? AND status = 'approved' AND approved_hash = ?"
+  )
+    .bind(people.length, JSON.stringify({ sent: 0, failed: 0, skipped: 0, unsubscribed: 0 }), now, id, row.approved_hash)
+    .run();
+  if (!meta.changes) {
+    await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(queueKey(id)).run();
     return getCampaign(env, id);
-  } catch (err) {
-    if (broadcastId) await resendApi(env, "DELETE", `/broadcasts/${encodeURIComponent(broadcastId)}`).catch(() => null);
-    return failWith(err instanceof ResendError ? err.message : "Something went wrong sending it.");
+  }
+  const later = row.send_at && Date.parse(row.send_at) > Date.now();
+  const who = `${people.length} ${people.length === 1 ? "person" : "people"} on the ${AUDIENCE_NAMES[row.audience]} list`;
+  await logEntry(env, id, "scheduled", "nova", `${later ? `Goes at ${ukWhen(row.send_at)} (UK) to` : "Going out now to"} ${who}, ${batchSize(env)} a minute`).run();
+  console.log(`Campaign ${id}: ${later ? "scheduled" : "going out"} to ${people.length}`);
+  return getCampaign(env, id);
+}
+
+const wait = (ms) => (ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve());
+const whole = (value, fallback, min) => {
+  const n = Number(value ?? fallback);
+  return Number.isInteger(n) && n >= min ? n : fallback;
+};
+const batchSize = (env) => whole(env.CAMPAIGN_BATCH, BATCH, 1);
+const gapMs = (env) => whole(env.CAMPAIGN_GAP_MS, GAP_MS, 0);
+
+// One campaign's list as saved: the text (for swapping it safely) and what it says
+async function readQueueText(env, id) {
+  return readSetting(env, queueKey(id));
+}
+async function readQueue(env, id) {
+  try {
+    return JSON.parse((await readQueueText(env, id)) || "null");
+  } catch {
+    return null;
   }
 }
 
-// ===== RESEND: SEGMENTS, CONTACTS, UNSUBSCRIBES =====
+// The next few emails of a campaign that's going out. Takes the list first (only if nobody else
+// has it), checks everyone left is still opted in, sends with a pause between, and marks it
+// 'sent' when the list is done. -> how many went
+async function sendBatch(env, row) {
+  const before = await readQueueText(env, row.id);
+  let queue = null;
+  try {
+    queue = JSON.parse(before || "null");
+  } catch {}
+  const stop = async (error) => {
+    const now = nowIso();
+    await env.DB.batch([
+      env.DB.prepare("UPDATE email_campaigns SET status = 'failed', error = ?, updated_at = ? WHERE id = ? AND status = 'scheduled'").bind(error, now, row.id),
+      logEntry(env, row.id, "failed", "nova", error),
+      env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(queueKey(row.id)),
+    ]);
+    console.log(`Campaign ${row.id}: stopped`);
+    return 0;
+  };
+  if (!queue || !Array.isArray(queue.left)) return stop("Its list of people went missing, so it stopped. Check who got it before sending it again.");
+  if (queue.busyUntil > Date.now()) return 0;
+  // Exactly what was approved, or nothing
+  if (!row.approved_hash || queue.hash !== row.approved_hash || (await campaignHash(row)) !== row.approved_hash) return stop("It changed after it was approved, so it stopped.");
+
+  // Take it: only if the list is still exactly as read (two runs can't both send)
+  queue.busyUntil = Date.now() + LEASE_MS;
+  const { meta } = await env.DB.prepare("UPDATE settings SET value = ? WHERE key = ? AND value = ?").bind(JSON.stringify(queue), queueKey(row.id), before).run();
+  if (!meta.changes) return 0;
+
+  const people = await optedInPeople(env);
+  const email = campaignEmail(row);
+  const from = campaignFrom(env);
+  const reply = replyTo(env);
+  const size = batchSize(env);
+  const gap = gapMs(env);
+  let tried = 0;
+  let went = 0;
+  let lastProblem = "";
+  while (queue.left.length && tried < size) {
+    const address = queue.left[0];
+    const person = people.get(address);
+    // Unsubscribed (or no longer on this audience) since the list was made: skipped
+    if (!person || !inAudience(person, row.audience)) {
+      queue.left.shift();
+      queue.skipped++;
+      continue;
+    }
+    if (tried) await wait(gap);
+    tried++;
+    const unsubscribe = await unsubscribeUrl(env, address, row.id);
+    const fill = { why: person.why, unsubscribe };
+    const result = await sendEmail(env, {
+      to: [address],
+      from,
+      replyTo: reply,
+      subject: row.subject,
+      text: filledIn(email.text, fill),
+      html: filledIn(email.html, fill, { html: true }),
+      headers: { "List-Unsubscribe": `<${unsubscribe}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click", "List-Id": "Novacane Studios news <news.novacane.co.uk>" },
+      idempotencyKey: `campaign-${row.id}-${row.approved_hash.slice(0, 12)}-${(await sha256Hex(address)).slice(0, 16)}`,
+    });
+    if (result.ok) {
+      queue.left.shift();
+      queue.sent++;
+      went++;
+      delete queue.tries[address];
+      continue;
+    }
+    lastProblem = result.message || "";
+    const tries = (queue.tries[address] || 0) + 1;
+    // The mail server said no to this address (4xx), or it's been tried enough: it doesn't go
+    if ((result.status >= 400 && result.status < 500) || tries >= MAX_TRIES) {
+      queue.left.shift();
+      queue.failed++;
+      delete queue.tries[address];
+    } else {
+      queue.tries[address] = tries;
+      // The mail server couldn't take it just now: the rest wait for the next minute
+      break;
+    }
+  }
+
+  queue.busyUntil = 0;
+  const now = nowIso();
+  const counts = [queue.sent, queue.failed, queue.skipped];
+  if (queue.left.length) {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE settings SET value = ? WHERE key = ?").bind(JSON.stringify(queue), queueKey(row.id)),
+      env.DB.prepare("UPDATE email_campaigns SET stats = json_set(COALESCE(stats, '{}'), '$.sent', ?, '$.failed', ?, '$.skipped', ?) WHERE id = ?").bind(...counts, row.id),
+    ]);
+    return went;
+  }
+  // The list is done
+  const summary = [
+    `Sent to ${queue.sent} ${queue.sent === 1 ? "person" : "people"} on the ${AUDIENCE_NAMES[row.audience]} list`,
+    queue.failed ? `${queue.failed} didn't go` : "",
+    queue.skipped ? `${queue.skipped} unsubscribed before it reached them` : "",
+  ].filter(Boolean).join("; ");
+  const statements = [
+    env.DB.prepare("UPDATE email_campaigns SET stats = json_set(COALESCE(stats, '{}'), '$.sent', ?, '$.failed', ?, '$.skipped', ?, '$.fetchedAt', ?) WHERE id = ?").bind(...counts, now, row.id),
+    env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(queueKey(row.id)),
+  ];
+  if (queue.sent) {
+    statements.unshift(env.DB.prepare("UPDATE email_campaigns SET status = 'sent', recipients = ?, sent_at = ?, error = NULL, updated_at = ? WHERE id = ? AND status = 'scheduled'").bind(queue.sent, now, now, row.id));
+    statements.push(logEntry(env, row.id, "sent", "nova", summary));
+  } else {
+    const error = queue.failed ? `None of its emails went (the mail server said: ${lastProblem.slice(0, 160) || "no"}).` : "Everyone on its list had unsubscribed, so nobody got it.";
+    statements.unshift(env.DB.prepare("UPDATE email_campaigns SET status = 'failed', error = ?, updated_at = ? WHERE id = ? AND status = 'scheduled'").bind(error, now, row.id));
+    statements.push(logEntry(env, row.id, "failed", "nova", error));
+  }
+  await env.DB.batch(statements);
+  console.log(`Campaign ${row.id}: done (${queue.sent} sent, ${queue.failed} didn't go, ${queue.skipped} skipped)`);
+  return went;
+}
+
+// ===== WHO'S ON THE LISTS, AND UNSUBSCRIBING =====
 
 async function readSetting(env, key) {
   return env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first("value");
@@ -563,45 +664,7 @@ async function writeSetting(env, key, value) {
   await env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(key, value).run();
 }
 
-// The three segments ("Nova · Fans", "Nova · Studio clients", "Nova · Everyone") and the contact
-// properties (why, nova_optin), made once; their ids are kept in settings
-export async function resendSetup(env) {
-  let saved = null;
-  try {
-    saved = JSON.parse((await readSetting(env, RESEND_SETUP_KEY)) || "null");
-  } catch {}
-  if (saved?.segments && AUDIENCES.every((a) => saved.segments[a]) && saved.properties) return saved;
-
-  const segments = { ...(saved?.segments || {}) };
-  if (!AUDIENCES.every((a) => segments[a])) {
-    const existing = await resendApi(env, "GET", "/segments");
-    if (!existing.ok) throw new ResendError(`Resend's segments couldn't be read. ${resendReason(existing)}`, existing.status);
-    const list = Array.isArray(existing.data.data) ? existing.data.data : [];
-    for (const audience of AUDIENCES) {
-      if (segments[audience]) continue;
-      const found = list.find((s) => s.name === SEGMENT_NAMES[audience]);
-      if (found) {
-        segments[audience] = found.id;
-        continue;
-      }
-      const made = await resendApi(env, "POST", "/segments", { name: SEGMENT_NAMES[audience] });
-      if (!made.ok || !made.data.id) throw new ResendError(`Resend didn't make the "${SEGMENT_NAMES[audience]}" segment. ${resendReason(made)}`, made.status);
-      segments[audience] = made.data.id;
-    }
-  }
-  // The contact properties the emails and the sync use (already there is fine)
-  for (const [key, fallback] of [["why", WHY_FALLBACK.everyone], ["nova_optin", ""]]) {
-    const made = await resendApi(env, "POST", "/contact-properties", { key, type: "string", ...(fallback ? { fallback_value: fallback } : {}) });
-    if (!made.ok && ![409, 422].includes(made.status)) throw new ResendError(`Resend didn't make the "${key}" contact property. ${resendReason(made)}`, made.status);
-  }
-  const setup = { segments, properties: true };
-  await writeSetting(env, RESEND_SETUP_KEY, JSON.stringify(setup));
-  return setup;
-}
-
-// Everyone who has opted in, by email: { email, firstName, lastName, fan, client, why, stamp }.
-// `stamp` changes whenever they opt in again (a fan confirming, a client's consent recorded as
-// yes), so an unsubscribe in Resend is never undone except by a newer opt-in.
+// Everyone who has opted in, by email: { email, firstName, lastName, fan, client, why }.
 async function optedInPeople(env) {
   const [fans, clients] = await env.DB.batch([
     env.DB.prepare("SELECT email, name, confirmed_at FROM fans WHERE status = 'confirmed'"),
@@ -627,19 +690,19 @@ async function optedInPeople(env) {
     const [firstName, ...rest] = String(p.name).trim().split(/\s+/);
     p.firstName = firstName || "";
     p.lastName = rest.join(" ");
-    // One reason per person (the same in every segment): signing up as a fan, else their yes as a client
+    // One reason per person (the same on every list): signing up as a fan, else their yes as a client
     p.why = p.fan
       ? `you signed up for Novacane Studios news on ${ukDay(p.fan.confirmed_at)}`
       : `you said yes to studio news from Novacane Studios on ${ukDay(p.client.consent_at || nowIso())}`;
-    p.stamp = `f:${p.fan?.confirmed_at || ""}|c:${p.client ? p.client.yes_id || p.client.consent_at || "" : ""}`;
   }
   return people;
 }
 
 const inAudience = (p, audience) => (audience === "fans" ? Boolean(p.fan) : audience === "clients" ? Boolean(p.client) : Boolean(p.fan || p.client));
 
-// Someone unsubscribed in Resend: a fan becomes 'unsubscribed'; a client's marketing consent goes
-// to NO, written in their consent log (by 'customer'). -> how many records changed
+// Someone unsubscribed (the link in a campaign, or their email app's Unsubscribe button): a fan
+// becomes 'unsubscribed'; a client's marketing consent goes to NO, written in their consent log
+// (by 'customer'). -> how many records changed
 export async function markUnsubscribed(env, email) {
   const address = String(email || "").trim().toLowerCase();
   if (!address) return 0;
@@ -661,207 +724,88 @@ export async function markUnsubscribed(env, email) {
   return changed + results.length;
 }
 
-const propertyValue = (contact, key) => {
-  const p = contact?.properties?.[key];
-  return p && typeof p === "object" ? (p.value ?? null) : (p ?? null);
-};
-
-// A contact Resend says is unsubscribed, who's opted in here. If they opted in again since they
-// were put into Resend (their stamp is newer), they're subscribed again; otherwise the
-// unsubscribe comes back here. -> "resubscribed" or "unsubscribed"
-async function settleUnsubscribed(env, contactRef, person) {
-  const got = await resendApi(env, "GET", `/contacts/${encodeURIComponent(contactRef)}`);
-  if (!got.ok) throw new ResendError(`A contact couldn't be read from Resend. ${resendReason(got)}`, got.status);
-  const pushed = propertyValue(got.data, "nova_optin");
-  if (pushed && person.stamp !== pushed) {
-    const patched = await resendApi(env, "PATCH", `/contacts/${encodeURIComponent(contactRef)}`, { unsubscribed: false, properties: { why: person.why, nova_optin: person.stamp } });
-    if (!patched.ok) throw new ResendError(`A contact couldn't be updated in Resend. ${resendReason(patched)}`, patched.status);
-    return "resubscribed";
+// The secret the unsubscribe links are signed with: made once, kept in settings
+async function unsubscribeSecret(env) {
+  let secret = await readSetting(env, UNSUB_SECRET_KEY);
+  if (!secret) {
+    const fresh = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    await env.DB.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)").bind(UNSUB_SECRET_KEY, fresh).run();
+    secret = await readSetting(env, UNSUB_SECRET_KEY);
   }
-  await markUnsubscribed(env, person.email);
-  return "unsubscribed";
+  return secret;
 }
 
-// Read the three segments from Resend, and bring unsubscribes back. -> { contacts: Map email ->
-// { id, unsubscribed, segments: Set }, unsubscribed, resubscribed }
-export async function pullUnsubscribes(env, setup) {
-  const contacts = new Map();
-  for (const audience of AUDIENCES) {
-    const { items } = await listAll(env, `/contacts?segment_id=${encodeURIComponent(setup.segments[audience])}`);
-    for (const c of items) {
-      const email = String(c.email || "").trim().toLowerCase();
-      if (!email) continue;
-      if (!contacts.has(email)) contacts.set(email, { id: c.id, unsubscribed: c.unsubscribed === true, segments: new Set() });
-      contacts.get(email).segments.add(setup.segments[audience]);
-    }
-  }
-  const people = await optedInPeople(env);
-  let unsubscribed = 0;
-  let resubscribed = 0;
-  for (const [email, c] of contacts) {
-    if (!c.unsubscribed) continue;
-    const person = people.get(email);
-    if (!person) continue; // already off the lists here
-    if ((await settleUnsubscribed(env, c.id || email, person)) === "resubscribed") {
-      c.unsubscribed = false;
-      resubscribed++;
-    } else unsubscribed++;
-  }
-  if (unsubscribed || resubscribed) console.log(`Campaigns: ${unsubscribed} unsubscribe(s) came back from Resend, ${resubscribed} re-subscribed after opting in again`);
-  return { contacts, unsubscribed, resubscribed };
+async function unsubscribeSignature(env, address, id) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(await unsubscribeSecret(env)), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`nova-unsubscribe-v1|${address}|${id}`)));
+  return [...sig.slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Put an audience's opted-in people into its segment, and everyone else out. -> how many are in
-// it (subscribed) now
-export async function syncAudience(env, audience, setup) {
-  const segmentId = setup.segments[audience];
-  const { contacts } = await pullUnsubscribes(env, setup);
-  const people = await optedInPeople(env);
-  const wanted = [...people.values()].filter((p) => inAudience(p, audience));
-  const wantedEmails = new Set(wanted.map((p) => p.email));
-  let added = 0;
-  let removed = 0;
-
-  // Out: anyone in the segment who hasn't opted in (any more)
-  for (const [email, c] of contacts) {
-    if (!c.segments.has(segmentId) || wantedEmails.has(email)) continue;
-    const out = await resendApi(env, "DELETE", `/contacts/${encodeURIComponent(c.id)}/segments/${encodeURIComponent(segmentId)}`);
-    if (!out.ok && out.status !== 404) throw new ResendError(`Someone couldn't be taken off the list in Resend. ${resendReason(out)}`, out.status);
-    c.segments.delete(segmentId);
-    removed++;
+const toBase64Url = (text) => btoa(String.fromCharCode(...new TextEncoder().encode(text))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function fromBase64Url(text) {
+  try {
+    const bin = atob(String(text).replace(/-/g, "+").replace(/_/g, "/"));
+    return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+  } catch {
+    return "";
   }
-
-  // In: opted-in people not in it yet
-  let count = 0;
-  for (const p of wanted) {
-    const known = contacts.get(p.email);
-    if (known?.segments.has(segmentId)) {
-      if (!known.unsubscribed) count++;
-      continue;
-    }
-    let contactRef = known?.id || null;
-    if (!contactRef) {
-      const made = await resendApi(env, "POST", "/contacts", {
-        email: p.email,
-        ...(p.firstName ? { first_name: p.firstName } : {}),
-        ...(p.lastName ? { last_name: p.lastName } : {}),
-        segments: [{ id: segmentId }],
-        properties: { why: p.why, nova_optin: p.stamp },
-      });
-      if (made.ok) {
-        added++;
-        count++;
-        continue;
-      }
-      if (![409, 422].includes(made.status)) throw new ResendError(`Someone couldn't be added to the list in Resend. ${resendReason(made)}`, made.status);
-      // Already a contact (outside these segments): look at them first
-      const got = await resendApi(env, "GET", `/contacts/${encodeURIComponent(p.email)}`);
-      if (!got.ok) throw new ResendError(`A contact couldn't be read from Resend. ${resendReason(got)}`, got.status);
-      contactRef = got.data.id || p.email;
-      if (got.data.unsubscribed === true && (await settleUnsubscribed(env, contactRef, p)) === "unsubscribed") continue;
-      const patched = await resendApi(env, "PATCH", `/contacts/${encodeURIComponent(contactRef)}`, { properties: { why: p.why, nova_optin: p.stamp } });
-      if (!patched.ok) throw new ResendError(`A contact couldn't be updated in Resend. ${resendReason(patched)}`, patched.status);
-    } else if (known.unsubscribed) continue; // settled by pullUnsubscribes: they stay out
-    const added1 = await resendApi(env, "POST", `/contacts/${encodeURIComponent(contactRef)}/segments/${encodeURIComponent(segmentId)}`);
-    if (!added1.ok && added1.status !== 409) throw new ResendError(`Someone couldn't be added to the list in Resend. ${resendReason(added1)}`, added1.status);
-    added++;
-    count++;
-  }
-  if (added || removed) console.log(`Campaigns: ${audience} list synced (+${added}, -${removed}, ${count} in it)`);
-  return count;
 }
 
-// ===== EVERY MINUTE AND EVERY HOUR (index.js's cron) =====
-
-// Scheduled campaigns whose time has come: 'sent' once Resend says so
-export async function checkScheduled(env, at = Date.now()) {
-  const { results } = await env.DB.prepare("SELECT id, broadcast_id, send_at FROM email_campaigns WHERE status = 'scheduled' AND send_at <= ? AND broadcast_id IS NOT NULL").bind(new Date(at).toISOString()).all();
-  let done = 0;
-  for (const c of results) {
-    const answer = await resendApi(env, "GET", `/broadcasts/${encodeURIComponent(c.broadcast_id)}`);
-    if (!answer.ok) continue;
-    const status = String(answer.data.status || "");
-    const now = nowIso();
-    if (status === "sent") {
-      await env.DB.batch([
-        env.DB.prepare("UPDATE email_campaigns SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ? AND status = 'scheduled'").bind(resendTime(answer.data.sent_at) || c.send_at, now, c.id),
-        logEntry(env, c.id, "sent", "resend", "Resend sent it at the scheduled time"),
-      ]);
-      done++;
-    } else if (status === "canceled" || status === "cancelled" || status === "failed") {
-      await env.DB.batch([
-        env.DB.prepare("UPDATE email_campaigns SET status = 'failed', error = ?, updated_at = ? WHERE id = ? AND status = 'scheduled'").bind(`Resend says the broadcast was ${status}.`, now, c.id),
-        logEntry(env, c.id, "failed", "resend", `Resend says the broadcast was ${status}`),
-      ]);
-    }
-  }
-  return done;
+// One person's unsubscribe link for one campaign (signed: it only works for that address)
+export async function unsubscribeUrl(env, address, id) {
+  const email = String(address).trim().toLowerCase();
+  return `${publicUrl(env)}/unsubscribe?e=${toBase64Url(email)}&c=${id}&s=${await unsubscribeSignature(env, email, id)}`;
 }
 
-// A time as Resend writes it ("2026-10-06 23:47:56.678+00", or ISO) -> UTC ISO, or null
-function resendTime(value) {
-  if (typeof value !== "string" || !value) return null;
-  const text = value.trim().replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00");
-  const ms = Date.parse(text);
-  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
-}
-
-// How many recipients of a broadcast had each event (counting up to STATS_CAP of each)
-export async function fetchStats(env, broadcastId) {
-  const stats = {};
-  let capped = false;
-  for (const type of STAT_TYPES) {
-    const { items, capped: hitCap } = await listAll(env, `/broadcasts/${encodeURIComponent(broadcastId)}/recipients?type=${type}`, { max: STATS_CAP });
-    stats[type] = items.length;
-    capped = capped || hitCap;
-  }
-  return { ...stats, ...(capped ? { capped: true } : {}), fetchedAt: nowIso() };
-}
-
-// The numbers for campaigns sent in the last 14 days
-export async function refreshStats(env, at = Date.now()) {
-  const since = new Date(at - STATS_DAYS * 86400000).toISOString();
-  const { results } = await env.DB.prepare("SELECT id, broadcast_id, stats FROM email_campaigns WHERE status = 'sent' AND broadcast_id IS NOT NULL AND sent_at >= ? ORDER BY id").bind(since).all();
-  for (const c of results) {
+// /unsubscribe?e=…&c=…&s=…: opening the link asks first (a Confirm button, so a link scanner can't
+// unsubscribe anyone); pressing it, or an email app's one-click Unsubscribe (a POST to the same
+// address, RFC 8058), unsubscribes them from the studio's news
+export async function handleUnsubscribe(request, env) {
+  const press = request.method === "POST";
+  if (!press && request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405, headers: { Allow: "GET, POST" } });
+  const url = new URL(request.url);
+  const read = { e: url.searchParams.get("e") || "", c: url.searchParams.get("c") || "", s: url.searchParams.get("s") || "" };
+  if (press) {
     try {
-      const stats = await fetchStats(env, c.broadcast_id);
-      const before = parseStats(c.stats) || {};
-      const changed = STAT_TYPES.some((t) => before[t] !== stats[t]);
-      const statements = [env.DB.prepare("UPDATE email_campaigns SET stats = ? WHERE id = ?").bind(JSON.stringify(stats), c.id)];
-      if (changed) statements.push(logEntry(env, c.id, "stats", "resend", STAT_TYPES.map((t) => `${t} ${stats[t]}`).join(", ")));
-      await env.DB.batch(statements);
-    } catch (err) {
-      console.log(`Campaign ${c.id}: the numbers couldn't be read (${err?.name})`);
-    }
+      const form = await request.formData();
+      for (const k of ["e", "c", "s"]) if (form.get(k)) read[k] = String(form.get(k));
+    } catch {}
   }
-  return results.length;
+  const address = fromBase64Url(read.e).trim().toLowerCase();
+  const id = /^\d{1,12}$/.test(read.c) ? Number(read.c) : 0;
+  const good = address.includes("@") && id > 0 && /^[0-9a-f]{32}$/.test(read.s) && read.s === (await unsubscribeSignature(env, address, id));
+  if (!good) return fanPage("That link doesn't work", "It may have been copied wrongly. To stop getting news from Novacane Studios, reply to any of our emails and say so.", {}, 404);
+  if (!press) {
+    const hidden = (k) => `<input type="hidden" name="${k}" value="${esc(read[k])}">`;
+    return fanPage("Unsubscribe?", "Press the button and you won't get news emails from Novacane Studios any more.", { form: `<form method="post" action="/unsubscribe">${hidden("e")}${hidden("c")}${hidden("s")}<button type="submit">Unsubscribe</button></form>` });
+  }
+  const changed = await markUnsubscribed(env, address);
+  if (changed) {
+    await env.DB.prepare("UPDATE email_campaigns SET stats = json_set(COALESCE(stats, '{}'), '$.unsubscribed', COALESCE(json_extract(stats, '$.unsubscribed'), 0) + 1) WHERE id = ?").bind(id).run();
+    console.log(`Campaign ${id}: someone unsubscribed`);
+  }
+  return fanPage("You're unsubscribed", "You won't get news emails from Novacane Studios any more. Changed your mind? You can sign up again any time.", { link: true });
 }
 
-// Every minute: scheduled ones that are due. Every hour: unsubscribes, scheduled campaigns' lists,
-// the numbers, and old sign-up counters.
-export async function campaignsOnSchedule(env, at = Date.now()) {
-  if (!marketingKey(env)) return null;
-  const due = await env.DB.prepare("SELECT COUNT(*) AS n FROM email_campaigns WHERE status = 'scheduled' AND send_at <= ?").bind(new Date(at).toISOString()).first("n");
-  if (due) await checkScheduled(env, at).catch((err) => console.log("Campaigns: scheduled check failed:", err?.name));
+// ===== EVERY MINUTE (index.js's cron) =====
 
+// Campaigns going out (scheduled ones whose time has come): the next batch of each. Every hour:
+// old sign-up counters cleared.
+export async function campaignsOnSchedule(env, at = Date.now()) {
+  if (!campaignsReady(env)) return null;
+  const { results } = await env.DB.prepare(`${SELECT} WHERE c.status = 'scheduled' AND (c.send_at IS NULL OR c.send_at <= ?) ORDER BY c.id`).bind(new Date(at).toISOString()).all();
+  let sent = 0;
+  for (const row of results) {
+    sent += await sendBatch(env, row).catch((err) => {
+      console.log(`Campaign ${row.id}: a batch failed (${err?.name})`);
+      return 0;
+    });
+  }
   const last = await readSetting(env, HOURLY_KEY);
-  if (last && at - Date.parse(last) < 3600000) return { hourly: false };
-  // Stamp it first, so a slow run isn't started again by the next minute's cron
+  if (last && at - Date.parse(last) < 3600000) return { sent, hourly: false };
   await writeSetting(env, HOURLY_KEY, new Date(at).toISOString());
   await env.DB.prepare("DELETE FROM settings WHERE key LIKE 'fan_signup:%' AND key < ?").bind(`fan_signup:${Math.floor(at / 3600000) - 1}`).run();
-  const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM email_campaigns WHERE status IN ('scheduled', 'sent')").first();
-  if (!n) return { hourly: true };
-  try {
-    const setup = await resendSetup(env);
-    await pullUnsubscribes(env, setup);
-    // Scheduled ones still to go: their lists brought up to date (someone may have opted out)
-    const { results } = await env.DB.prepare("SELECT DISTINCT audience FROM email_campaigns WHERE status = 'scheduled' AND send_at > ?").bind(new Date(at).toISOString()).all();
-    for (const { audience } of results) await syncAudience(env, audience, setup);
-  } catch (err) {
-    console.log("Campaigns: unsubscribe sync failed:", err?.name, err?.status || "");
-  }
-  await refreshStats(env, at).catch((err) => console.log("Campaigns: stats failed:", err?.name));
-  return { hourly: true };
+  return { sent, hourly: true };
 }
 
 // ===== FOR NOVA AGENT'S suggest_campaign =====

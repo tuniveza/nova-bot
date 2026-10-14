@@ -1,14 +1,14 @@
 // "How it works" in Portal: what each part of Nova runs on, and whether it's set up.
 //
-// For staff and admins to see at a glance that, say, enquiry emails go through Resend and
-// the key is in place. Only names, plain addresses the studio chose (the email "from" and
+// For staff and admins to see at a glance that, say, enquiry emails go through the studio's own
+// mail server and it's set up. Only names, plain addresses the studio chose (the email "from" and
 // where copies go) and yes/no are shown: never a key or a secret's value.
 
 import { emailIsSetUp, emailRecipients, sendEmail } from "./enquiries.js";
 import { bookingSystem } from "./mode.js";
 import { googleReady } from "./nova/google.js";
 import { stripeReady } from "./nova/stripe.js";
-import { campaignFrom } from "./campaigns.js";
+import { campaignFrom, campaignsReady } from "./campaigns.js";
 import { readyFor } from "./social.js";
 import { publicUrl } from "./nova/booking.js";
 
@@ -57,11 +57,11 @@ export async function servicesStatus(env) {
     {
       id: "email",
       name: "Enquiry emails",
-      tech: "Resend (resend.com)",
+      tech: "The studio's own mail server (on the VPS)",
       ready: emailIsSetUp(env) ? (from ? true : "partly") : false,
       detail: emailIsSetUp(env)
-        ? `Replies from Portal go from ${from || "Resend's test address (set ENQUIRY_EMAIL_FROM)"}. Copies of new enquiries go to ${copies.join(", ")}.`
-        : "Needs the RESEND_API_KEY and ENQUIRY_EMAIL_TO secrets.",
+        ? `Replies from Portal go from ${from || "hello@novacane.co.uk (set ENQUIRY_EMAIL_FROM to change it)"}. Copies of new enquiries go to ${copies.join(", ")}.`
+        : "Needs the mail server (MAIL_API_URL and MAIL_KEY) and the ENQUIRY_EMAIL_TO setting.",
       last: lastEmail,
       test: emailIsSetUp(env),
     },
@@ -133,21 +133,18 @@ export async function servicesStatus(env) {
   ];
 }
 
-// Email newsletters (src/campaigns.js): ready with a full-access key and the from address. A plain
-// RESEND_API_KEY may be sending-only, so with just that it's "partly" (it works only if it has full access).
+// Email newsletters (src/campaigns.js): ready with the studio's mail server and the from address
 function newsletters(env, last) {
   const from = campaignFrom(env);
-  const fullKey = Boolean(env.RESEND_MARKETING_KEY);
-  const anyKey = fullKey || Boolean(env.RESEND_API_KEY);
-  const ready = anyKey && from ? (fullKey ? true : "partly") : false;
+  const ready = campaignsReady(env);
   return {
     id: "newsletters",
     name: "Email newsletters",
-    tech: "Resend (resend.com): contacts, segments and broadcasts",
+    tech: "The studio's own mail server (on the VPS), a few emails a minute",
     ready,
-    detail: !anyKey || !from
-      ? "Needs a full-access Resend key (the RESEND_MARKETING_KEY secret) and the address campaigns come from (CAMPAIGN_FROM)."
-      : `Campaigns go from ${from} only to people who opted in (confirmed fans, and clients who said yes), and only after an admin approves them in Portal → Campaigns. Fans sign up at ${publicUrl(env)}/join.${fullKey ? "" : " Using RESEND_API_KEY: it needs full access for contacts and broadcasts (or add RESEND_MARKETING_KEY)."}`,
+    detail: !ready
+      ? "Needs the studio's mail server (MAIL_API_URL and MAIL_KEY) and the address campaigns come from (CAMPAIGN_FROM)."
+      : `Campaigns go from ${from} only to people who opted in (confirmed fans, and clients who said yes), and only after an admin approves them in Portal → Campaigns. Each email has its own unsubscribe link. Fans sign up at ${publicUrl(env)}/join.`,
     last,
   };
 }
@@ -174,9 +171,9 @@ function socialPosts(env, last, pc) {
   };
 }
 
-// "Send me a test email": proves Resend works by emailing the person who pressed it (only them)
+// "Send me a test email": proves the mail server works by emailing the person who pressed it (only them)
 export async function testEmailToMe(env, me) {
-  if (!emailIsSetUp(env)) return { status: 409, error: "Email isn't set up yet (it needs the RESEND_API_KEY and ENQUIRY_EMAIL_TO secrets)." };
+  if (!emailIsSetUp(env)) return { status: 409, error: "Email isn't set up yet (it needs the mail server, MAIL_API_URL and MAIL_KEY, and ENQUIRY_EMAIL_TO)." };
   const to = String(me.email || "").trim();
   if (!to) return { status: 409, error: "Your account has no email address." };
   const key = "test_email_" + me.id;
@@ -187,7 +184,7 @@ export async function testEmailToMe(env, me) {
     to: [to],
     from: env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || undefined,
     subject: "Test email from Portal",
-    text: `This is a test from Portal's "How it works" page, sent through Resend. If you're reading this, emails from Nova are working.`,
+    text: `This is a test from Portal's "How it works" page, sent by the studio's own mail server. If you're reading this, emails from Nova are working.`,
   });
   return result.ok ? { ok: true, to, message: `Sent to ${to}. Check the inbox (and spam).` } : { status: 502, error: result.message };
 }

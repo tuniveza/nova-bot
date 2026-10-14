@@ -8,11 +8,11 @@ import { connectGoogle } from "./fakes.js";
 const BASE = "https://novacane-worker.test";
 const SITE = "https://novacane.co.uk";
 
-// ----- A fake Claude and a fake Resend -----
+// ----- A fake Claude and a fake mail server -----
 
 let claudeReplies = []; // what the fake Claude answers, in order
 let claudeCalls = []; // what the Worker sent to Claude
-let emails = []; // what the Worker sent to Resend
+let emails = []; // what the Worker sent to the mail server
 
 const text = (words) => ({ stop_reason: "end_turn", content: [{ type: "text", text: words }] });
 const enquiryCall = (input, id = "toolu_1") => ({
@@ -44,7 +44,7 @@ beforeEach(async () => {
 			if (!next) return new Response("overloaded", { status: 529 });
 			return new Response(JSON.stringify(next), { headers: { "Content-Type": "application/json" } });
 		}
-		if (String(url) === "https://api.resend.com/emails") {
+		if (String(url) === "http://mail.test/emails") {
 			emails.push(JSON.parse(init.body));
 			return new Response(JSON.stringify({ id: "email_1" }), { headers: { "Content-Type": "application/json" } });
 		}
@@ -209,7 +209,7 @@ describe("enquiries", () => {
 
 	it("emails a copy to the studio when that's set up", async () => {
 		claudeReplies.push(enquiryCall(GOOD_ENQUIRY), text("Sent."));
-		await chat(ask("Yes"), { extraEnv: { RESEND_API_KEY: "re_test", ENQUIRY_EMAIL_TO: "studio@example.com" } });
+		await chat(ask("Yes"), { extraEnv: { MAIL_KEY: "re_test", ENQUIRY_EMAIL_TO: "studio@example.com" } });
 		expect(emails).toHaveLength(1);
 		expect(emails[0]).toMatchObject({ to: ["studio@example.com"], reply_to: "sam@example.com" });
 		expect(emails[0].subject).toBe("NovaBot enquiry: Album recording, 6 tracks");
@@ -295,18 +295,18 @@ describe("admin: enquiries and conversations", () => {
 		expect(emails).toHaveLength(0);
 		expect(await (await admin("/admin/enquiries")).text()).toContain("Email copies: <strong>off</strong>");
 
-		res = await testEmail({ RESEND_API_KEY: "re_test", ENQUIRY_EMAIL_TO: "studio@example.com, odysi@example.com" });
+		res = await testEmail({ MAIL_KEY: "re_test", ENQUIRY_EMAIL_TO: "studio@example.com, odysi@example.com" });
 		expect(decodeURIComponent(res.headers.get("Location"))).toMatch(/Test email sent to studio@example.com, odysi@example.com/);
 		expect(emails[0]).toMatchObject({ to: ["studio@example.com", "odysi@example.com"], subject: "NovaBot test email" });
 	});
 
-	it("shows Resend's reason when an email can't be sent", async () => {
+	it("shows the mail server's reason when an email can't be sent", async () => {
 		globalThis.fetch.mockImplementation(async () =>
 			new Response(JSON.stringify({ message: "You can only send testing emails to your own email address" }), { status: 403 })
 		);
 		const res = await worker.fetch(
 			new Request(BASE + "/admin/enquiries/test-email", { method: "POST", headers: { ...auth, Origin: BASE, "Content-Type": "application/x-www-form-urlencoded" }, body: "" }),
-			{ ...env, RESEND_API_KEY: "re_test", ENQUIRY_EMAIL_TO: "someone@example.com" }
+			{ ...env, MAIL_KEY: "re_test", ENQUIRY_EMAIL_TO: "someone@example.com" }
 		);
 		expect(decodeURIComponent(res.headers.get("Location"))).toContain("only send testing emails to your own email address");
 	});

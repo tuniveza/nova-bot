@@ -1,4 +1,4 @@
-// Computer: the VPS's own mail service. Nova Bot hands single emails here exactly as it would to Resend
+// Computer: the VPS's own mail service. Nova Bot hands every email here, one at a time
 // (POST /emails with { from, to, reply_to, subject, text, html, headers }, Bearer key), and this
 // gives them to Postfix on the same machine, which signs them (DKIM, selector "nova") and delivers
 // them. Only on 127.0.0.1; only senders @novacane.co.uk; at most 50 recipients a message; a repeat

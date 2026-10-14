@@ -1,5 +1,5 @@
 // One-to-one emails ("outreach"): a personal email to one person (a venue, a label, a brand, a
-// client, someone who wrote in), sent through Resend only after an admin approves it
+// client, someone who wrote in), sent by the studio's mail server only after an admin approves it
 // (migrations/0028_outreach.sql). It works like email campaigns (src/campaigns.js).
 //
 // Who can do what is decided here and in the routes, whatever any AI says:
@@ -34,7 +34,7 @@
 
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
-import { emailRecipients, sendEmail } from "./enquiries.js";
+import { emailRecipients, mailReady, sendEmail } from "./enquiries.js";
 import { sendStudioEmail } from "./google/gmail.js";
 import { campaignFrom } from "./campaigns.js";
 
@@ -164,7 +164,7 @@ export function publicOutreach(env, row) {
     decidedAt: row.decided_at || null,
     note: row.decision_note || null,
     sentAt: row.sent_at || null,
-    error: stuck ? "It didn't finish sending (Nova Bot stopped part-way). Check Resend's Emails before sending it again." : row.error || null,
+    error: stuck ? "It didn't finish sending (Nova Bot stopped part-way). Check the studio's Sent mail before sending it again." : row.error || null,
     portalUrl: `${publicUrl(env)}/portal/?view=campaigns&outreach=${row.id}`,
   };
 }
@@ -348,9 +348,9 @@ export function outreachFrom(env) {
   return String(env.ENQUIRY_REPLY_FROM || env.CAMPAIGN_FROM || campaignFrom(env) || "").trim();
 }
 export function outreachReady(env) {
-  return Boolean(env.RESEND_API_KEY && outreachFrom(env));
+  return Boolean(mailReady(env) && outreachFrom(env));
 }
-const NOT_READY = "One-to-one emails aren't set up yet: they need Resend's sending key (RESEND_API_KEY) and the from address (ENQUIRY_REPLY_FROM or CAMPAIGN_FROM).";
+const NOT_READY = "One-to-one emails aren't set up yet: they need the studio's mail server (MAIL_API_URL, MAIL_KEY) and the from address (ENQUIRY_REPLY_FROM or CAMPAIGN_FROM).";
 
 function replyTo(env) {
   return env.OUTREACH_REPLY_TO || env.CAMPAIGN_REPLY_TO || env.ENQUIRY_REPLY_TO || emailRecipients(env)[0] || undefined;
@@ -472,7 +472,7 @@ export async function sendApproved(env, id) {
   if (!meta.changes) return getOutreach(env, id);
 
   const email = outreachEmail(env, row);
-  // (from the studio's Gmail when that's switched on: src/google/gmail.js; otherwise Resend)
+  // (the studio's own mail server, with Gmail as the backup: src/google/gmail.js)
   const result = await sendStudioEmail(env, {
     to: [row.to_name ? `${row.to_name.replace(/["<>]/g, "")} <${row.to_email}>` : row.to_email],
     from: outreachFrom(env),
@@ -483,11 +483,11 @@ export async function sendApproved(env, id) {
     headers: { "List-Unsubscribe": `<${optoutUrl(env, row)}>` },
     idempotencyKey: `outreach-${id}-${row.approved_hash.slice(0, 16)}`,
   }, { kind: "outreach", id });
-  if (!result.ok) return failWith(result.message || "Resend didn't send it.");
+  if (!result.ok) return failWith(result.message || "The mail server didn't send it.");
   const now = nowIso();
   await env.DB.batch([
     env.DB.prepare("UPDATE outreach_emails SET status = 'sent', resend_id = ?, sent_at = ?, error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'").bind(result.id || null, now, now, id),
-    logEntry(env, id, "sent", "nova", result.via === "gmail" ? "Sent from the studio's Gmail" : "Sent through Resend"),
+    logEntry(env, id, "sent", "nova", result.via === "gmail" ? "Sent from the studio's Gmail" : "Sent by the studio's mail server"),
   ]);
   console.log(`Outreach ${id}: sent`);
   return getOutreach(env, id);

@@ -9,7 +9,7 @@ import { STAFF_COOKIE } from "./sign-in.js";
 
 const BASE = "https://novacane-worker.test";
 const AGENT_KEY = "agent-nova-test-key";
-const EMAIL_ENV = { RESEND_API_KEY: "re_test_key", ENQUIRY_EMAIL_TO: "studio@novacane.test" };
+const EMAIL_ENV = { MAIL_KEY: "re_test_key", ENQUIRY_EMAIL_TO: "studio@novacane.test" };
 
 let outside = [];
 beforeEach(async () => {
@@ -131,7 +131,7 @@ describe("an enquiry arriving", () => {
 		expect(row.status).toBe("spam");
 		expect(row.spam_reason).toMatch(/^Likely spam: 3 links; spam words/);
 		expect(row.state_by).toBe("filter");
-		expect(outside.filter((u) => u.includes("resend"))).toEqual([]);
+		expect(outside.filter((u) => u.includes("mail.test"))).toEqual([]);
 		expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM notifications").first()).n).toBe(0);
 	});
 
@@ -139,7 +139,7 @@ describe("an enquiry arriving", () => {
 		await fromChat({ details: "Two hour vocal session for a single next Friday" });
 		const row = await env.DB.prepare("SELECT status, spam_reason FROM enquiries").first();
 		expect(row).toEqual({ status: "new", spam_reason: null });
-		expect(outside).toContain("https://api.resend.com/emails");
+		expect(outside).toContain("http://mail.test/emails");
 	});
 });
 

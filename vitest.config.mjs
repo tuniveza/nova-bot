@@ -24,9 +24,10 @@ export default defineConfig({
 					STRIPE_SECRET_KEY: "sk_test_novacane",
 					STRIPE_WEBHOOK_SECRET: "whsec_test_novacane",
 					PUBLIC_URL: "https://novacane-worker.test",
-					// Resend's marketing API without the waits (src/resend-marketing.js spaces calls out in real life)
-					RESEND_GAP_MS: "0",
-					RESEND_BACKOFF_MS: "0",
+					// The studio's mail server, faked in the tests (never a real one), and campaigns without
+					// the pause between emails (src/campaigns.js spaces them out in real life)
+					MAIL_API_URL: "http://mail.test",
+					CAMPAIGN_GAP_MS: "0",
 				},
 			},
 		})),

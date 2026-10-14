@@ -1,5 +1,6 @@
--- Email campaigns (Quest 3): newsletters to fans and studio clients, sent through Resend,
--- only after an admin approves them
+-- Email campaigns (Quest 3): newsletters to fans and studio clients, only after an admin
+-- approves them. (Written when they went through Resend; since 2026-10-14 the studio's own mail
+-- server sends them, a few a minute, and broadcast_id is no longer used: see src/campaigns.js.)
 --
 -- Nova Agent's AI (or staff) writes a campaign; it waits as 'pending_approval' until an admin,
 -- signed in to Portal in a browser, presses Approve. Approving stores a hash of exactly what

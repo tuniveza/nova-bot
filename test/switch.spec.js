@@ -216,14 +216,12 @@ describe("Computer: the VPS only", () => {
 		expect(d.here.agentSwitch.back).toBe("vps/agent-switch-back.sh");
 	});
 
-	it("warns when the newsletters' Resend key can't send as the studio's domain", async () => {
-		await env.DB.prepare("DELETE FROM settings WHERE key = 'desk_resend_domains'").run();
-		globalThis.fetch = vi.fn(async (url) => (String(url).includes("api.resend.com/domains") ? Response.json({ data: [] }) : Response.json({}, { status: 401 })));
-		const d = await desk({ RESEND_MARKETING_KEY: "re_x", CAMPAIGN_FROM: "Novacane <hello@novacane.co.uk>" });
-		expect(d.here.warnings.join(" ")).toContain("without novacane.co.uk");
-		await env.DB.prepare("DELETE FROM settings WHERE key = 'desk_resend_domains'").run();
-		globalThis.fetch = vi.fn(async (url) => (String(url).includes("api.resend.com/domains") ? Response.json({ data: [{ name: "novacane.co.uk", status: "verified" }] }) : Response.json({}, { status: 401 })));
-		const ok = await desk({ RESEND_MARKETING_KEY: "re_y", CAMPAIGN_FROM: "Novacane <hello@novacane.co.uk>" });
+	it("warns when newsletters can't go (no mail server here)", async () => {
+		globalThis.fetch = vi.fn(async () => Response.json({}, { status: 401 }));
+		const d = await desk({ MAIL_KEY: "", RESEND_API_KEY: "", CAMPAIGN_FROM: "Novacane <hello@novacane.co.uk>" });
+		expect(d.here.warnings.join(" ")).toContain("Newsletters are off");
+		const ok = await desk({ MAIL_KEY: "k", CAMPAIGN_FROM: "Novacane <hello@novacane.co.uk>" });
 		expect(ok.here.warnings).toEqual([]);
 	});
+
 });
