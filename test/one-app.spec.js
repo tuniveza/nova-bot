@@ -36,6 +36,8 @@ describe("a panel opened on its own opens inside Nova Agent", () => {
     ["/visualizer", "/visualizer"],
     ["/fixer/", "/fixer/"],
     ["/agent/fixer", "/fixer/"],
+    ["/invoicer/", "/invoicer/"],
+    ["/agent/invoicer", "/invoicer/"],
   ])("%s → /agent/?open=%s", async (from, address) => {
     const res = await get(from, onItsOwn);
     expect(res.status).toBe(302);
