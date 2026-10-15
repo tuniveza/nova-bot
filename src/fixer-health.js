@@ -140,7 +140,11 @@ export async function fixerHealth(env, now = Date.now()) {
       status = JSON.parse(raw) || {};
     } catch {}
     const down = Object.entries(status).filter(([, v]) => v && typeof v === "object" && v.ok === false).map(([k]) => k);
-    const late = Object.entries(status).filter(([, v]) => v && typeof v === "object" && v.ok && v.at && ago(v.at, now) > 6).map(([k, v]) => `${k} (${Math.round(ago(v.at, now))} h ago)`);
+    // How long each part may go without a run (src/google/index.js: Calendar every 5 minutes, replies,
+    // contacts, the sheet and the inbox hourly, backups at about 3am); the others only run when
+    // something changes, so a quiet one isn't late
+    const EXPECT = { calendar: 1, replies: 3, contacts: 3, sheets: 3, inbox: 3, backups: 27 };
+    const late = Object.entries(status).filter(([k, v]) => EXPECT[k] && v && typeof v === "object" && v.ok && v.at && ago(v.at, now) > EXPECT[k]).map(([k, v]) => `${k} (${Math.round(ago(v.at, now))} h ago)`);
     if (down.length) return fail(`Google's ${down.join(", ")} ${down.length === 1 ? "isn't" : "aren't"} working (Portal → Admin → Google says why)`);
     if (late.length) return fail(`Google's ${late.join(", ")} haven't synced lately`);
     return `${Object.keys(status).length} parts working`;

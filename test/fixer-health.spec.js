@@ -55,6 +55,17 @@ describe("Nova Bot's health for the Fixer", () => {
 		expect(words).not.toContain("ada@example.com");
 	});
 
+	it("Google: a part that stopped, or one late for its own schedule (backups are nightly, so 10 hours is fine)", async () => {
+		const at = (h) => new Date(Date.now() - h * 3600_000).toISOString();
+		const put = (v) => env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('google_status', ?)").bind(JSON.stringify(v)).run();
+		await put({ backups: { ok: true, at: at(10) }, calendar: { ok: true, at: at(0.1) }, docs: { ok: true, at: at(50) } });
+		expect(byName(await fixerHealth({ ...env, ...MAIL })).Google.ok).toBe(true);
+		await put({ backups: { ok: true, at: at(30) }, calendar: { ok: false, at: at(0.1) } });
+		const g = byName(await fixerHealth({ ...env, ...MAIL })).Google;
+		expect(g.ok).toBe(false);
+		expect(g.detail).toMatch(/calendar isn't working/);
+	});
+
 	it("says when emails can't go out", async () => {
 		const h = byName(await fixerHealth({ ...env, MAIL_API_URL: "", MAIL_KEY: "" }));
 		expect(h["Emails can go out"]).toMatchObject({ ok: false, severity: "serious" });
