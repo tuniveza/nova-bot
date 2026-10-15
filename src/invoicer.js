@@ -334,10 +334,10 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
     const [r, g, b] = rgb(c);
     return `<filter id="${id}" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="${freq}" numOctaves="${octaves}" seed="${seed}" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 ${r.toFixed(3)} 0 0 0 0 ${g.toFixed(3)} 0 0 0 0 ${b.toFixed(3)} ${a} 0 0 0 ${(-a * 0.35).toFixed(3)}"/></filter>`;
   };
-  const stardust = ({ size, seed, cloud, grain, specks, glints = 0 }) => {
+  const stardust = ({ size, seed, cloud, grain, specks, glints = 0, cloudTone = tone, speckTone = dustTone, grainTone = dark ? "#FFFFFF" : "#000000", strength = dark ? 0.75 : 1 }) => {
     let x = seed >>> 0;
     const rnd = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
-    const k = dark ? 0.75 : 1;
+    const k = strength;
     let dots = "";
     for (let i = 0; i < specks; i++) {
       const r = rnd() < 0.85 ? 0.3 + rnd() * 0.35 : 0.7 + rnd() * 0.5;
@@ -347,10 +347,13 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
       const gx = rnd() * size, gy = rnd() * size, gr = 1.4 + rnd() * 0.8;
       dots += `<path d="M${gx.toFixed(1)} ${(gy - gr).toFixed(1)}l${(gr * 0.2).toFixed(2)} ${(gr * 0.8).toFixed(2)} ${(gr * 0.8).toFixed(2)} ${(gr * 0.2).toFixed(2)} ${(-gr * 0.8).toFixed(2)} ${(gr * 0.2).toFixed(2)} ${(-gr * 0.2).toFixed(2)} ${(gr * 0.8).toFixed(2)} ${(-gr * 0.2).toFixed(2)} ${(-gr * 0.8).toFixed(2)} ${(-gr * 0.8).toFixed(2)} ${(-gr * 0.2).toFixed(2)} ${(gr * 0.8).toFixed(2)} ${(-gr * 0.2).toFixed(2)}z" fill-opacity="${(0.22 * k).toFixed(2)}"/>`;
     }
-    return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">${cloud ? noise("c", 0.009, 3, tone, cloud * k, seed % 97) : ""}${grain ? noise("g", 0.95, 2, dark ? "#FFFFFF" : "#000000", grain * k, seed % 89) : ""}${cloud ? `<rect width="${size}" height="${size}" filter="url(#c)"/>` : ""}${grain ? `<rect width="${size}" height="${size}" filter="url(#g)"/>` : ""}<g fill="${dustTone}">${dots}</g></svg>`);
+    return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">${cloud ? noise("c", 0.009, 3, cloudTone, cloud * k, seed % 97) : ""}${grain ? noise("g", 0.95, 2, grainTone, grain * k, seed % 89) : ""}${cloud ? `<rect width="${size}" height="${size}" filter="url(#c)"/>` : ""}${grain ? `<rect width="${size}" height="${size}" filter="url(#g)"/>` : ""}<g fill="${speckTone}">${dots}</g></svg>`);
   };
   const tex = {
     page: stardust({ size: 460, seed: 11, cloud: 0.09, grain: 0.035, specks: 46, glints: 1 }),
+    // (the band: wisps of the theme's colour, a fine velvet grain and faint star dust, under its sky;
+    // on the light Paper band, quieter and dark)
+    band: stardust({ size: 400, seed: 79, cloud: t.mono ? 0.06 : lightBand ? 0.1 : 0.2, grain: lightBand ? 0.04 : 0.07, specks: 52, glints: 1, cloudTone: t.mono ? (lightBand ? "#000000" : "#FFFFFF") : vivid(t.accent2, lightBand ? 0.5 : 0.62), speckTone: lightBand ? "#3A2A44" : "#FFFFFF", grainTone: lightBand ? "#000000" : "#FFFFFF", strength: lightBand ? 0.6 : 1 }),
     // (behind the invoice: a deeper grain and more stardust, the surface it lies on)
     backdrop: stardust({ size: 520, seed: 67, cloud: t.mono ? 0.07 : 0.14, grain: 0.05, specks: 70, glints: 2 }),
     amount: stardust({ size: 300, seed: 23, cloud: 0.12, grain: 0.03, specks: 22, glints: 1 }),
@@ -376,7 +379,7 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
 html{min-height:100%;background:${tex.backdrop},${t.mono ? "" : `radial-gradient(70% 55% at 0% 0%,color-mix(in srgb,${accent2} ${dark ? 22 : 16}%,transparent),transparent 70%),radial-gradient(65% 50% at 100% 100%,color-mix(in srgb,${accent} ${dark ? 20 : 14}%,transparent),transparent 70%),`}radial-gradient(120% 90% at 50% 40%,transparent 55%,${dark ? "rgb(0 0 0 / .45)" : "rgb(60 40 70 / .10)"}),${page.outside};background-attachment:fixed}
 body{margin:0;padding:28px 12px;font:15px/1.55 "Jost",Futura,"Century Gothic","Avenir Next",system-ui,sans-serif;color:var(--ink);letter-spacing:.01em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .sheet{max-width:820px;margin:0 auto;background:${tex.page},var(--paper);box-shadow:0 0 0 1px ${dark ? "rgb(255 255 255 / .05)" : "rgb(40 20 50 / .06)"},0 2px 4px rgb(0 0 0 / ${dark ? ".35" : ".06"}),0 18px 50px ${dark ? "rgb(0 0 0 / .55)" : "rgb(60 30 80 / .16)"}}
-.band{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:var(--band)}
+.band{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:${tex.band},var(--band)}
 .band .sky{position:absolute;inset:0;width:100%;height:100%;display:block}
 .band>:not(.sky){position:relative}
 .band::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--blend)}
