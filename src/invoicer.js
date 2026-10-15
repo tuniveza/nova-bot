@@ -184,14 +184,14 @@ export function stageEmail(invoice, sums, stage, settings) {
 export const INVOICE_THEMES = [
   // accent2: the second colour of each theme's blend (the website logo's pink into violet, and kin);
   // mono: no colour at all, black and white (the white logo)
-  { id: "night", name: "Night", band: "#100806", accent: "#B0367E", accent2: "#7B2CBF", accentDark: "#E0629F", accent2Dark: "#A774E0", wash: "#FBF8F7" },
-  { id: "violet", name: "Violet", band: "#0F0812", accent: "#7B2CBF", accent2: "#B0367E", accentDark: "#A774E0", accent2Dark: "#E0629F", wash: "#F9F7FC" },
-  { id: "plum", name: "Plum", band: "#140A12", accent: "#962F86", accent2: "#5B3FC0", accentDark: "#CF67BE", accent2Dark: "#958AF0", wash: "#FBF7FA" },
-  { id: "ink", name: "Ink", band: "#0B0B10", accent: "#4F46B8", accent2: "#2E8FB8", accentDark: "#8D86F0", accent2Dark: "#6CC4E6", wash: "#F7F7FA" },
-  { id: "ember", name: "Ember", band: "#140806", accent: "#B8405F", accent2: "#D27A2E", accentDark: "#E57590", accent2Dark: "#F0A866", wash: "#FCF7F6" },
-  { id: "rose", name: "Rose", band: "#12080B", accent: "#C0457C", accent2: "#E07A9B", accentDark: "#EC7FAE", accent2Dark: "#F5A9C2", wash: "#FCF6F8" },
-  { id: "dusk", name: "Dusk", band: "#0D0A14", accent: "#6A4BC9", accent2: "#C0457C", accentDark: "#9D86F2", accent2Dark: "#EC7FAE", wash: "#F8F7FC" },
-  { id: "paper", name: "Paper", band: "#F4F1EF", accent: "#9A3381", accent2: "#6A3FC0", accentDark: "#D06BBA", accent2Dark: "#A08AF0", wash: "#FAF8F7", light: true },
+  { id: "night", name: "Night", band: "#100806", accent: "#C2268A", accent2: "#7A1FE0", accentDark: "#FF5FB4", accent2Dark: "#B07CFF", wash: "#FBF8F7" },
+  { id: "violet", name: "Violet", band: "#0F0812", accent: "#7A1FE0", accent2: "#C2268A", accentDark: "#B07CFF", accent2Dark: "#FF5FB4", wash: "#F9F7FC" },
+  { id: "plum", name: "Plum", band: "#140A12", accent: "#A8239A", accent2: "#5A33E0", accentDark: "#E866D6", accent2Dark: "#9C8BFF", wash: "#FBF7FA" },
+  { id: "ink", name: "Ink", band: "#0B0B10", accent: "#4338E0", accent2: "#0E9AD6", accentDark: "#8A82FF", accent2Dark: "#4FD0FF", wash: "#F7F7FA" },
+  { id: "ember", name: "Ember", band: "#140806", accent: "#D12E5A", accent2: "#F07A12", accentDark: "#FF6E92", accent2Dark: "#FFAA4D", wash: "#FCF7F6" },
+  { id: "rose", name: "Rose", band: "#12080B", accent: "#E0306F", accent2: "#FF5F9A", accentDark: "#FF79AE", accent2Dark: "#FFA8C6", wash: "#FCF6F8" },
+  { id: "dusk", name: "Dusk", band: "#0D0A14", accent: "#6A33E8", accent2: "#E0306F", accentDark: "#A48BFF", accent2Dark: "#FF79AE", wash: "#F8F7FC" },
+  { id: "paper", name: "Paper", band: "#F4F1EF", accent: "#B0228F", accent2: "#6A2FE0", accentDark: "#EE66CF", accent2Dark: "#A68CFF", wash: "#FAF8F7", light: true },
   { id: "mono", name: "Black & white", band: "#111111", accent: "#1C1618", accent2: "#1C1618", accentDark: "#EDE8E8", accent2Dark: "#EDE8E8", wash: "#F6F5F5", mono: true },
 ];
 export const INVOICE_MODES = ["bright", "dark"];
@@ -211,6 +211,18 @@ const STARS = (() => {
   }
   return out;
 })();
+// A colour at full saturation and a chosen lightness (the logo's and the sky's vivid colours)
+export function vivid(hex, lightness) {
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(1 + i, 3 + i), 16) / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = (h * 60 + 360) % 360;
+  const l = lightness, c = (1 - Math.abs(2 * l - 1)), x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2;
+  const [r2, g2, b2] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return "#" + [r2, g2, b2].map((v) => Math.round((v + m) * 255).toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
 // A four-pointed sparkle (Nova's), at x, y, size r
 const sparkle = (x, y, r, fill, o) => `<path d="M${x} ${y - r}L${x + r * 0.22} ${y - r * 0.22}L${x + r} ${y}L${x + r * 0.22} ${y + r * 0.22}L${x} ${y + r}L${x - r * 0.22} ${y + r * 0.22}L${x - r} ${y}L${x - r * 0.22} ${y - r * 0.22}Z" fill="${fill}" opacity="${o}"/>`;
 function bandSky(t, lightBand, from, to) {
@@ -218,8 +230,8 @@ function bandSky(t, lightBand, from, to) {
   const k = lightBand ? 0.5 : 1; // (on a light band, everything quieter)
   const nebula = t.mono
     ? ""
-    : `<radialGradient id="nv-neb1" cx="88%" cy="20%" r="55%"><stop offset="0" stop-color="${to}" stop-opacity="${0.42 * k}"/><stop offset="1" stop-color="${to}" stop-opacity="0"/></radialGradient>
-<radialGradient id="nv-neb2" cx="22%" cy="110%" r="50%"><stop offset="0" stop-color="${from}" stop-opacity="${0.34 * k}"/><stop offset="1" stop-color="${from}" stop-opacity="0"/></radialGradient>
+    : `<radialGradient id="nv-neb1" cx="88%" cy="20%" r="55%"><stop offset="0" stop-color="${to}" stop-opacity="${0.55 * k}"/><stop offset="1" stop-color="${to}" stop-opacity="0"/></radialGradient>
+<radialGradient id="nv-neb2" cx="22%" cy="110%" r="50%"><stop offset="0" stop-color="${from}" stop-opacity="${0.45 * k}"/><stop offset="1" stop-color="${from}" stop-opacity="0"/></radialGradient>
 <radialGradient id="nv-neb3" cx="62%" cy="70%" r="30%"><stop offset="0" stop-color="${from}" stop-opacity="${0.14 * k}"/><stop offset="1" stop-color="${from}" stop-opacity="0"/></radialGradient>`;
   const fills = t.mono ? "" : `<rect width="820" height="100" fill="url(#nv-neb1)"/><rect width="820" height="100" fill="url(#nv-neb2)"/><rect width="820" height="100" fill="url(#nv-neb3)"/>`;
   const orbit = `<ellipse cx="700" cy="96" rx="190" ry="62" fill="none" stroke="${t.mono ? star : to}" stroke-opacity="${(t.mono ? 0.16 : 0.32) * k}" stroke-width=".8" stroke-dasharray="1.2 4.2" transform="rotate(-9 700 96)"/>`;
@@ -297,9 +309,30 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   const lightBand = t.light && !dark;
   // The website's logo, drawn as a shape (sharp at any size, and in print) in the theme's two colours,
   // lighter on a dark band; black and white: plain, the band's own ink
-  const [from, to] = lightBand ? [t.accent, t.accent2] : [t.accentDark, t.accent2Dark];
+  // (vivid: the theme's two colours at full saturation, bright on a dark band, deeper on a light one)
+  const [from, to] = t.mono ? [t.accentDark, t.accent2Dark] : [vivid(t.accent, lightBand ? 0.46 : 0.64), vivid(t.accent2, lightBand ? 0.46 : 0.66)];
   const logo = `<svg class="mark" viewBox="190 190 1620 1620" role="img" aria-label="Novacane Studios logo">${t.mono ? "" : `<defs><linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>`}<path transform="${LOGO_TRANSFORM}" fill="${t.mono ? "currentColor" : "url(#nv-mark)"}" d="${LOGO_PATH}"/></svg>`;
   // A breath of each theme's colour on the page (none for black and white)
+  // Textures, a different one for each part, in the theme's colours and barely there (drawn as small
+  // tiles behind the words; light on a dark page): paper grain, fine lines, a dot grid, stardust
+  const hex = (c) => c.replace("#", "");
+  const rgb = (c) => [0, 2, 4].map((i) => parseInt(hex(c).slice(i, i + 2), 16) / 255);
+  const tile = (svg) => `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+  const inkTone = dark ? "#FFFFFF" : t.mono ? "#000000" : accent;
+  const grain = (c, a) => {
+    const [r, g, b] = rgb(c);
+    return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><filter id="g"><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 ${r.toFixed(3)} 0 0 0 0 ${g.toFixed(3)} 0 0 0 0 ${b.toFixed(3)} ${a} 0 0 0 0"/></filter><rect width="160" height="160" filter="url(#g)"/></svg>`);
+  };
+  const lines = (c, o) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9"><path d="M-1 1l2-2M0 9l9-9M8 10l2-2" stroke="${c}" stroke-opacity="${o}" stroke-width="1"/></svg>`);
+  const dots = (c, o) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11"><circle cx="5.5" cy="5.5" r=".7" fill="${c}" fill-opacity="${o}"/></svg>`);
+  const dust = (c, o) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="90" height="46"><g fill="${c}" fill-opacity="${o}"><circle cx="8" cy="9" r=".8"/><circle cx="37" cy="31" r=".55"/><circle cx="61" cy="6" r=".6"/><circle cx="79" cy="27" r="1"/><circle cx="22" cy="40" r=".5"/><circle cx="51" cy="18" r=".45"/></g></svg>`);
+  const tex = {
+    page: grain(dark ? "#FFFFFF" : t.mono ? "#000000" : accent2, dark ? 0.055 : 0.045),
+    amount: lines(inkTone, dark ? 0.07 : t.mono ? 0.05 : 0.09),
+    notes: dots(dark ? "#FFFFFF" : t.mono ? "#000000" : accent2, dark ? 0.16 : 0.22),
+    sums: grain(dark ? "#FFFFFF" : t.mono ? "#000000" : accent, dark ? 0.04 : 0.035),
+    footer: dust(dark ? "#FFFFFF" : t.mono ? "#000000" : accent2, dark ? 0.35 : 0.3),
+  };
   const tint = (pct) => (t.mono ? "var(--wash)" : `color-mix(in srgb, var(--accent) ${pct}%, var(--paper))`);
   // The page's colours: Bright (white paper, dark ink) or Dark (the website's near-black, light ink)
   const page = dark
@@ -311,11 +344,11 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
 <title>${esc(title)} · ${esc(card.name)}</title>
 <style>
 @font-face{font-family:"Jost";src:url(${FONT_DATA_URL}) format("woff2");font-weight:400 600;font-display:block}
-:root{--band:${page.band};--accent:${accent};--accent2:${accent2};--blend:linear-gradient(90deg,var(--accent),var(--accent2));--tint:${tint(dark ? 14 : 7)};--tint2:${tint(dark ? 9 : 4)};--paper:${page.paper};--wash:${page.wash};--ink:${page.ink};--soft:${page.soft};--hair:${page.hair};--rule:${page.rule};--red:${red};--green:${green};--line:${lineColour};--band-ink:${lightBand ? "#1C1618" : "#FFFFFF"};color-scheme:${dark ? "dark" : "light"}}
+:root{--band:${page.band};--accent:${accent};--accent2:${accent2};--blend:linear-gradient(90deg,var(--accent),var(--accent2));--tint:${tint(dark ? 18 : 10)};--tint2:${tint(dark ? 12 : 6)};--paper:${page.paper};--wash:${page.wash};--ink:${page.ink};--soft:${page.soft};--hair:${page.hair};--rule:${page.rule};--red:${red};--green:${green};--line:${lineColour};--band-ink:${lightBand ? "#1C1618" : "#FFFFFF"};color-scheme:${dark ? "dark" : "light"}}
 *{box-sizing:border-box}
 html{background:${page.outside}}
 body{margin:0;padding:28px 12px;font:15px/1.55 "Jost",Futura,"Century Gothic","Avenir Next",system-ui,sans-serif;color:var(--ink);letter-spacing:.01em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.sheet{max-width:820px;margin:0 auto;background:var(--paper);box-shadow:0 10px 40px rgb(0 0 0 / .08)}
+.sheet{max-width:820px;margin:0 auto;background:${tex.page},var(--paper);box-shadow:0 10px 40px rgb(0 0 0 / .08)}
 .band{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:var(--band)}
 .band .sky{position:absolute;inset:0;width:100%;height:100%;display:block}
 .band>:not(.sky){position:relative}
@@ -334,7 +367,7 @@ body{margin:0;padding:28px 12px;font:15px/1.55 "Jost",Futura,"Century Gothic","A
 dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:13.5px}
 dt{color:var(--soft)}dd{margin:0;font-variant-numeric:tabular-nums}
 .late{color:var(--red);font-weight:500}
-.amount{position:relative;min-width:200px;padding:16px 18px;background:var(--tint);border-left:3px solid var(--accent);border-image:linear-gradient(180deg,var(--accent),var(--accent2)) 1;text-align:right}
+.amount{position:relative;min-width:200px;padding:16px 18px;background:${tex.amount},var(--tint);border-left:3px solid var(--accent);border-image:linear-gradient(180deg,var(--accent),var(--accent2)) 1;text-align:right}
 .amount .lbl{display:block;font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--soft)}
 .amount b{display:block;margin:4px 0 2px;font-size:28px;font-weight:500;letter-spacing:.01em;font-variant-numeric:tabular-nums;color:var(--accent)}
 .amount .when{font-size:13px;color:var(--soft)}
@@ -346,17 +379,17 @@ th{padding:0 0 9px;text-align:left;font-size:10.5px;font-weight:500;letter-spaci
 td{padding:12px 0;border-bottom:1px solid var(--hair);vertical-align:top}
 th.n,td.n{text-align:right;white-space:nowrap;padding-left:18px;font-variant-numeric:tabular-nums}
 tr{break-inside:avoid}
-.sums{margin:14px 0 0 auto;max-width:340px;break-inside:avoid}
+.sums{margin:12px 0 0 auto;max-width:340px;padding:0 10px;border-radius:4px;background:${tex.sums};break-inside:avoid}
 .r{display:flex;justify-content:space-between;gap:18px;padding:6px 0;font-size:14px}
 .r b{font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
 .r.soft{color:var(--soft)}.r small{font-size:12px}
 .r.strong{border-top:1px solid var(--hair);margin-top:4px;padding-top:10px}
 .r.due{margin-top:6px;padding:10px 0 4px;border-top:2px solid var(--rule);border-image:${t.mono ? "none" : "var(--blend) 1"};font-size:16px;font-weight:600}.r.due b{font-weight:600;color:var(--accent)}
 .bottom{display:grid;grid-template-columns:1.2fr 1fr;gap:28px;align-items:start;margin-top:30px;break-inside:avoid}
-.notes{padding:14px 16px;background:var(--tint2);border-left:3px solid var(--accent2);border-radius:4px;font-size:13.5px;line-height:1.6;white-space:pre-line}
+.notes{padding:14px 16px;background:${tex.notes},var(--tint2);border-left:3px solid var(--accent2);border-radius:4px;font-size:13.5px;line-height:1.6;white-space:pre-line}
 .pay{font-size:13.5px;line-height:1.6}.pay p{margin:0 0 10px}
 .pay a{color:var(--accent);text-decoration:none;border-bottom:1px solid currentColor}
-footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 18px;margin-top:30px;padding-top:14px;border-top:1px solid var(--hair);font-size:11.5px;color:var(--soft);letter-spacing:.02em}
+footer{background:${tex.footer};display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 18px;margin-top:30px;padding-top:14px;border-top:1px solid var(--hair);font-size:11.5px;color:var(--soft);letter-spacing:.02em}
 footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 @media (max-width:640px){
   body{padding:0}.band{padding:18px 20px}.brand b{font-size:15px;letter-spacing:.24em}.doc{display:none}.in{padding:22px 20px}

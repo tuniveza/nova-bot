@@ -486,20 +486,21 @@ describe("the Invoicer", () => {
 		expect(list.data).toMatchObject({ theme: "night", mode: "bright", modes: ["bright", "dark"] });
 		const dark = await portal(`money/invoices/${inv.id}/document?stage=balance&theme=violet&mode=dark&note=${encodeURIComponent("Bring <your> lyrics")}`);
 		expect(dark.text).toContain("color-scheme:dark");
-		expect(dark.text).toContain("#A774E0"); // Violet's accent for the dark page
+		expect(dark.text).toContain("#B07CFF"); // Violet's accent for the dark page
 		expect(dark.text).toContain("Bring &lt;your&gt; lyrics");
 		// The website's logo as a drawn shape (sharp in print), in the theme's colours; black and white: plain
 		const { LOGO_PATH } = await import("../src/invoicer-logo.js");
 		expect(dark.text).toContain(LOGO_PATH);
 		expect(dark.text).toContain('fill="url(#nv-mark)"');
 		expect(dark.text).toContain("--blend:linear-gradient");
-		expect(dark.text).not.toContain("data:image/"); // no picture to go blurry
+		expect(dark.text).not.toMatch(/data:image\/(webp|png|jpe?g)/); // no picture to go blurry (the textures are drawn: SVG)
+		expect(dark.text).toContain("data:image/svg+xml"); // the textures
 		const mono = await portal(`money/invoices/${inv.id}/document?stage=balance&theme=mono`);
 		expect(mono.text).toContain('fill="currentColor"');
 		expect(dark.headers.get("Content-Security-Policy")).toContain("font-src data:");
 		expect((await portal("money/settings", { body: { invoiceTheme: "dusk", invoiceMode: "dark" } })).status).toBe(200);
 		expect((await portal("money/catalogue")).data).toMatchObject({ theme: "dusk", mode: "dark" });
-		expect((await portal(`money/invoices/${inv.id}/document?stage=balance`)).text).toContain("#9D86F2"); // Dusk, dark
+		expect((await portal(`money/invoices/${inv.id}/document?stage=balance`)).text).toContain("#A48BFF"); // Dusk, dark
 		expect((await portal("money/settings", { body: { invoiceMode: "sepia" } })).status).toBe(400);
 		// The live preview: what's typed so far, drawn, and nothing saved
 		const before = (await env.DB.prepare("SELECT COUNT(*) AS n FROM invoices").first()).n;
@@ -508,7 +509,7 @@ describe("the Invoicer", () => {
 		expect(pre.data.html).toContain("Mo &lt;Artist&gt;");
 		expect(pre.data.html).toContain("£200.00");
 		expect(pre.data.html).toContain(">Draft<");
-		expect(pre.data.html).toContain("#EC7FAE"); // Rose, dark
+		expect(pre.data.html).toContain("#FF79AE"); // Rose, dark
 		expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM invoices").first()).n).toBe(before);
 		expect((await portal("money/invoices/preview", { body: {} })).data.html).toContain("Artist name");
 		const overdue = await portal(`money/invoices/${inv.id}/document?stage=overdue`);
