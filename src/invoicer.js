@@ -182,20 +182,27 @@ export function stageEmail(invoice, sums, stage, settings) {
 // Each comes Bright (a white page) or Dark (a near-black page, like the website): accentDark is the
 // accent a touch lighter, so it reads on the dark page.
 export const INVOICE_THEMES = [
-  // accent2: the second colour of each theme's blend (the website logo's pink into violet, and kin);
+  // A spectrum, red round to the website's pink-magenta (Night): each theme one hue, its accent dark
+  // enough to read on white (4.9:1 or more), accent2 a neighbouring hue for its blend, accentDark and
+  // accent2Dark the same lighter for a dark page. Then Paper (a light band) and Black & white.
   // mono: no colour at all, black and white (the white logo)
-  { id: "night", name: "Night", band: "#100806", accent: "#B82E84", accent2: "#7A27CF", accentDark: "#EF60A9", accent2Dark: "#AC78F0", wash: "#FBF8F7" },
-  { id: "violet", name: "Violet", band: "#0F0812", accent: "#7A27CF", accent2: "#B82E84", accentDark: "#AC78F0", accent2Dark: "#EF60A9", wash: "#F9F7FC" },
-  { id: "plum", name: "Plum", band: "#140A12", accent: "#9F2A90", accent2: "#5A39CF", accentDark: "#DB66CA", accent2Dark: "#9A8BF8", wash: "#FBF7FA" },
-  { id: "ink", name: "Ink", band: "#0B0B10", accent: "#4940CC", accent2: "#2394C6", accentDark: "#8C84F8", accent2Dark: "#5DCAF2", wash: "#F7F7FA" },
-  { id: "ember", name: "Ember", band: "#140806", accent: "#C4375C", accent2: "#E07A20", accentDark: "#F27290", accent2Dark: "#F8A95A", wash: "#FCF7F6" },
-  { id: "rose", name: "Rose", band: "#12080B", accent: "#D03B76", accent2: "#EF6D9C", accentDark: "#F67CAE", accent2Dark: "#FBA9C4", wash: "#FCF6F8" },
-  { id: "dusk", name: "Dusk", band: "#0D0A14", accent: "#6A3FD8", accent2: "#D03B76", accentDark: "#A08AF6", accent2Dark: "#F67CAE", wash: "#F8F7FC" },
+{ id: "ruby", name: "Ruby", band: "#110608", accent: "#B62B3D", accent2: "#BE532D", accentDark: "#EF6C7E", accent2Dark: "#F09675", wash: "#FBF6F7" },
+  { id: "amber", name: "Amber", band: "#110B06", accent: "#A55E27", accent2: "#AE3F29", accentDark: "#EFA56C", accent2Dark: "#F08A75", wash: "#FBF8F6" },
+  { id: "gold", name: "Gold", band: "#110E06", accent: "#886C20", accent2: "#915622", accentDark: "#EFCC6C", accent2Dark: "#F0AE75", wash: "#FBFAF6" },
+  { id: "jade", name: "Jade", band: "#06110B", accent: "#1E804F", accent2: "#208885", accentDark: "#6CEFAD", accent2Dark: "#75F0EC", wash: "#F6FBF9" },
+  { id: "teal", name: "Teal", band: "#061011", accent: "#1F7D84", accent2: "#21578C", accentDark: "#6CE6EF", accent2Dark: "#75B2F0", wash: "#F6FBFB" },
+  { id: "sapphire", name: "Sapphire", band: "#060911", accent: "#2B54B6", accent2: "#3B2DBE", accentDark: "#6C93EF", accent2Dark: "#8275F0", wash: "#F6F7FB" },
+  { id: "violet", name: "Violet", band: "#0C0611", accent: "#752BB6", accent2: "#BE2DB4", accentDark: "#B26CEF", accent2Dark: "#F075E8", wash: "#F9F6FB" },
+  { id: "night", name: "Night", band: "#11060D", accent: "#B62B83", accent2: "#842DBE", accentDark: "#EF6CBF", accent2Dark: "#BF75F0", wash: "#FBF6F9" },
   { id: "paper", name: "Paper", band: "#F4F1EF", accent: "#A52B88", accent2: "#6A36D0", accentDark: "#DE69C4", accent2Dark: "#A38CF8", wash: "#FAF8F7", light: true },
   { id: "mono", name: "Black & white", band: "#111111", accent: "#1C1618", accent2: "#1C1618", accentDark: "#EDE8E8", accent2Dark: "#EDE8E8", wash: "#F6F5F5", mono: true },
 ];
 export const INVOICE_MODES = ["bright", "dark"];
-export const themeOf = (id) => INVOICE_THEMES.find((t) => t.id === id) || INVOICE_THEMES[0];
+// The themes before the spectrum (15 October 2026), each now the nearest colour in it
+const OLD_THEMES = { plum: "violet", ink: "sapphire", ember: "amber", rose: "ruby", dusk: "violet" };
+// A theme's id as it is now (an old one moved to its nearest), or null if there's no such theme
+export const themeId = (id) => (INVOICE_THEMES.some((t) => t.id === id) ? id : OLD_THEMES[id] || null);
+export const themeOf = (id) => INVOICE_THEMES.find((t) => t.id === themeId(id)) || INVOICE_THEMES.find((t) => t.id === "night");
 
 // The band's sky: Novacane's night (the website, Nova Agent's sigil) drawn as shapes, faint enough to
 // read over. The same stars on every invoice (a fixed seed), in an 820×100 box the band covers.

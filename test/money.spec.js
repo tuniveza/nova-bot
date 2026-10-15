@@ -481,12 +481,13 @@ describe("the Invoicer", () => {
 		expect(doc.text).toContain(`aria-label="Novacane Studios logo"`); // the website's logo, in the page (so it prints)
 		expect(doc.headers.get("Content-Security-Policy")).toContain("img-src data:");
 		// The looks: 8 themes, bright or dark; a note for this copy; an admin chooses every invoice's look
-		expect(list.data.themes).toHaveLength(9);
+		expect(list.data.themes).toHaveLength(10);
 		expect(list.data.themes.at(-1)).toMatchObject({ id: "mono", name: "Black & white" });
+		expect(list.data.themes.slice(0, 8).map((t) => t.id)).toEqual(["ruby", "amber", "gold", "jade", "teal", "sapphire", "violet", "night"]); // the spectrum, in order
 		expect(list.data).toMatchObject({ theme: "night", mode: "bright", modes: ["bright", "dark"] });
 		const dark = await portal(`money/invoices/${inv.id}/document?stage=balance&theme=violet&mode=dark&note=${encodeURIComponent("Bring <your> lyrics")}`);
 		expect(dark.text).toContain("color-scheme:dark");
-		expect(dark.text).toContain("#AC78F0"); // Violet's accent for the dark page
+		expect(dark.text).toContain("#B26CEF"); // Violet's accent for the dark page
 		expect(dark.text).toContain("Bring &lt;your&gt; lyrics");
 		// The website's logo as a drawn shape (sharp in print), in the theme's colours; black and white: plain
 		const { LOGO_PATH } = await import("../src/invoicer-logo.js");
@@ -498,18 +499,18 @@ describe("the Invoicer", () => {
 		const mono = await portal(`money/invoices/${inv.id}/document?stage=balance&theme=mono`);
 		expect(mono.text).toContain('fill="currentColor"');
 		expect(dark.headers.get("Content-Security-Policy")).toContain("font-src data:");
-		expect((await portal("money/settings", { body: { invoiceTheme: "dusk", invoiceMode: "dark" } })).status).toBe(200);
-		expect((await portal("money/catalogue")).data).toMatchObject({ theme: "dusk", mode: "dark" });
-		expect((await portal(`money/invoices/${inv.id}/document?stage=balance`)).text).toContain("#A08AF6"); // Dusk, dark
+		expect((await portal("money/settings", { body: { invoiceTheme: "sapphire", invoiceMode: "dark" } })).status).toBe(200);
+		expect((await portal("money/catalogue")).data).toMatchObject({ theme: "sapphire", mode: "dark" });
+		expect((await portal(`money/invoices/${inv.id}/document?stage=balance`)).text).toContain("#6C93EF"); // Sapphire, dark
 		expect((await portal("money/settings", { body: { invoiceMode: "sepia" } })).status).toBe(400);
 		// The live preview: what's typed so far, drawn, and nothing saved
 		const before = (await env.DB.prepare("SELECT COUNT(*) AS n FROM invoices").first()).n;
-		const pre = await portal("money/invoices/preview", { body: { billName: "Mo <Artist>", lines: [{ description: "Mixing", qty: 2, unit: "100" }, { description: "", qty: 1, unit: "" }], theme: "rose", mode: "dark" } });
+		const pre = await portal("money/invoices/preview", { body: { billName: "Mo <Artist>", lines: [{ description: "Mixing", qty: 2, unit: "100" }, { description: "", qty: 1, unit: "" }], theme: "rose", mode: "dark" } }); // (rose: an old theme, now Ruby)
 		expect(pre.status).toBe(200);
 		expect(pre.data.html).toContain("Mo &lt;Artist&gt;");
 		expect(pre.data.html).toContain("£200.00");
 		expect(pre.data.html).toContain(">Draft<");
-		expect(pre.data.html).toContain("#F67CAE"); // Rose, dark
+		expect(pre.data.html).toContain("#EF6C7E"); // Ruby (was Rose), dark
 		expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM invoices").first()).n).toBe(before);
 		expect((await portal("money/invoices/preview", { body: {} })).data.html).toContain("Artist name");
 		const overdue = await portal(`money/invoices/${inv.id}/document?stage=overdue`);

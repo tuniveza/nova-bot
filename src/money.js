@@ -37,7 +37,7 @@ import { emailRecipients, mailReady, sendEmail } from "./enquiries.js";
 import { sendStudioEmail } from "./google/gmail.js";
 import { pounds as poundsText, toPence } from "./clients.js";
 import { createInvoiceCheckout, stripeOffline } from "./nova/stripe.js";
-import { INVOICE_MODES, INVOICE_THEMES, STAGES, catalogue, invoiceDocument, stageEmail, stageOf, stageSums } from "./invoicer.js";
+import { INVOICE_MODES, INVOICE_THEMES, STAGES, themeId, catalogue, invoiceDocument, stageEmail, stageOf, stageSums } from "./invoicer.js";
 
 export const CATEGORIES = [
   "Equipment",
@@ -153,7 +153,7 @@ export async function readSettings(env) {
     bank: { ...DEFAULT_SETTINGS.bank, ...(saved.bank || {}) },
     vatRate: Number.isFinite(saved.vatRate) ? saved.vatRate : DEFAULT_SETTINGS.vatRate,
     dueDays: Number.isInteger(saved.dueDays) ? saved.dueDays : DEFAULT_SETTINGS.dueDays,
-    invoiceTheme: INVOICE_THEMES.some((t) => t.id === saved.invoiceTheme) ? saved.invoiceTheme : DEFAULT_SETTINGS.invoiceTheme,
+    invoiceTheme: themeId(saved.invoiceTheme) || DEFAULT_SETTINGS.invoiceTheme,
     invoiceMode: INVOICE_MODES.includes(saved.invoiceMode) ? saved.invoiceMode : DEFAULT_SETTINGS.invoiceMode,
   };
 }
@@ -188,8 +188,8 @@ export async function saveSettings(env, me, input) {
     next.invoiceMode = input.invoiceMode;
   }
   if (input?.invoiceTheme !== undefined) {
-    if (!INVOICE_THEMES.some((t) => t.id === input.invoiceTheme)) return fail(400, "invoiceTheme: one of " + INVOICE_THEMES.map((t) => t.id).join(", ") + ".");
-    next.invoiceTheme = input.invoiceTheme;
+    if (!themeId(input.invoiceTheme)) return fail(400, "invoiceTheme: one of " + INVOICE_THEMES.map((t) => t.id).join(", ") + ".");
+    next.invoiceTheme = themeId(input.invoiceTheme);
   }
   if (next.business.email && !EMAIL_PATTERN.test(next.business.email)) return fail(400, "The studio's email address doesn't look right.");
   if (next.bank.sortCode && !/^\d{2}-?\d{2}-?\d{2}$/.test(next.bank.sortCode.replace(/\s/g, ""))) return fail(400, "A sort code is six numbers, like 12-34-56.");
@@ -612,7 +612,7 @@ export async function previewDocument(env, input = {}) {
     pageUrl: null,
   };
   const stage = STAGES.includes(input.stage) ? input.stage : "deposit";
-  const options = { theme: INVOICE_THEMES.some((t) => t.id === input.theme) ? input.theme : null, mode: INVOICE_MODES.includes(input.mode) ? input.mode : null };
+  const options = { theme: themeId(input.theme), mode: INVOICE_MODES.includes(input.mode) ? input.mode : null };
   return invoiceDocument(invoice, [], stage, settings, today, options);
 }
 
@@ -1272,7 +1272,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
       const theme = url.searchParams.get("theme");
       const note = url.searchParams.get("note");
       const mode = url.searchParams.get("mode");
-      const options = { theme: INVOICE_THEMES.some((t) => t.id === theme) ? theme : null, mode: INVOICE_MODES.includes(mode) ? mode : null, note: note === null ? null : cleanText(note, 800) };
+      const options = { theme: themeId(theme), mode: INVOICE_MODES.includes(mode) ? mode : null, note: note === null ? null : cleanText(note, 800) };
       return pageResponse(invoiceDocument(invoice, payments, stage, settings, today, options), nonce, 200, true);
     }
     const sums = stageSums(invoice, payments, stage, today);
