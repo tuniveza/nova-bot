@@ -131,7 +131,8 @@ async function sha256Hex(text) {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))));
 }
 
-export const invoiceNumber = (seq) => PREFIX + String(seq).padStart(4, "0");
+// (A test invoice, after Start the numbers again: TEST-0001… its seq is below zero)
+export const invoiceNumber = (seq) => (seq < 0 ? "TEST-" + String(-seq).padStart(4, "0") : PREFIX + String(seq).padStart(4, "0"));
 
 // ===== THE SETTINGS (studio details, bank details, VAT, payment terms) =====
 
@@ -458,7 +459,7 @@ export async function createInvoice(env, input, by) {
   const row = await env.DB.prepare(
     `INSERT INTO invoices (seq, token, client_id, bill_name, bill_email, bill_address, lines, vat_rate, subtotal_pence, vat_pence, total_pence,
        issue_date, due_date, notes, look, status, created_by, created_at, updated_at, submitted_at)
-     SELECT COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', ?, ?, ?, ? FROM invoices RETURNING id, seq`
+     SELECT COALESCE(MAX(CASE WHEN seq > 0 THEN seq END), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', ?, ?, ?, ? FROM invoices RETURNING id, seq`
   )
     .bind(token, fields.client_id, fields.bill_name, fields.bill_email, fields.bill_address, fields.lines, fields.vat_rate, fields.subtotal_pence, fields.vat_pence, fields.total_pence, fields.issue_date, fields.due_date, fields.notes, lookText(input?.look), String(by), now, now, now)
     .first();
@@ -618,6 +619,23 @@ function clientDelta(env, clientId, { invoiced = 0, owed = 0 }, by) {
 }
 
 // ===== THE INVOICER'S LIVE PREVIEW =====
+// Start the numbers again (an admin, while testing): every invoice so far becomes a test invoice,
+// TEST-0001, TEST-0002… (nothing is deleted: each keeps its page, payments and history, and its log
+// says what it was), and the next invoice is NS-0001. Again later: the new ones follow on after the
+// old tests (TEST-0007…), so no two ever share a number.
+export async function renumberAsTests(env, by) {
+  const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM invoices WHERE seq > 0").first();
+  if (!n) return { renumbered: 0 };
+  const { base } = await env.DB.prepare("SELECT COALESCE(MAX(-seq), 0) AS base FROM invoices WHERE seq < 0").first();
+  const { results } = await env.DB.prepare("SELECT id, seq FROM invoices WHERE seq > 0 ORDER BY seq").all();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE invoices SET seq = -(? + seq) WHERE seq > 0").bind(base),
+    ...results.map((r) => logEntry(env, { invoice: r.id, event: "renumbered", by, detail: `${invoiceNumber(r.seq)} is now the test invoice ${invoiceNumber(-(base + r.seq))} (numbers started again at ${PREFIX}0001)` })),
+  ]);
+  console.log(`Money: ${results.length} invoices made test invoices; numbers start again`);
+  return { renumbered: results.length };
+}
+
 // An invoice's look (colour, Bright or Dark, paper) changed: only how it looks, not what it says, so
 // it needs no approval again. Its page shows it straight away; emails from now on use it (one already
 // sent stays as it went). look: null = the studio's look again.
@@ -1447,10 +1465,14 @@ export async function handleMoneyForStaff(request, env, me, route) {
   const decide = route.match(/^\/money\/invoices\/(\d{1,12})\/(approve|reject|void)$/);
   const reminder = route.match(/^\/money\/reminders\/(\d{1,12})\/(approve|reject)$/);
   const takeBack = route.match(/^\/money\/payments\/(\d{1,12})\/remove$/);
-  const adminOnly = decide || reminder || takeBack || route === "/money/invoices/test-send" || route === "/money/settings";
+  const adminOnly = decide || reminder || takeBack || route === "/money/invoices/test-send" || route === "/money/settings" || route === "/money/invoices/renumber";
   if (!adminOnly) return null;
   if (!canDecide(me)) return json({ error: "Only an admin, with Portal open in a browser and signed in, can do that.", onlineUrl: `${publicUrl(env)}/portal/?view=money` }, 403);
   if (route === "/money/settings") return answer(await saveSettings(env, me, body));
+  if (route === "/money/invoices/renumber") {
+    if (body.confirm !== "start again") return json({ error: "Say confirm: \"start again\"." }, 400);
+    return answer(await renumberAsTests(env, me.id));
+  }
   if (route === "/money/invoices/test-send") return answer(await testSendInvoice(env, me, { id: body.id, stage: body.stage, body: body.body }));
   if (takeBack) return answer(await removePayment(env, me, { paymentId: Number(takeBack[1]) }));
   if (reminder) return answer(await decideReminder(env, me, { id: Number(reminder[1]), approve: reminder[2] === "approve" }));

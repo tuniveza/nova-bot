@@ -649,6 +649,28 @@ describe("each invoice's own look", () => {
 	});
 });
 
+describe("starting the numbers again (testing)", () => {
+	it("an admin makes every invoice so far a TEST invoice (nothing deleted); the next is NS-0001", async () => {
+		const a = await writeAndSend();
+		const b = await write();
+		expect((await portal("money/invoices/renumber", { body: {} })).status).toBe(400);
+		const { staff } = await otherSignIns();
+		expect((await portal("money/invoices/renumber", { body: { confirm: "start again" }, headers: staff })).status).toBe(403); // admins only
+		const r = await portal("money/invoices/renumber", { body: { confirm: "start again" } });
+		expect(r.data.renumbered).toBe(2);
+		expect((await portal(`money/invoices/${a.id}`)).data.invoice.number).toBe("TEST-0001");
+		expect((await portal(`money/invoices/${b.id}`)).data.invoice.number).toBe("TEST-0002");
+		const page = await call(new Request(`${BASE}/invoice/${(await row(a.id)).token}`));
+		expect(page.status).toBe(200); // its page still opens
+		const c = await write();
+		expect(c.number).toBe("NS-0001");
+		// Again: the new tests follow on after the old ones
+		await portal("money/invoices/renumber", { body: { confirm: "start again" } });
+		expect((await portal(`money/invoices/${c.id}`)).data.invoice.number).toBe("TEST-0003");
+		expect((await write()).number).toBe("NS-0001");
+	});
+});
+
 describe("changing an invoice after it's been sent", () => {
 	it("goes for approval again, its page says it's being updated, then the client gets the updated invoice", async () => {
 		const inv = await writeAndSend();
