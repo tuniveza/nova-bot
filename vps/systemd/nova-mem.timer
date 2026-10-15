@@ -1,0 +1,9 @@
+[Unit]
+Description=Every minute: note Nova Bot's memory
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

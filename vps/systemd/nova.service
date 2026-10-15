@@ -19,8 +19,11 @@ EnvironmentFile=/srv/nova/desk.env
 ExecStart=/usr/bin/npx --no-install wrangler dev -c wrangler.vps.jsonc --local --ip 127.0.0.1 --port 8787 --persist-to /srv/nova/state --test-scheduled --local-upstream ${DESK_ADDRESS} --show-interactive-dev-session=false --log-level warn
 Restart=always
 RestartSec=3
-# Plenty for a small studio; workerd stays well under this
-MemoryMax=2G
+# workerd sits near 1.2G; 2G was reached a few times a day (15 Oct 2026: killed for memory at 23:40,
+# 03:20, 06:56, 17:50, a few minutes down each time). Above MemoryHigh the kernel reclaims instead of
+# killing; MemoryMax is the hard stop. (/var/lib/nova/mem.log, nova-mem.timer, shows when it climbs.)
+MemoryHigh=2300M
+MemoryMax=2800M
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/srv/nova

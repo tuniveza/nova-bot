@@ -1,0 +1,7 @@
+[Unit]
+Description=Note Nova Bot's memory (one line a minute, to see what makes it climb)
+
+[Service]
+Type=oneshot
+# vps/nova-mem-note.sh, installed as /usr/local/bin/nova-mem-note
+ExecStart=/usr/local/bin/nova-mem-note
