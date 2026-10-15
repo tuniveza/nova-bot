@@ -173,6 +173,19 @@ export function stageEmail(invoice, sums, stage, settings) {
 
 // ===== THE PAGE: the invoice itself, to print or save as a PDF =====
 
+// The Novacane sigil (Nova Agent's icon: the N in its orbit, under the night sky), drawn in the page so
+// it prints and goes into the PDF with no image to fetch
+const SIGIL = `<svg class="sigil" viewBox="0 0 512 512" role="img" aria-label="Novacane Studios sigil"><defs>
+<radialGradient id="nv-sky" cx="50%" cy="15%" r="95%"><stop offset="0" stop-color="#B01D68"/><stop offset=".42" stop-color="#25194D"/><stop offset="1" stop-color="#06040D"/></radialGradient>
+<radialGradient id="nv-neb" cx="88%" cy="92%" r="55%"><stop offset="0" stop-color="#7A1F86" stop-opacity=".75"/><stop offset="1" stop-color="#7A1F86" stop-opacity="0"/></radialGradient>
+<linearGradient id="nv-letter" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD1EA"/><stop offset=".5" stop-color="#FF5FA8"/><stop offset="1" stop-color="#C7A4FF"/></linearGradient>
+<clipPath id="nv-round"><rect width="512" height="512" rx="112"/></clipPath></defs>
+<g clip-path="url(#nv-round)"><rect width="512" height="512" fill="url(#nv-sky)"/><rect width="512" height="512" fill="url(#nv-neb)"/>
+<g fill="#fff"><circle cx="70" cy="90" r="5" opacity=".8"/><circle cx="440" cy="70" r="4" opacity=".6"/><circle cx="462" cy="330" r="4.5" opacity=".6"/><circle cx="80" cy="420" r="3.5" opacity=".55"/><circle cx="290" cy="470" r="3" opacity=".5"/><circle cx="380" cy="160" r="3" opacity=".5"/></g>
+<path d="M365.2 179.5A133.3 133.3 0 0 1 179.5 365.2M146.8 332.5A133.3 133.3 0 0 1 332.5 146.8M148 364 246.7 196M262.7 206.7 276 309.3M292 316 364 148" fill="none" stroke="#FF5FA8" stroke-width="44" stroke-linecap="round" opacity=".28"/>
+<path d="M365.2 179.5A133.3 133.3 0 0 1 179.5 365.2M146.8 332.5A133.3 133.3 0 0 1 332.5 146.8M148 364 246.7 196M262.7 206.7 276 309.3M292 316 364 148" fill="none" stroke="url(#nv-letter)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="256" cy="256" r="164" fill="none" stroke="url(#nv-letter)" stroke-opacity=".22" stroke-width="4"/></g></svg>`;
+
 const BANNERS = {
   deposit: { colour: "#7B2CBF", text: (s) => `Action required: ${s.depositPercent}% deposit due to secure your booking` },
   balance: { colour: "#1A1A1A", text: () => "Invoice due: balance payment notice" },
@@ -222,6 +235,8 @@ body{margin:0;padding:24px 12px;font:15px/1.5 system-ui,-apple-system,"Segoe UI"
 .banner{padding:12px 28px;color:#fff;font-weight:700;letter-spacing:.04em;text-transform:uppercase;font-size:13px;background:${banner.colour}}
 .in{padding:28px}
 header{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:flex-start;border-bottom:2px solid #1A1A1A;padding-bottom:20px}
+.brand{display:flex;align-items:center;gap:16px}
+.sigil{width:68px;height:68px;flex:none;display:block}
 .mark{line-height:1}
 .mark b{display:block;font-size:30px;font-weight:900;letter-spacing:.14em;color:#1A1A1A}
 .mark span{display:inline-block;margin-top:6px;padding-bottom:4px;font-size:12px;font-weight:700;letter-spacing:.55em;color:#7B2CBF;border-bottom:2px solid #7B2CBF}
@@ -258,7 +273,7 @@ a{color:#7B2CBF}
   tr{border:1px solid #D8D6DD;margin-bottom:10px;padding:4px 0}
   td{border:0;padding:4px 12px;display:flex;justify-content:space-between;gap:12px}
   td::before{content:attr(data-label);color:#6A6A6A;font-size:12px}
-  td.n{text-align:right}.stamp{font-size:80px;border-width:8px}
+  td.n{text-align:right}.stamp{font-size:80px;border-width:8px}.sigil{width:54px;height:54px}.brand{gap:12px}
 }
 @page{size:A4;margin:14mm}
 @media print{html{background:#fff}body{padding:0}.sheet{border:0;max-width:none}}
@@ -268,7 +283,7 @@ a{color:#7B2CBF}
 ${receipt ? '<div class="stamp" aria-hidden="true">PAID</div>' : ""}
 <div class="in">
 <header>
-  <div><div class="mark" aria-label="${esc(card.name)}"><b>NOVACANE</b><span>STUDIOS</span></div>
+  <div><div class="brand">${SIGIL}<div class="mark" aria-label="${esc(card.name)}"><b>NOVACANE</b><span>STUDIOS</span></div></div>
   <div class="studio">${esc(card.address)}<br>${esc(card.phone)} · ${esc(card.email)}<br>${esc(card.website)}${card.vatNumber ? `<br>VAT number ${esc(card.vatNumber)}` : ""}</div></div>
   <div class="meta">${stage === "overdue" ? '<div class="badge">Overdue notice</div>' : ""}${receipt ? '<div class="badge" style="border-color:#0F7B4A;color:#0F7B4A">Paid in full</div>' : ""}
     <h1>${receipt ? "RECEIPT" : "INVOICE"}</h1>

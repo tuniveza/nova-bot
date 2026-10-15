@@ -478,6 +478,7 @@ describe("the Invoicer", () => {
 		expect(doc.text).toContain("PAID");
 		expect(doc.text).toContain("£0.00");
 		expect(doc.text).toContain("10 Clyde Terrace");
+		expect(doc.text).toContain(`aria-label="Novacane Studios sigil"`); // the studio's emblem, drawn in the page (so it prints)
 		const overdue = await portal(`money/invoices/${inv.id}/document?stage=overdue`);
 		expect(overdue.text).toContain("Overdue notice");
 		expect(overdue.text).toContain("£174.99");
