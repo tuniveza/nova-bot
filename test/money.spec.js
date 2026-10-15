@@ -614,9 +614,9 @@ describe("the invoice's paper", () => {
 		expect(list.data.paper).toBe("moonstone");
 		const inv = await writeAndSend();
 		const sapphire = await portal(`money/invoices/${inv.id}/document?stage=balance&paper=sapphire`);
-		expect(sapphire.text).toContain("--paper:#F6F8FD");
+		expect(sapphire.text).toContain("--paper:#EDF0FA");
 		const dark = await portal(`money/invoices/${inv.id}/document?stage=balance&paper=ruby&mode=dark`);
-		expect(dark.text).toContain("--paper:#1B0D11");
+		expect(dark.text).toContain("--paper:#291219");
 		expect((await portal("money/settings", { body: { invoicePaper: "pearl" } })).status).toBe(200);
 		expect((await portal("money/catalogue")).data.paper).toBe("pearl");
 		expect((await portal("money/settings", { body: { invoicePaper: "plastic" } })).status).toBe(400);

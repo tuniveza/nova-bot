@@ -46,8 +46,8 @@ export function invoiceEmailParts({ invoice, payments = [], stage, settings, tod
   const red = dark ? "#EE6A80" : "#A3233A";
   const green = dark ? "#5CC795" : "#1F7A55";
   const P = dark
-    ? { paper: sheet, ink: "#F1EBEA", soft: "#A99FA0", hair: mix("#FFFFFF", sheet, 0.12), outside: mix("#000000", sheet, 0.45), rule: "#F1EBEA", band: t.light ? "#0C0908" : t.band }
-    : { paper: sheet, ink: "#1C1618", soft: "#6B6266", hair: paper.tone ? mix(paper.tone, "#E7E2E2", 0.12) : "#E7E2E2", outside: t.mono ? "#E9E9E9" : mix(paper.tone || accent2, "#ECE9EA", 0.12), rule: "#1C1618", band: t.band };
+    ? { paper: sheet, ink: "#F1EBEA", soft: "#A99FA0", hair: paper.tone ? mix(mix(paper.tone, "#FFFFFF", 0.45), sheet, 0.2) : mix("#FFFFFF", sheet, 0.12), outside: mix("#000000", sheet, 0.45), rule: "#F1EBEA", band: t.light ? "#0C0908" : t.band }
+    : { paper: sheet, ink: "#1C1618", soft: "#6B6266", hair: paper.tone ? mix(paper.tone, "#E7E2E2", 0.24) : "#E7E2E2", outside: t.mono ? "#E9E9E9" : mix(paper.tone || accent2, "#ECE9EA", paper.tone ? 0.24 : 0.12), rule: "#1C1618", band: t.band };
   const tint = t.mono ? (dark ? "#211A18" : "#F6F5F5") : mix(accent, P.paper, dark ? 0.15 : 0.08);
   const tint2 = t.mono ? (dark ? "#1E1816" : "#F8F7F7") : mix(accent2, P.paper, dark ? 0.1 : 0.05);
   const heading = t.mono ? P.soft : accent;

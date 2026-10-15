@@ -200,18 +200,20 @@ export const INVOICE_THEMES = [
 export const INVOICE_MODES = ["bright", "dark"];
 // The paper: named after minerals, each a light and a dark sheet with its own tone in the texture.
 // Moonstone is the paper as it was (white, or the website's near-black, tinted by the theme). Pearl
-// has a soft shimmer, Marble faint veins; the rest a breath of their stone's colour.
+// has a soft shimmer, Marble faint veins; the rest their stone's colour: in the sheet itself, its lines and
+// boxes, a soft glow of it in two corners and its colour in the texture (subtle, but you can tell them
+// apart: made stronger 15 October 2026).
 export const INVOICE_PAPERS = [
   { id: "moonstone", name: "Moonstone", light: "#FFFFFF", dark: "#17110F" },
-  { id: "pearl", name: "Pearl", light: "#FCFAF6", dark: "#17151A", tone: "#C9B9C9", sheen: true },
-  { id: "marble", name: "Marble", light: "#FBFAF8", dark: "#141415", tone: "#8C8A8E", veins: true },
-  { id: "sapphire", name: "Sapphire", light: "#F6F8FD", dark: "#0E1220", tone: "#3557C9" },
-  { id: "ruby", name: "Ruby", light: "#FDF6F7", dark: "#1B0D11", tone: "#C2334E" },
-  { id: "emerald", name: "Emerald", light: "#F5FBF7", dark: "#0C1712", tone: "#1E8A5A" },
-  { id: "amethyst", name: "Amethyst", light: "#F9F6FD", dark: "#150F1E", tone: "#8350C8" },
-  { id: "rosequartz", name: "Rose quartz", light: "#FDF6F6", dark: "#1A1113", tone: "#D98A9A" },
-  { id: "citrine", name: "Citrine", light: "#FDFAF1", dark: "#18140B", tone: "#C9952A" },
-  { id: "onyx", name: "Onyx", light: "#F4F3F2", dark: "#0E0E10", tone: "#5A5560" },
+  { id: "pearl", name: "Pearl", light: "#FAF9FA", dark: "#211D22", tone: "#C9B9C9", sheen: true },
+  { id: "marble", name: "Marble", light: "#F7F7F7", dark: "#18161A", tone: "#8C8A8E", veins: true },
+  { id: "sapphire", name: "Sapphire", light: "#EDF0FA", dark: "#15192F", tone: "#3557C9" },
+  { id: "ruby", name: "Ruby", light: "#FAEFF1", dark: "#291219", tone: "#C2334E" },
+  { id: "emerald", name: "Emerald", light: "#EBF4F0", dark: "#11201C", tone: "#1E8A5A" },
+  { id: "amethyst", name: "Amethyst", light: "#F4EFFA", dark: "#22182F", tone: "#8350C8" },
+  { id: "rosequartz", name: "Rose quartz", light: "#FAF1F3", dark: "#261B21", tone: "#D98A9A" },
+  { id: "citrine", name: "Citrine", light: "#F9F3E8", dark: "#281F14", tone: "#C9952A" },
+  { id: "onyx", name: "Onyx", light: "#EEEEEF", dark: "#161318", tone: "#5A5560" },
 ];
 export const paperOf = (id) => INVOICE_PAPERS.find((x) => x.id === id) || INVOICE_PAPERS[0];
 // The themes before the spectrum (15 October 2026), each now the nearest colour in it
@@ -389,7 +391,7 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
     return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">${cloud ? noise("c", 0.009, 3, cloudTone, cloud * k, seed % 97) : ""}${grain ? noise("g", 0.95, 2, grainTone, grain * k, seed % 89) : ""}${cloud ? `<rect width="${size}" height="${size}" filter="url(#c)"/>` : ""}${grain ? `<rect width="${size}" height="${size}" filter="url(#g)"/>` : ""}<g fill="${speckTone}">${dots}</g></svg>`);
   };
   const tex = {
-    page: stardust({ size: 460, seed: 11, cloud: paper.tone ? 0.13 : 0.09, grain: 0.035, specks: 46, glints: 1 }),
+    page: stardust({ size: 460, seed: 11, cloud: paper.tone ? 0.2 : 0.09, grain: 0.035, specks: 46, glints: 1 }),
     // (the band: wisps of the theme's colour, a fine velvet grain and faint star dust, under its sky;
     // on the light Paper band, quieter and dark)
     band: stardust({ size: 400, seed: 79, cloud: t.mono ? 0.06 : lightBand ? 0.1 : 0.2, grain: lightBand ? 0.04 : 0.07, specks: 52, glints: 1, cloudTone: t.mono ? (lightBand ? "#000000" : "#FFFFFF") : vivid(t.accent2, lightBand ? 0.5 : 0.62), speckTone: lightBand ? "#3A2A44" : "#FFFFFF", grainTone: lightBand ? "#000000" : "#FFFFFF", strength: lightBand ? 0.6 : 1 }),
@@ -404,12 +406,15 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
   // The page's colours: Bright (white paper, dark ink) or Dark (the website's near-black, light ink)
   const sheet = dark ? paper.dark : paper.light;
   const page = dark
-    ? { band: t.light ? "#0C0908" : t.band, paper: sheet, wash: mixHex("#FFFFFF", sheet, 0.05), ink: "#F1EBEA", soft: "#A99FA0", hair: mixHex("#FFFFFF", sheet, 0.12), outside: mixHex("#000000", sheet, 0.45), rule: "#F1EBEA" }
-    : { band: t.band, paper: sheet, wash: paper.tone ? mixHex(paper.tone, sheet, 0.05) : t.wash, ink: "#1C1618", soft: "#6B6266", hair: paper.tone ? mixHex(paper.tone, "#E7E2E2", 0.12) : "#E7E2E2", outside: t.mono ? "#E6E6E6" : paper.tone ? mixHex(paper.tone, "#E9E4E7", 0.14) : "#E9E4E7", rule: "#1C1618" };
+    ? { band: t.light ? "#0C0908" : t.band, paper: sheet, wash: paper.tone ? mixHex(tone, sheet, 0.09) : mixHex("#FFFFFF", sheet, 0.05), ink: "#F1EBEA", soft: "#A99FA0", hair: paper.tone ? mixHex(tone, sheet, 0.2) : mixHex("#FFFFFF", sheet, 0.12), outside: paper.tone ? mixHex(paper.tone, mixHex("#000000", sheet, 0.45), 0.1) : mixHex("#000000", sheet, 0.45), rule: "#F1EBEA" }
+    : { band: t.band, paper: sheet, wash: paper.tone ? mixHex(paper.tone, sheet, 0.1) : t.wash, ink: "#1C1618", soft: "#6B6266", hair: paper.tone ? mixHex(paper.tone, "#E7E2E2", 0.24) : "#E7E2E2", outside: t.mono ? "#E6E6E6" : paper.tone ? mixHex(paper.tone, "#E9E4E7", 0.26) : "#E9E4E7", rule: "#1C1618" };
   // Pearl's shimmer and Marble's veins, over the paper's own texture
   const marbleVeins = paper.veins ? tile(`<svg xmlns="http://www.w3.org/2000/svg" width="700" height="700"><filter id="v"><feTurbulence type="turbulence" baseFrequency="0.0035 0.012" numOctaves="3" seed="7" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 ${dark ? 1 : 0.35} 0 0 0 0 ${dark ? 1 : 0.34} 0 0 0 0 ${dark ? 1 : 0.38} -${dark ? 0.6 : 0.9} 0 0 0 ${dark ? 0.12 : 0.16}"/></filter><rect width="700" height="700" filter="url(#v)"/></svg>`) : "";
   const pearlSheen = paper.sheen ? `linear-gradient(125deg, ${dark ? "rgb(255 200 230 / .05)" : "rgb(255 214 236 / .35)"}, ${dark ? "rgb(190 220 255 / .04)" : "rgb(208 230 255 / .28)"} 45%, ${dark ? "rgb(200 255 225 / .04)" : "rgb(214 245 226 / .3)"} 75%, ${dark ? "rgb(255 236 210 / .04)" : "rgb(255 240 220 / .3)"})` : "";
-  const sheetLayers = [tex.page, marbleVeins, pearlSheen].filter(Boolean).join(",");
+  // (the stone's own glow, soft, in the top right and bottom left corners)
+  const [tr, tg, tb] = paper.tone ? rgb(paper.tone).map((v) => Math.round(v * 255)) : [0, 0, 0];
+  const stoneGlow = paper.tone ? `radial-gradient(ellipse 70% 45% at 100% 0%, rgb(${tr} ${tg} ${tb} / ${dark ? 0.16 : 0.13}), transparent 70%), radial-gradient(ellipse 65% 40% at 0% 100%, rgb(${tr} ${tg} ${tb} / ${dark ? 0.12 : 0.1}), transparent 70%)` : "";
+  const sheetLayers = [tex.page, marbleVeins, pearlSheen, stoneGlow].filter(Boolean).join(",");
 
   return `<!doctype html>
 <html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
