@@ -182,14 +182,17 @@ export function stageEmail(invoice, sums, stage, settings) {
 // Each comes Bright (a white page) or Dark (a near-black page, like the website): accentDark is the
 // accent a touch lighter, so it reads on the dark page.
 export const INVOICE_THEMES = [
-  { id: "night", name: "Night", band: "#100806", accent: "#B0367E", accentDark: "#E0629F", wash: "#FBF8F7" },
-  { id: "violet", name: "Violet", band: "#0F0812", accent: "#7B2CBF", accentDark: "#A774E0", wash: "#F9F7FC" },
-  { id: "plum", name: "Plum", band: "#140A12", accent: "#962F86", accentDark: "#CF67BE", wash: "#FBF7FA" },
-  { id: "ink", name: "Ink", band: "#0B0B10", accent: "#4F46B8", accentDark: "#8D86F0", wash: "#F7F7FA" },
-  { id: "ember", name: "Ember", band: "#140806", accent: "#B8405F", accentDark: "#E57590", wash: "#FCF7F6" },
-  { id: "rose", name: "Rose", band: "#12080B", accent: "#C0457C", accentDark: "#EC7FAE", wash: "#FCF6F8" },
-  { id: "dusk", name: "Dusk", band: "#0D0A14", accent: "#6A4BC9", accentDark: "#9D86F2", wash: "#F8F7FC" },
-  { id: "paper", name: "Paper", band: "#F4F1EF", accent: "#9A3381", accentDark: "#D06BBA", wash: "#FAF8F7", light: true },
+  // accent2: the second colour of each theme's blend (the website logo's pink into violet, and kin);
+  // mono: no colour at all, black and white (the white logo)
+  { id: "night", name: "Night", band: "#100806", accent: "#B0367E", accent2: "#7B2CBF", accentDark: "#E0629F", accent2Dark: "#A774E0", wash: "#FBF8F7" },
+  { id: "violet", name: "Violet", band: "#0F0812", accent: "#7B2CBF", accent2: "#B0367E", accentDark: "#A774E0", accent2Dark: "#E0629F", wash: "#F9F7FC" },
+  { id: "plum", name: "Plum", band: "#140A12", accent: "#962F86", accent2: "#5B3FC0", accentDark: "#CF67BE", accent2Dark: "#958AF0", wash: "#FBF7FA" },
+  { id: "ink", name: "Ink", band: "#0B0B10", accent: "#4F46B8", accent2: "#2E8FB8", accentDark: "#8D86F0", accent2Dark: "#6CC4E6", wash: "#F7F7FA" },
+  { id: "ember", name: "Ember", band: "#140806", accent: "#B8405F", accent2: "#D27A2E", accentDark: "#E57590", accent2Dark: "#F0A866", wash: "#FCF7F6" },
+  { id: "rose", name: "Rose", band: "#12080B", accent: "#C0457C", accent2: "#E07A9B", accentDark: "#EC7FAE", accent2Dark: "#F5A9C2", wash: "#FCF6F8" },
+  { id: "dusk", name: "Dusk", band: "#0D0A14", accent: "#6A4BC9", accent2: "#C0457C", accentDark: "#9D86F2", accent2Dark: "#EC7FAE", wash: "#F8F7FC" },
+  { id: "paper", name: "Paper", band: "#F4F1EF", accent: "#9A3381", accent2: "#6A3FC0", accentDark: "#D06BBA", accent2Dark: "#A08AF0", wash: "#FAF8F7", light: true },
+  { id: "mono", name: "Black & white", band: "#111111", accent: "#1C1618", accent2: "#1C1618", accentDark: "#EDE8E8", accent2Dark: "#EDE8E8", wash: "#F6F5F5", mono: true },
 ];
 export const INVOICE_MODES = ["bright", "dark"];
 export const themeOf = (id) => INVOICE_THEMES.find((t) => t.id === id) || INVOICE_THEMES[0];
@@ -213,6 +216,7 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   const receipt = stage === "paid";
   const line = STAGE_LINES[stage];
   const accent = dark ? t.accentDark : t.accent;
+  const accent2 = dark ? t.accent2Dark : t.accent2;
   const red = dark ? "#EE6A80" : "#A3233A";
   const green = dark ? "#5CC795" : "#1F7A55";
   const lineColour = line.colour === "accent" ? accent : line.colour === "ink" ? (dark ? "#E9E2E3" : "#2A2326") : line.colour === "#A3233A" ? red : green;
@@ -260,7 +264,10 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   const title = `${receipt ? "Receipt" : "Invoice"} ${invoice.number}`;
   const lightBand = t.light && !dark;
-  const logo = lightBand ? LOGO_DATA_URL : LOGO_WHITE_DATA_URL;
+  // The website's logo in colour (pink into violet); black and white: the white one
+  const logo = t.mono && !lightBand ? LOGO_WHITE_DATA_URL : LOGO_DATA_URL;
+  // A breath of each theme's colour on the page (none for black and white)
+  const tint = (pct) => (t.mono ? "var(--wash)" : `color-mix(in srgb, var(--accent) ${pct}%, var(--paper))`);
   // The page's colours: Bright (white paper, dark ink) or Dark (the website's near-black, light ink)
   const page = dark
     ? { band: t.light ? "#0C0908" : t.band, paper: "#17110F", wash: "#211A18", ink: "#F1EBEA", soft: "#A99FA0", hair: "#352C2B", outside: "#0B0807", rule: "#F1EBEA" }
@@ -271,35 +278,36 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
 <title>${esc(title)} · ${esc(card.name)}</title>
 <style>
 @font-face{font-family:"Jost";src:url(${FONT_DATA_URL}) format("woff2");font-weight:400 600;font-display:block}
-:root{--band:${page.band};--accent:${accent};--paper:${page.paper};--wash:${page.wash};--ink:${page.ink};--soft:${page.soft};--hair:${page.hair};--rule:${page.rule};--red:${red};--green:${green};--line:${lineColour};--band-ink:${lightBand ? "#1C1618" : "#FFFFFF"};color-scheme:${dark ? "dark" : "light"}}
+:root{--band:${page.band};--accent:${accent};--accent2:${accent2};--blend:linear-gradient(90deg,var(--accent),var(--accent2));--tint:${tint(dark ? 14 : 7)};--tint2:${tint(dark ? 9 : 4)};--paper:${page.paper};--wash:${page.wash};--ink:${page.ink};--soft:${page.soft};--hair:${page.hair};--rule:${page.rule};--red:${red};--green:${green};--line:${lineColour};--band-ink:${lightBand ? "#1C1618" : "#FFFFFF"};color-scheme:${dark ? "dark" : "light"}}
 *{box-sizing:border-box}
 html{background:${page.outside}}
 body{margin:0;padding:28px 12px;font:15px/1.55 "Jost",Futura,"Century Gothic","Avenir Next",system-ui,sans-serif;color:var(--ink);letter-spacing:.01em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .sheet{max-width:820px;margin:0 auto;background:var(--paper);box-shadow:0 10px 40px rgb(0 0 0 / .08)}
-.band{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;background:var(--band);color:var(--band-ink);border-bottom:2px solid var(--accent)}
+.band{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:${t.mono ? "var(--band)" : lightBand ? "radial-gradient(120% 220% at 100% 0%,color-mix(in srgb,var(--accent2) 16%,var(--band)),var(--band) 60%)" : "radial-gradient(90% 260% at 100% 0%,color-mix(in srgb,var(--accent2) 42%,var(--band)),transparent 62%),radial-gradient(60% 200% at 0% 100%,color-mix(in srgb,var(--accent) 30%,var(--band)),transparent 70%),var(--band)"}}
+.band::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--blend)}
 .brand{display:flex;align-items:center;gap:16px}
-.brand img{width:46px;height:46px;display:block}
+.brand img{width:50px;height:50px;display:block${t.mono ? "" : ";filter:drop-shadow(0 0 8px color-mix(in srgb,var(--accent) 45%,transparent))"}}
 .brand b{display:block;font-weight:500;font-size:19px;letter-spacing:.32em}
-.brand small{display:block;margin-top:3px;font-size:10.5px;letter-spacing:.42em;opacity:.75}
+.brand small{display:block;margin-top:3px;font-size:10.5px;letter-spacing:.42em;${t.mono ? "opacity:.75" : lightBand ? "color:var(--accent)" : "color:color-mix(in srgb,var(--accent) 45%,#fff)"}}
 .doc{font-weight:400;font-size:13px;letter-spacing:.42em;text-transform:uppercase;opacity:.9}
 .in{padding:30px 40px 34px}
 .stage{display:flex;align-items:center;gap:10px;margin:0 0 26px;font-size:13.5px;color:var(--line)}
 .stage::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
 .top{display:grid;grid-template-columns:1.1fr 1fr auto;gap:28px;align-items:start}
-.k,.top h2,.notes h2,.pay h2{display:block;margin:0 0 6px;font-size:10.5px;font-weight:500;letter-spacing:.24em;text-transform:uppercase;color:var(--soft)}
+.k,.top h2,.notes h2,.pay h2{display:block;margin:0 0 6px;font-size:10.5px;font-weight:500;letter-spacing:.24em;text-transform:uppercase;color:${t.mono ? "var(--soft)" : "var(--accent)"}}
 .to{font-size:14px;line-height:1.6}.to b{font-weight:600}
 dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:13.5px}
 dt{color:var(--soft)}dd{margin:0;font-variant-numeric:tabular-nums}
 .late{color:var(--red);font-weight:500}
-.amount{position:relative;min-width:200px;padding:16px 18px;background:var(--wash);border-left:2px solid var(--accent);text-align:right}
+.amount{position:relative;min-width:200px;padding:16px 18px;background:var(--tint);border-left:3px solid var(--accent);border-image:linear-gradient(180deg,var(--accent),var(--accent2)) 1;text-align:right}
 .amount .lbl{display:block;font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--soft)}
-.amount b{display:block;margin:4px 0 2px;font-size:28px;font-weight:500;letter-spacing:.01em;font-variant-numeric:tabular-nums}
+.amount b{display:block;margin:4px 0 2px;font-size:28px;font-weight:500;letter-spacing:.01em;font-variant-numeric:tabular-nums;color:var(--accent)}
 .amount .when{font-size:13px;color:var(--soft)}
-.amount.late{border-left-color:var(--red)}.amount.late .when{color:var(--red);font-weight:500}
-.amount.done{border-left-color:var(--green);padding-top:24px}.amount.done .when{color:var(--green);font-weight:500}
+.amount.late{border-image:none;border-left-color:var(--red)}.amount.late .when,.amount.late b{color:var(--red);font-weight:500}
+.amount.done{border-image:none;border-left-color:var(--green);padding-top:24px}.amount.done .when,.amount.done b{color:var(--green);font-weight:500}
 .stamp{position:absolute;right:12px;top:-13px;transform:rotate(-6deg);padding:1px 10px;background:var(--paper);border:2px solid var(--green);border-radius:6px;color:var(--green);font-size:14px;font-weight:600;letter-spacing:.3em;text-transform:uppercase;opacity:.75}
 table{width:100%;margin-top:30px;border-collapse:collapse;font-size:14px}
-th{padding:0 0 9px;text-align:left;font-size:10.5px;font-weight:500;letter-spacing:.24em;text-transform:uppercase;color:var(--soft);border-bottom:1px solid var(--rule)}
+th{padding:0 0 9px;text-align:left;font-size:10.5px;font-weight:500;letter-spacing:.24em;text-transform:uppercase;color:${t.mono ? "var(--soft)" : "var(--accent)"};border-bottom:2px solid var(--rule);border-image:${t.mono ? "none" : "var(--blend) 1"}}
 td{padding:12px 0;border-bottom:1px solid var(--hair);vertical-align:top}
 th.n,td.n{text-align:right;white-space:nowrap;padding-left:18px;font-variant-numeric:tabular-nums}
 tr{break-inside:avoid}
@@ -308,13 +316,13 @@ tr{break-inside:avoid}
 .r b{font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
 .r.soft{color:var(--soft)}.r small{font-size:12px}
 .r.strong{border-top:1px solid var(--hair);margin-top:4px;padding-top:10px}
-.r.due{margin-top:6px;padding:10px 0 4px;border-top:1px solid var(--rule);font-size:16px;font-weight:600}.r.due b{font-weight:600}
+.r.due{margin-top:6px;padding:10px 0 4px;border-top:2px solid var(--rule);border-image:${t.mono ? "none" : "var(--blend) 1"};font-size:16px;font-weight:600}.r.due b{font-weight:600;color:var(--accent)}
 .bottom{display:grid;grid-template-columns:1.2fr 1fr;gap:28px;align-items:start;margin-top:30px;break-inside:avoid}
-.notes{padding:14px 16px;background:var(--wash);border-radius:4px;font-size:13.5px;line-height:1.6;white-space:pre-line}
+.notes{padding:14px 16px;background:var(--tint2);border-left:3px solid var(--accent2);border-radius:4px;font-size:13.5px;line-height:1.6;white-space:pre-line}
 .pay{font-size:13.5px;line-height:1.6}.pay p{margin:0 0 10px}
 .pay a{color:var(--accent);text-decoration:none;border-bottom:1px solid currentColor}
 footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 18px;margin-top:30px;padding-top:14px;border-top:1px solid var(--hair);font-size:11.5px;color:var(--soft);letter-spacing:.02em}
-footer .thanks{width:100%;font-size:12.5px;color:var(--ink)}
+footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 @media (max-width:640px){
   body{padding:0}.band{padding:18px 20px}.brand b{font-size:15px;letter-spacing:.24em}.doc{display:none}.in{padding:22px 20px}
   .top{grid-template-columns:1fr}.amount{text-align:left}.bottom{grid-template-columns:1fr}

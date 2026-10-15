@@ -481,12 +481,20 @@ describe("the Invoicer", () => {
 		expect(doc.text).toContain(`alt="Novacane Studios logo"`); // the website's logo, in the page (so it prints)
 		expect(doc.headers.get("Content-Security-Policy")).toContain("img-src data:");
 		// The looks: 8 themes, bright or dark; a note for this copy; an admin chooses every invoice's look
-		expect(list.data.themes).toHaveLength(8);
+		expect(list.data.themes).toHaveLength(9);
+		expect(list.data.themes.at(-1)).toMatchObject({ id: "mono", name: "Black & white" });
 		expect(list.data).toMatchObject({ theme: "night", mode: "bright", modes: ["bright", "dark"] });
 		const dark = await portal(`money/invoices/${inv.id}/document?stage=balance&theme=violet&mode=dark&note=${encodeURIComponent("Bring <your> lyrics")}`);
 		expect(dark.text).toContain("color-scheme:dark");
 		expect(dark.text).toContain("#A774E0"); // Violet's accent for the dark page
 		expect(dark.text).toContain("Bring &lt;your&gt; lyrics");
+		// In colour: the website's colour logo and the theme's blend; black and white: the white logo, no blend
+		const { LOGO_DATA_URL, LOGO_WHITE_DATA_URL } = await import("../src/invoicer-logo.js");
+		expect(dark.text).toContain(LOGO_DATA_URL);
+		expect(dark.text).toContain("--blend:linear-gradient");
+		const mono = await portal(`money/invoices/${inv.id}/document?stage=balance&theme=mono`);
+		expect(mono.text).toContain(LOGO_WHITE_DATA_URL);
+		expect(mono.text).not.toContain(LOGO_DATA_URL);
 		expect(dark.headers.get("Content-Security-Policy")).toContain("font-src data:");
 		expect((await portal("money/settings", { body: { invoiceTheme: "dusk", invoiceMode: "dark" } })).status).toBe(200);
 		expect((await portal("money/catalogue")).data).toMatchObject({ theme: "dusk", mode: "dark" });
