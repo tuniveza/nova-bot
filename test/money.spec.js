@@ -590,3 +590,18 @@ describe("invoice emails are the Nova invoice", () => {
 		expect(emails[0].text).toContain("Remaining balance");
 	});
 });
+
+describe("a test of the receipt", () => {
+	it("Send me a test at Paid receipt: the receipt email (RECEIPT band, paid in full), only to the admin", async () => {
+		const inv = await writeAndSend();
+		emails.length = 0;
+		const r = await portal("money/invoices/test-send", { body: { id: inv.id, stage: "paid", body: "Hi Ada,\n\nThank you! Your receipt is below." } });
+		expect(r.status).toBe(200);
+		expect(emails).toHaveLength(1);
+		expect(emails[0].subject).toBe("[TEST] Receipt for invoice NS-0001 from Novacane Studios: paid in full, thank you");
+		expect(emails[0].html).toMatch(/band-night-bright-receipt\.jpg/);
+		expect(emails[0].html).toContain("Your receipt is below.");
+		expect(emails[0].text).toContain("RECEIPT NS-0001");
+		expect(emails[0].to).not.toContain("ada@example.com");
+	});
+});
