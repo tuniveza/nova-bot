@@ -1498,7 +1498,7 @@ const PANELS = ["/portal", "/calendar", "/notes", "/quests", "/board", "/console
 // for a moment, in a popup, and come back)
 const NOT_PAGES = /^\/(lossless\/(ws|ice)|admin\/google(\/callback)?)$/;
 // /agent/<name>: Nova Agent with that panel open
-const PANEL_NAMES = { portal: "/portal/", calendar: "/calendar/", notes: "/notes/", quests: "/quests/", board: "/board/", console: "/console/", index: "/app/memory/", observatory: "/observatory/", lossless: "/lossless/", visualizer: "/visualizer", admin: "/admin", fixer: "/fixer/", computer: "/computer/", invoicer: "/invoicer/" };
+const PANEL_NAMES = { portal: "/portal/", calendar: "/calendar/", notes: "/notes/", quests: "/quests/", board: "/board/", console: "/console/", index: "/app/memory/", observatory: "/observatory/", lossless: "/lossless/", visualizer: "/visualizer", admin: "/admin", fixer: "/fixer/", computer: "/computer/", invoicer: "/invoicer/", nova: "/visualizer" };
 const AGENT = "/agent/";
 // Admin lives inside Portal: an admin page's address opens Portal's Admin section showing it
 function opened(panel, search) {
