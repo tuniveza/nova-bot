@@ -287,9 +287,11 @@ const DEFAULT_NOTE = "Thank you for choosing Novacane Studios. Any questions abo
 export function invoiceDocument(invoice, payments, stage, settings, today, options = {}) {
   const s = stageSums(invoice, payments, stage, today);
   const card = studioCard(settings);
-  const t = themeOf(options.theme || settings?.invoiceTheme);
-  const dark = (options.mode || settings?.invoiceMode) === "dark";
-  const paper = paperOf(options.paper || settings?.invoicePaper);
+  // (what's asked for this copy, else the invoice's own look, else the studio's)
+  const look = invoice?.look || {};
+  const t = themeOf(options.theme || look.theme || settings?.invoiceTheme);
+  const dark = (options.mode || look.mode || settings?.invoiceMode) === "dark";
+  const paper = paperOf(options.paper || look.paper || settings?.invoicePaper);
   const receipt = stage === "paid";
   const client = options.page || null;
   const cancelled = Boolean(client?.cancelled);

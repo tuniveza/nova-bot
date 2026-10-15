@@ -261,6 +261,29 @@ export function invoiceHash(row) {
 }
 const reminderHash = (row, invoice) => sha256Hex(JSON.stringify(["nova-invoice-reminder-v2", row.kind || "reminder", row.invoice_id, row.body, invoice.bill_email || null, invoice.total_pence - invoice.paid_pence]));
 
+// An invoice's own look ({ theme, mode, paper }, each optional), from what's saved or what's sent:
+// only the known ones kept; nothing chosen: null (the studio's look)
+export function invoiceLook(input) {
+  let v = input;
+  if (typeof v === "string") {
+    try {
+      v = JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  if (!v || typeof v !== "object") return null;
+  const look = {};
+  if (themeId(v.theme)) look.theme = themeId(v.theme);
+  if (INVOICE_MODES.includes(v.mode)) look.mode = v.mode;
+  if (INVOICE_PAPERS.some((x) => x.id === v.paper)) look.paper = v.paper;
+  return Object.keys(look).length ? look : null;
+}
+const lookText = (input) => {
+  const look = invoiceLook(input);
+  return look ? JSON.stringify(look) : null;
+};
+
 // ===== READING =====
 
 const SELECT = "SELECT i.*, s.display_name AS decided_by_name FROM invoices i LEFT JOIN staff s ON s.id = i.decided_by";
@@ -296,6 +319,7 @@ export function publicInvoice(env, row, today = ukToday()) {
     issueDate: row.issue_date,
     dueDate: row.due_date,
     notes: row.notes || "",
+    look: invoiceLook(row.look),
     status: stuck ? "failed" : row.status,
     overdue: isOverdue(row, today),
     createdBy: row.created_by,
@@ -433,10 +457,10 @@ export async function createInvoice(env, input, by) {
   // The next number, in the same statement (two at once can't get the same one: seq is UNIQUE)
   const row = await env.DB.prepare(
     `INSERT INTO invoices (seq, token, client_id, bill_name, bill_email, bill_address, lines, vat_rate, subtotal_pence, vat_pence, total_pence,
-       issue_date, due_date, notes, status, created_by, created_at, updated_at, submitted_at)
-     SELECT COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', ?, ?, ?, ? FROM invoices RETURNING id, seq`
+       issue_date, due_date, notes, look, status, created_by, created_at, updated_at, submitted_at)
+     SELECT COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', ?, ?, ?, ? FROM invoices RETURNING id, seq`
   )
-    .bind(token, fields.client_id, fields.bill_name, fields.bill_email, fields.bill_address, fields.lines, fields.vat_rate, fields.subtotal_pence, fields.vat_pence, fields.total_pence, fields.issue_date, fields.due_date, fields.notes, String(by), now, now, now)
+    .bind(token, fields.client_id, fields.bill_name, fields.bill_email, fields.bill_address, fields.lines, fields.vat_rate, fields.subtotal_pence, fields.vat_pence, fields.total_pence, fields.issue_date, fields.due_date, fields.notes, lookText(input?.look), String(by), now, now, now)
     .first();
   await env.DB.batch([
     logEntry(env, { invoice: row.id, event: "created", by, detail: `${invoiceNumber(row.seq)} for ${money(fields.total_pence)}` }),
@@ -482,6 +506,7 @@ export async function editInvoice(env, by, id, input) {
     .bind(fields.client_id, fields.bill_name, fields.bill_email, fields.bill_address, fields.lines, fields.vat_rate, fields.subtotal_pence, fields.vat_pence, fields.total_pence, fields.issue_date, fields.due_date, fields.notes, now, now, id, row.status, row.updated_at)
     .run();
   if (!meta.changes) return fail(409, "Someone else changed it at the same moment. Look at it again.");
+  if (input?.look !== undefined) await env.DB.prepare("UPDATE invoices SET look = ? WHERE id = ?").bind(lookText(input.look), id).run();
   if (wasSent && row.client_id) await env.DB.batch(clientDelta(env, row.client_id, { invoiced: -row.total_pence, owed: -(row.total_pence - row.paid_pence) }, by));
   const names = { client_id: "client", bill_name: "name", bill_email: "email", bill_address: "address", lines: "lines", vat_rate: "VAT", total_pence: "total", issue_date: "issue date", due_date: "due date", notes: "notes" };
   await env.DB.batch([
@@ -593,6 +618,20 @@ function clientDelta(env, clientId, { invoiced = 0, owed = 0 }, by) {
 }
 
 // ===== THE INVOICER'S LIVE PREVIEW =====
+// An invoice's look (colour, Bright or Dark, paper) changed: only how it looks, not what it says, so
+// it needs no approval again. Its page shows it straight away; emails from now on use it (one already
+// sent stays as it went). look: null = the studio's look again.
+export async function setInvoiceLook(env, by, id, look) {
+  id = positiveId(id);
+  if (!id) return fail(400, "Which invoice?");
+  const row = await readRow(env, id);
+  if (!row) return fail(404, "That invoice doesn't exist.");
+  if (row.status === "void") return fail(409, `${invoiceNumber(row.seq)} was removed, so it can't change.`);
+  if (look !== null && look !== undefined && !invoiceLook(look)) return fail(400, "look: { theme, mode, paper } (one of the Invoicer's).");
+  await env.DB.prepare("UPDATE invoices SET look = ? WHERE id = ?").bind(lookText(look), id).run();
+  return { invoice: await getInvoice(env, id) };
+}
+
 // What's typed so far, drawn as the invoice will look: never saved, never numbered (it says "Draft"),
 // lenient with what isn't there yet (no name: "Artist name"; a line still missing its price: £0)
 export async function previewDocument(env, input = {}) {
@@ -1391,6 +1430,8 @@ export async function handleMoneyForStaff(request, env, me, route) {
   if (route === "/money/invoices/preview") return json({ html: await previewDocument(env, body) });
   const edit = route.match(/^\/money\/invoices\/(\d{1,12})\/edit$/);
   if (edit) return answer(await editInvoice(env, me.id, Number(edit[1]), body));
+  const lookOf = route.match(/^\/money\/invoices\/(\d{1,12})\/look$/);
+  if (lookOf) return answer(await setInvoiceLook(env, me.id, Number(lookOf[1]), body.look ?? null));
   const pay = route.match(/^\/money\/invoices\/(\d{1,12})\/payments$/);
   if (pay) return answer(await recordPayment(env, me.id, { invoiceId: Number(pay[1]), amount: body.amount, paidOn: body.paidOn, method: body.method === "stripe" ? "other" : body.method, note: body.note }));
   const remind = route.match(/^\/money\/invoices\/(\d{1,12})\/reminder$/);

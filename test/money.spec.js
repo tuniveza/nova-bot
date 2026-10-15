@@ -623,6 +623,32 @@ describe("the invoice's paper", () => {
 	});
 });
 
+describe("each invoice's own look", () => {
+	it("the colour, mode and paper chosen for an invoice go with it: its email, its page, its receipt", async () => {
+		const inv = await writeAndSend({ look: { theme: "jade", mode: "dark", paper: "pearl", extra: "x" } });
+		expect(inv.look).toEqual({ theme: "jade", mode: "dark", paper: "pearl" });
+		expect(emails[0].html).toMatch(/\/invoice-email\/band-jade-dark-invoice\.jpg/);
+		const token = (await row(inv.id)).token;
+		const page = await call(new Request(`${BASE}/invoice/${token}`));
+		expect(page.text).toContain((await portal(`money/invoices/${inv.id}/document?stage=deposit`)).text.match(/--paper:#[0-9A-Fa-f]+/)[0]);
+		// Changed later: no approval needed (it's only the look); the receipt uses the new one
+		const ruby = await portal(`money/invoices/${inv.id}/look`, { body: { look: { theme: "ruby", mode: "bright" } } });
+		expect(ruby.status).toBe(200);
+		expect(ruby.data.invoice.status).toBe("sent");
+		expect(ruby.data.invoice.look).toEqual({ theme: "ruby", mode: "bright" });
+		emails.length = 0;
+		await portal(`money/invoices/${inv.id}/payments`, { body: { amount: "349.99", method: "bank", paidOn: "2026-10-01" } });
+		const receipt = (await portal(`money/invoices/${inv.id}`)).data.reminders.find((r) => r.kind === "receipt");
+		await portal(`money/reminders/${receipt.id}/approve`, { body: {} });
+		expect(emails.at(-1).html).toMatch(/band-ruby-bright-receipt\.jpg/);
+		// Nothing chosen: the studio's look; a bad look is turned away
+		const plain = await writeAndSend();
+		expect(plain.look).toBe(null);
+		expect(emails.at(-1).html).toMatch(/band-night-bright-invoice\.jpg/);
+		expect((await portal(`money/invoices/${plain.id}/look`, { body: { look: { theme: "tartan" } } })).status).toBe(400);
+	});
+});
+
 describe("changing an invoice after it's been sent", () => {
 	it("goes for approval again, its page says it's being updated, then the client gets the updated invoice", async () => {
 		const inv = await writeAndSend();

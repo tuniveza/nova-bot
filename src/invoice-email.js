@@ -32,9 +32,11 @@ export const bandPicture = (base, theme, mode, receipt) => `${base}/invoice-emai
 //   link (the invoice's own page), greeting, paragraphs (the message above the invoice), mode }
 //   -> { html, text }
 export function invoiceEmailParts({ invoice, payments = [], stage, settings, today, base, link, greeting, paragraphs = [], mode = null, paper: paperId = null }) {
-  const t = themeOf(settings?.invoiceTheme);
-  const dark = (mode || settings?.invoiceMode) === "dark";
-  const paper = paperOf(paperId || settings?.invoicePaper);
+  // (the invoice's own look, else the studio's)
+  const look = invoice?.look || {};
+  const t = themeOf(look.theme || settings?.invoiceTheme);
+  const dark = (mode || look.mode || settings?.invoiceMode) === "dark";
+  const paper = paperOf(paperId || look.paper || settings?.invoicePaper);
   const sheet = dark ? paper.dark : paper.light;
   const s = stageSums(invoice, payments, stage, today);
   const card = studioCard(settings);
