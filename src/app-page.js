@@ -78,7 +78,9 @@
 //   GET  /app/api/money/invoices/:id/preview -> the invoice as the client will see it (a page)
 //   GET  /app/api/money/catalogue       -> the Invoicer's price list (src/invoicer.js)
 //   GET  /app/api/money/invoices/:id/stage?stage=deposit|balance|overdue|paid -> { stage, autoStage, sums, email }
-//   GET  /app/api/money/invoices/:id/document?stage=… -> the branded invoice at that stage (a page)
+//   GET  /app/api/money/invoices/:id/document?stage=… -> the branded invoice at that stage (a page; also &theme=, &mode=bright|dark, &note=)
+//   POST /app/api/money/invoices/preview { billName?, billEmail?, lines?, issueDate?, dueDate?, notes?, stage?, theme?, mode? } -> { html }
+//        the Invoicer's live preview of an invoice not made yet (nothing is saved)
 //   GET  /app/api/money/export.csv?what=invoices|payments|expenses&from=&to= (admins in a browser)
 //   POST /app/api/money/invoices        { clientId?, billName, billEmail, billAddress?, lines, vatRate?, issueDate?, dueDate?, notes? }
 //   POST /app/api/money/invoices/:id/edit, /payments { amount, paidOn, method, note }, /reminder { body? }

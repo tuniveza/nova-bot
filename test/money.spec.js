@@ -475,13 +475,35 @@ describe("the Invoicer", () => {
 		const doc = await portal(`money/invoices/${inv.id}/document?stage=paid`);
 		expect(doc.status).toBe(200);
 		expect(doc.headers.get("Content-Type")).toContain("text/html");
-		expect(doc.text).toContain("PAID");
+		expect(doc.text).toContain(">Paid<");
 		expect(doc.text).toContain("£0.00");
 		expect(doc.text).toContain("10 Clyde Terrace");
 		expect(doc.text).toContain(`alt="Novacane Studios logo"`); // the website's logo, in the page (so it prints)
 		expect(doc.headers.get("Content-Security-Policy")).toContain("img-src data:");
+		// The looks: 8 themes, bright or dark; a note for this copy; an admin chooses every invoice's look
+		expect(list.data.themes).toHaveLength(8);
+		expect(list.data).toMatchObject({ theme: "night", mode: "bright", modes: ["bright", "dark"] });
+		const dark = await portal(`money/invoices/${inv.id}/document?stage=balance&theme=violet&mode=dark&note=${encodeURIComponent("Bring <your> lyrics")}`);
+		expect(dark.text).toContain("color-scheme:dark");
+		expect(dark.text).toContain("#A774E0"); // Violet's accent for the dark page
+		expect(dark.text).toContain("Bring &lt;your&gt; lyrics");
+		expect(dark.headers.get("Content-Security-Policy")).toContain("font-src data:");
+		expect((await portal("money/settings", { body: { invoiceTheme: "dusk", invoiceMode: "dark" } })).status).toBe(200);
+		expect((await portal("money/catalogue")).data).toMatchObject({ theme: "dusk", mode: "dark" });
+		expect((await portal(`money/invoices/${inv.id}/document?stage=balance`)).text).toContain("#9D86F2"); // Dusk, dark
+		expect((await portal("money/settings", { body: { invoiceMode: "sepia" } })).status).toBe(400);
+		// The live preview: what's typed so far, drawn, and nothing saved
+		const before = (await env.DB.prepare("SELECT COUNT(*) AS n FROM invoices").first()).n;
+		const pre = await portal("money/invoices/preview", { body: { billName: "Mo <Artist>", lines: [{ description: "Mixing", qty: 2, unit: "100" }, { description: "", qty: 1, unit: "" }], theme: "rose", mode: "dark" } });
+		expect(pre.status).toBe(200);
+		expect(pre.data.html).toContain("Mo &lt;Artist&gt;");
+		expect(pre.data.html).toContain("£200.00");
+		expect(pre.data.html).toContain(">Draft<");
+		expect(pre.data.html).toContain("#EC7FAE"); // Rose, dark
+		expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM invoices").first()).n).toBe(before);
+		expect((await portal("money/invoices/preview", { body: {} })).data.html).toContain("Artist name");
 		const overdue = await portal(`money/invoices/${inv.id}/document?stage=overdue`);
-		expect(overdue.text).toContain("Overdue notice");
+		expect(overdue.text).toContain("overdue");
 		expect(overdue.text).toContain("£174.99");
 		// Signed out: nothing
 		expect((await portal(`money/invoices/${inv.id}/document`, { headers: {} })).status).toBe(401);

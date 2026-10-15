@@ -37,7 +37,7 @@ import { emailRecipients, mailReady, sendEmail } from "./enquiries.js";
 import { sendStudioEmail } from "./google/gmail.js";
 import { pounds as poundsText, toPence } from "./clients.js";
 import { createInvoiceCheckout, stripeOffline } from "./nova/stripe.js";
-import { STAGES, catalogue, invoiceDocument, stageEmail, stageOf, stageSums } from "./invoicer.js";
+import { INVOICE_MODES, INVOICE_THEMES, STAGES, catalogue, invoiceDocument, stageEmail, stageOf, stageSums } from "./invoicer.js";
 
 export const CATEGORIES = [
   "Equipment",
@@ -139,6 +139,8 @@ const DEFAULT_SETTINGS = {
   bank: { accountName: "", sortCode: "", accountNumber: "", note: "" },
   vatRate: 0,
   dueDays: 14,
+  invoiceTheme: "night",
+  invoiceMode: "bright",
 };
 
 export async function readSettings(env) {
@@ -151,6 +153,8 @@ export async function readSettings(env) {
     bank: { ...DEFAULT_SETTINGS.bank, ...(saved.bank || {}) },
     vatRate: Number.isFinite(saved.vatRate) ? saved.vatRate : DEFAULT_SETTINGS.vatRate,
     dueDays: Number.isInteger(saved.dueDays) ? saved.dueDays : DEFAULT_SETTINGS.dueDays,
+    invoiceTheme: INVOICE_THEMES.some((t) => t.id === saved.invoiceTheme) ? saved.invoiceTheme : DEFAULT_SETTINGS.invoiceTheme,
+    invoiceMode: INVOICE_MODES.includes(saved.invoiceMode) ? saved.invoiceMode : DEFAULT_SETTINGS.invoiceMode,
   };
 }
 const bankReady = (s) => Boolean(s.bank.accountName && s.bank.sortCode && s.bank.accountNumber);
@@ -176,7 +180,17 @@ export async function saveSettings(env, me, input) {
     },
     vatRate: s.vatRate,
     dueDays: s.dueDays,
+    invoiceTheme: s.invoiceTheme,
+    invoiceMode: s.invoiceMode,
   };
+  if (input?.invoiceMode !== undefined) {
+    if (!INVOICE_MODES.includes(input.invoiceMode)) return fail(400, "invoiceMode: bright or dark.");
+    next.invoiceMode = input.invoiceMode;
+  }
+  if (input?.invoiceTheme !== undefined) {
+    if (!INVOICE_THEMES.some((t) => t.id === input.invoiceTheme)) return fail(400, "invoiceTheme: one of " + INVOICE_THEMES.map((t) => t.id).join(", ") + ".");
+    next.invoiceTheme = input.invoiceTheme;
+  }
   if (next.business.email && !EMAIL_PATTERN.test(next.business.email)) return fail(400, "The studio's email address doesn't look right.");
   if (next.bank.sortCode && !/^\d{2}-?\d{2}-?\d{2}$/.test(next.bank.sortCode.replace(/\s/g, ""))) return fail(400, "A sort code is six numbers, like 12-34-56.");
   if (next.bank.accountNumber && !/^(\d{8}|[A-Z]{2}\d{2}[A-Z0-9]{10,30})$/.test(next.bank.accountNumber.replace(/\s/g, "").toUpperCase())) return fail(400, "An account number is eight numbers (or an IBAN).");
@@ -562,6 +576,44 @@ function clientDelta(env, clientId, { invoiced = 0, owed = 0 }, by) {
       "UPDATE clients SET invoiced_pence = MAX(0, invoiced_pence + ?), outstanding_pence = MAX(0, outstanding_pence + ?), updated_at = ?, updated_by = ? WHERE id = ?"
     ).bind(invoiced, owed, nowIso(), String(by), clientId),
   ];
+}
+
+// ===== THE INVOICER'S LIVE PREVIEW =====
+// What's typed so far, drawn as the invoice will look: never saved, never numbered (it says "Draft"),
+// lenient with what isn't there yet (no name: "Artist name"; a line still missing its price: £0)
+export async function previewDocument(env, input = {}) {
+  const settings = await readSettings(env);
+  const lines = [];
+  for (const raw of Array.isArray(input.lines) ? input.lines.slice(0, MAX_LINES) : []) {
+    const description = oneLine(raw?.description, MAX_LINE_TEXT) || "Something else";
+    const qty = Number(raw?.qty);
+    const unit = toPence(raw?.unit);
+    lines.push({ description, qty: Number.isFinite(qty) && qty > 0 && qty <= 10000 ? qty : 1, unit_pence: unit === null || unit < 0 ? 0 : unit });
+  }
+  const vatRate = settings.vatRate;
+  const sums = totals(lines, vatRate);
+  const today = ukToday();
+  const issue = isDay(input.issueDate) ? input.issueDate : today;
+  const due = isDay(input.dueDate) && input.dueDate >= issue ? input.dueDate : addDays(issue, settings.dueDays);
+  const invoice = {
+    id: 0,
+    number: "Draft",
+    status: "draft",
+    billTo: { name: oneLine(input.billName, 120) || "Artist name", email: oneLine(input.billEmail, 200).toLowerCase() || null, address: cleanText(input.billAddress, MAX_ADDRESS) },
+    lines: lines.map((l) => ({ description: l.description, qty: l.qty, unitPence: l.unit_pence, totalPence: lineTotal(l) })),
+    vatRate,
+    subtotalPence: sums.subtotal_pence,
+    vatPence: sums.vat_pence,
+    totalPence: sums.total_pence,
+    paidPence: 0,
+    issueDate: issue,
+    dueDate: due,
+    notes: cleanText(input.notes, MAX_NOTES),
+    pageUrl: null,
+  };
+  const stage = STAGES.includes(input.stage) ? input.stage : "deposit";
+  const options = { theme: INVOICE_THEMES.some((t) => t.id === input.theme) ? input.theme : null, mode: INVOICE_MODES.includes(input.mode) ? input.mode : null };
+  return invoiceDocument(invoice, [], stage, settings, today, options);
 }
 
 // ===== THE EMAILS =====
@@ -1105,7 +1157,7 @@ function pageResponse(html, nonce, status = 200, frame = false) {
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}'; form-action 'self' https://checkout.stripe.com; frame-ancestors ${frame ? "'self'" : "'none'"}; base-uri 'none'`,
+      "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'nonce-${nonce}'; form-action 'self' https://checkout.stripe.com; frame-ancestors ${frame ? "'self'" : "'none'"}; base-uri 'none'`,
     },
   });
 }
@@ -1203,7 +1255,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
     return pageResponse(invoicePage(env, row, await readSettings(env), { preview: true, nonce }), nonce, 200, true);
   }
   // The Invoicer (src/invoicer.js): the price list, and an invoice at one of its stages (read-only)
-  if (route === "/money/catalogue" && get) return json(catalogue());
+  if (route === "/money/catalogue" && get) return json({ ...catalogue(), themes: INVOICE_THEMES.map(({ id, name, band, accent }) => ({ id, name, band, accent })), modes: INVOICE_MODES, ...(({ invoiceTheme, invoiceMode }) => ({ theme: invoiceTheme, mode: invoiceMode }))(await readSettings(env)) });
   const staged = route.match(/^\/money\/invoices\/(\d{1,12})\/(stage|document)$/);
   if (staged && get) {
     const row = await readRow(env, Number(staged[1]));
@@ -1216,7 +1268,12 @@ export async function handleMoneyForStaff(request, env, me, route) {
     const stage = STAGES.includes(asked) ? asked : autoStage;
     if (staged[2] === "document") {
       const nonce = newNonce();
-      return pageResponse(invoiceDocument(invoice, payments, stage, settings, today), nonce, 200, true);
+      // ?theme= one of the invoice's themes and ?mode=bright|dark (else the studio's chosen ones); ?note= the Notes box's words for this copy
+      const theme = url.searchParams.get("theme");
+      const note = url.searchParams.get("note");
+      const mode = url.searchParams.get("mode");
+      const options = { theme: INVOICE_THEMES.some((t) => t.id === theme) ? theme : null, mode: INVOICE_MODES.includes(mode) ? mode : null, note: note === null ? null : cleanText(note, 800) };
+      return pageResponse(invoiceDocument(invoice, payments, stage, settings, today, options), nonce, 200, true);
     }
     const sums = stageSums(invoice, payments, stage, today);
     return json({ stage, autoStage, sums, email: stageEmail(invoice, sums, stage, settings), invoice, payments });
@@ -1240,6 +1297,8 @@ export async function handleMoneyForStaff(request, env, me, route) {
 
   // Anyone signed in
   if (route === "/money/invoices") return answer(await createInvoice(env, body, me.id));
+  // The Invoicer's live preview: an invoice not made yet, drawn as it will look (nothing is saved)
+  if (route === "/money/invoices/preview") return json({ html: await previewDocument(env, body) });
   const edit = route.match(/^\/money\/invoices\/(\d{1,12})\/edit$/);
   if (edit) return answer(await editInvoice(env, me.id, Number(edit[1]), body));
   const pay = route.match(/^\/money\/invoices\/(\d{1,12})\/payments$/);
