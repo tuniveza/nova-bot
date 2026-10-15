@@ -21,6 +21,7 @@
 //   na/web/lossless/public/lossless → public/lossless/  Lossless audio's page
 //   na/web/fixer     → public/fixer/      the Fixer (its data comes from the studio PC, admins only)
 //   na/web/computer  → public/computer/   Computer: the VPS at a glance (its data from Nova Agent on the VPS, admins only)
+//   na/web/invoicer  → public/invoicer/   Invoicer: invoices at each stage (its data from Money, /app/api/money…)
 //   na/web/lossless/src  → src/lossless/  its signalling (LosslessRoom) and relay setup (/lossless/ice)
 //   na/web/portal/planet → src/portal/planet/  the planet generator (also draws planet.svg)
 // NOVA_AGENT_DIR points somewhere else than ../../na (e.g. a branch's worktree).
@@ -58,6 +59,7 @@ const copies = [
   ["web/lossless/public/lossless/", "../public/lossless/", "Lossless audio"],
   ["web/fixer/", "../public/fixer/", "the Fixer"],
   ["web/computer/", "../public/computer/", "Computer"],
+  ["web/invoicer/", "../public/invoicer/", "Invoicer"],
   ["web/lossless/src/", "../src/lossless/", "Lossless audio's signalling"],
 ];
 // Nova Agent's page used to be the main address (public/index.html); the main address is Nova Bot's again
