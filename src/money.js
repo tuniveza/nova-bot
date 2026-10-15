@@ -157,7 +157,7 @@ export async function readSettings(env) {
     invoiceMode: INVOICE_MODES.includes(saved.invoiceMode) ? saved.invoiceMode : DEFAULT_SETTINGS.invoiceMode,
   };
 }
-const bankReady = (s) => Boolean(s.bank.accountName && s.bank.sortCode && s.bank.accountNumber);
+export const bankReady = (s) => Boolean(s.bank.accountName && s.bank.sortCode && s.bank.accountNumber);
 
 export async function saveSettings(env, me, input) {
   const s = await readSettings(env);
@@ -645,7 +645,7 @@ ${para(greeting)}${paragraphs.map(para).join("")}
 
 // The invoice email, in the words of its stage: a new invoice asks for the deposit (with the rest due
 // later), one already part paid asks for what's left
-function invoiceEmail(env, settings, row) {
+export function invoiceEmail(env, settings, row) {
   const number = invoiceNumber(row.seq);
   const link = `${publicUrl(env)}/invoice/${row.token}`;
   const today = ukToday();
@@ -1194,7 +1194,7 @@ function notFoundPage() {
 // The client's page for an invoice: the invoice itself (the Invoicer's design, at the stage it's at
 // now, in the studio's theme) with the ways to pay that are set up: a card button (Stripe) for the
 // amount due now (the deposit, at the deposit stage), the bank details, or how to get in touch
-async function clientPage(env, row, settings, { preview = false, paid = false, nonce = "", failed = false } = {}) {
+export async function clientPage(env, row, settings, { preview = false, paid = false, nonce = "", failed = false } = {}) {
   const today = ukToday();
   const invoice = publicInvoice(env, row, today);
   const payments = await invoicePayments(env, row.id);

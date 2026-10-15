@@ -93,6 +93,10 @@
 //   POST /nova-agent/me       { staff_id? }         -> who Nova Agent works for (its Nova Agent badge and memory);
 //                            without an id, the studio's first admin
 //
+//   POST /nova-agent/fixer-health -> { at, checks: [{ group, name, ok, severity, area, detail }] }: Nova Bot's
+//                            health for the Fixer's hourly check (invoices, their emails and pages, a way
+//                            to pay, stuck or failed emails, approvals waiting, Google; src/fixer-health.js)
+//
 // All of them need header Authorization: Bearer <AGENT_NOVA_KEY>.
 
 import { planetFacts, profile } from "./portal/routes.js";
@@ -111,6 +115,7 @@ import { handleGoogleForAgent } from "./google/index.js";
 import { tidyForAgent } from "./tidy.js";
 import { feedTimeToIso, listBookings } from "./booking-calendar.js";
 import { looksSession } from "./looks-account.js";
+import { fixerHealth } from "./fixer-health.js";
 
 // A job Nova Agent took but never reported on (e.g. it was restarted) is
 // offered again after this long
@@ -183,6 +188,8 @@ export async function handleAgentNova(request, env, pathname) {
   if (pathname === "/nova-agent/result") return reportResult(env, body);
   if (pathname === "/nova-agent/notify") return sendAlert(env, body);
   if (pathname === "/nova-agent/me") return agentStaff(env, body);
+  // The Fixer's hourly check: Nova Bot's health, read-only (src/fixer-health.js)
+  if (pathname === "/nova-agent/fixer-health") return Response.json(await fixerHealth(env), { headers: { "Cache-Control": "no-store" } });
   // The Fixer's looks check: a sign-in that only looks, for one check (src/looks-account.js)
   if (pathname === "/nova-agent/looks-session") return looksSession(env, body);
   // Calendar: Nova Agent's copy on the PC and this one, kept the same (src/calendar/items.js)
