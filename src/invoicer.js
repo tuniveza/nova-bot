@@ -311,7 +311,24 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // lighter on a dark band; black and white: plain, the band's own ink
   // (vivid: the theme's two colours at full saturation, bright on a dark band, deeper on a light one)
   const [from, to] = t.mono ? [t.accentDark, t.accent2Dark] : [vivid(t.accent, lightBand ? 0.46 : 0.64), vivid(t.accent2, lightBand ? 0.46 : 0.66)];
-  const logo = `<svg class="mark" viewBox="190 190 1620 1620" role="img" aria-label="Novacane Studios logo">${t.mono ? "" : `<defs><linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>`}<path transform="${LOGO_TRANSFORM}" fill="${t.mono ? "currentColor" : "url(#nv-mark)"}" d="${LOGO_PATH}"/></svg>`;
+  // The logo in its emblem: a soft moon-like disc a shade lighter than the band, a glow of the
+  // theme's colours behind it, a fine ring round it (an eclipse's edge) and a faint dotted orbit with a
+  // small planet crossing behind it, so it sits in Novacane's sky rather than floating on the band
+  const emblemInk = lightBand ? "#2A1F2E" : "#FFFFFF";
+  const bandColour = dark && t.light ? "#0C0908" : t.band; // (the same as the page's band below)
+  const discTop = t.mono ? (lightBand ? "#FFFFFF" : "#262626") : lightBand ? "#FFFFFF" : `color-mix(in srgb, ${to} 22%, ${bandColour})`;
+  const discBottom = t.mono ? (lightBand ? "#ECECEC" : "#151515") : lightBand ? `color-mix(in srgb, ${from} 10%, #FFFFFF)` : `color-mix(in srgb, ${from} 12%, ${bandColour})`;
+  const logo = `<svg class="mark" viewBox="0 0 200 200" role="img" aria-label="Novacane Studios logo"><defs>
+${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient>`}
+<radialGradient id="nv-glow" cx="50%" cy="50%" r="50%"><stop offset=".55" stop-color="${t.mono ? emblemInk : to}" stop-opacity="${t.mono ? 0.08 : lightBand ? 0.18 : 0.32}"/><stop offset="1" stop-color="${t.mono ? emblemInk : to}" stop-opacity="0"/></radialGradient>
+<linearGradient id="nv-disc" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" style="stop-color:${discTop}"/><stop offset="1" style="stop-color:${discBottom}"/></linearGradient></defs>
+<circle cx="100" cy="100" r="99" fill="url(#nv-glow)"/>
+<ellipse cx="100" cy="100" rx="97" ry="30" fill="none" stroke="${t.mono ? emblemInk : from}" stroke-opacity="${lightBand ? 0.4 : 0.55}" stroke-width="1.3" stroke-dasharray="1.8 4" transform="rotate(-24 100 100)"/>
+<circle cx="100" cy="100" r="72" fill="url(#nv-disc)"/>
+<circle cx="100" cy="100" r="72" fill="none" stroke="${t.mono ? emblemInk : to}" stroke-opacity="${lightBand ? 0.35 : 0.5}" stroke-width="1.2"/>
+<circle cx="100" cy="100" r="78" fill="none" stroke="${t.mono ? emblemInk : from}" stroke-opacity="${lightBand ? 0.14 : 0.2}" stroke-width=".8"/>
+<circle cx="${(100 + 97 * Math.cos(Math.PI * 0.86) * Math.cos(-24 * Math.PI / 180) - 30 * Math.sin(Math.PI * 0.86) * Math.sin(-24 * Math.PI / 180)).toFixed(1)}" cy="${(100 + 97 * Math.cos(Math.PI * 0.86) * Math.sin(-24 * Math.PI / 180) + 30 * Math.sin(Math.PI * 0.86) * Math.cos(-24 * Math.PI / 180)).toFixed(1)}" r="3.4" fill="${t.mono ? emblemInk : to}" opacity="${lightBand ? 0.6 : 0.85}"/>
+<g transform="translate(100 100) scale(0.074) translate(-1000 -1000)"><path transform="${LOGO_TRANSFORM}" fill="${t.mono ? "currentColor" : "url(#nv-mark)"}" d="${LOGO_PATH}"/></g></svg>`;
   // A breath of each theme's colour on the page (none for black and white)
   // Textures: paper made of moon dust and stardust, barely there. Each part its own mix, in the
   // theme's colours (light on a dark page): soft cloudy mottling (moon dust), a fine grain (the paper's
@@ -369,8 +386,8 @@ body{margin:0;padding:28px 12px;font:15px/1.55 "Jost",Futura,"Century Gothic","A
 .band>:not(.sky){position:relative}
 .band::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--blend)}
 .brand{display:flex;align-items:center;gap:16px}
-.brand .mark{width:42px;height:42px;display:block;flex:none}
-.brand b{display:block;font-weight:500;font-size:19px;letter-spacing:.32em}
+.brand .mark{width:86px;height:86px;display:block;flex:none;margin:-18px -2px -18px -16px;overflow:visible}
+.brand b{display:block;font-weight:500;font-size:21px;letter-spacing:.32em}
 .brand small{display:block;margin-top:3px;font-size:10.5px;letter-spacing:.42em;${t.mono ? "opacity:.75" : lightBand ? "color:var(--accent)" : "color:color-mix(in srgb,var(--accent) 45%,#fff)"}}
 .doc{font-weight:400;font-size:13px;letter-spacing:.42em;text-transform:uppercase;opacity:.9}
 .in{padding:30px 40px 34px}
@@ -407,7 +424,7 @@ tr{break-inside:avoid}
 footer{background:${tex.footer};display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 18px;margin-top:30px;padding-top:14px;border-top:1px solid var(--hair);font-size:11.5px;color:var(--soft);letter-spacing:.02em}
 footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 @media (max-width:640px){
-  body{padding:0}.band{padding:18px 20px}.brand b{font-size:15px;letter-spacing:.24em}.doc{display:none}.in{padding:22px 20px}
+  body{padding:0}.band{padding:18px 20px}.brand b{font-size:15px;letter-spacing:.24em}.brand .mark{width:58px;height:58px;margin:-10px -4px -10px -8px}.doc{display:none}.in{padding:22px 20px}
   .top{grid-template-columns:1fr}.amount{text-align:left}.bottom{grid-template-columns:1fr}
   th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){display:none}
 }
