@@ -405,9 +405,11 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
   const tint = (pct) => (t.mono ? "var(--wash)" : `color-mix(in srgb, var(--accent) ${pct}%, var(--paper))`);
   // The page's colours: Bright (white paper, dark ink) or Dark (the website's near-black, light ink)
   const sheet = dark ? paper.dark : paper.light;
+  // (the band takes a little of the stone's colour too: more on the light Paper band, a hint on the dark ones)
+  const bandOf = (c) => (paper.tone && !t.mono ? mixHex(paper.tone, c, lightBand ? 0.16 : 0.12) : c);
   const page = dark
-    ? { band: t.light ? "#0C0908" : t.band, paper: sheet, wash: paper.tone ? mixHex(tone, sheet, 0.09) : mixHex("#FFFFFF", sheet, 0.05), ink: "#F1EBEA", soft: "#A99FA0", hair: paper.tone ? mixHex(tone, sheet, 0.2) : mixHex("#FFFFFF", sheet, 0.12), outside: paper.tone ? mixHex(paper.tone, mixHex("#000000", sheet, 0.45), 0.1) : mixHex("#000000", sheet, 0.45), rule: "#F1EBEA" }
-    : { band: t.band, paper: sheet, wash: paper.tone ? mixHex(paper.tone, sheet, 0.1) : t.wash, ink: "#1C1618", soft: "#6B6266", hair: paper.tone ? mixHex(paper.tone, "#E7E2E2", 0.24) : "#E7E2E2", outside: t.mono ? "#E6E6E6" : paper.tone ? mixHex(paper.tone, "#E9E4E7", 0.26) : "#E9E4E7", rule: "#1C1618" };
+    ? { band: bandOf(t.light ? "#0C0908" : t.band), paper: sheet, wash: paper.tone ? mixHex(tone, sheet, 0.09) : mixHex("#FFFFFF", sheet, 0.05), ink: "#F1EBEA", soft: "#A99FA0", hair: paper.tone ? mixHex(tone, sheet, 0.2) : mixHex("#FFFFFF", sheet, 0.12), outside: paper.tone ? mixHex(paper.tone, mixHex("#000000", sheet, 0.45), 0.1) : mixHex("#000000", sheet, 0.45), rule: "#F1EBEA" }
+    : { band: bandOf(t.band), paper: sheet, wash: paper.tone ? mixHex(paper.tone, sheet, 0.1) : t.wash, ink: "#1C1618", soft: "#6B6266", hair: paper.tone ? mixHex(paper.tone, "#E7E2E2", 0.24) : "#E7E2E2", outside: t.mono ? "#E6E6E6" : paper.tone ? mixHex(paper.tone, "#E9E4E7", 0.26) : "#E9E4E7", rule: "#1C1618" };
   // Pearl's shimmer and Marble's veins, over the paper's own texture
   const marbleVeins = paper.veins ? tile(`<svg xmlns="http://www.w3.org/2000/svg" width="700" height="700"><filter id="v"><feTurbulence type="turbulence" baseFrequency="0.0035 0.012" numOctaves="3" seed="7" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 ${dark ? 1 : 0.35} 0 0 0 0 ${dark ? 1 : 0.34} 0 0 0 0 ${dark ? 1 : 0.38} -${dark ? 0.6 : 0.9} 0 0 0 ${dark ? 0.12 : 0.16}"/></filter><rect width="700" height="700" filter="url(#v)"/></svg>`) : "";
   const pearlSheen = paper.sheen ? `linear-gradient(125deg, ${dark ? "rgb(255 200 230 / .05)" : "rgb(255 214 236 / .35)"}, ${dark ? "rgb(190 220 255 / .04)" : "rgb(208 230 255 / .28)"} 45%, ${dark ? "rgb(200 255 225 / .04)" : "rgb(214 245 226 / .3)"} 75%, ${dark ? "rgb(255 236 210 / .04)" : "rgb(255 240 220 / .3)"})` : "";
@@ -415,6 +417,8 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
   const [tr, tg, tb] = paper.tone ? rgb(paper.tone).map((v) => Math.round(v * 255)) : [0, 0, 0];
   const stoneGlow = paper.tone ? `radial-gradient(ellipse 70% 45% at 100% 0%, rgb(${tr} ${tg} ${tb} / ${dark ? 0.16 : 0.13}), transparent 70%), radial-gradient(ellipse 65% 40% at 0% 100%, rgb(${tr} ${tg} ${tb} / ${dark ? 0.12 : 0.1}), transparent 70%)` : "";
   const sheetLayers = [tex.page, marbleVeins, pearlSheen, stoneGlow].filter(Boolean).join(",");
+  // (and its glow in the band, behind the word INVOICE)
+  const bandGlow = paper.tone && !t.mono ? `radial-gradient(ellipse 45% 120% at 85% 40%, rgb(${tr} ${tg} ${tb} / ${lightBand ? 0.26 : 0.3}), transparent 75%)` : "";
 
   return `<!doctype html>
 <html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
@@ -428,7 +432,7 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
 html{min-height:100%;background:${tex.backdrop},${t.mono ? "" : `radial-gradient(70% 55% at 0% 0%,color-mix(in srgb,${accent2} ${dark ? 22 : 16}%,transparent),transparent 70%),radial-gradient(65% 50% at 100% 100%,color-mix(in srgb,${accent} ${dark ? 20 : 14}%,transparent),transparent 70%),`}radial-gradient(120% 90% at 50% 40%,transparent 55%,${dark ? "rgb(0 0 0 / .45)" : "rgb(60 40 70 / .10)"}),${page.outside};background-attachment:fixed}
 body{margin:0;padding:28px 12px;font:15px/1.55 "Jost",Futura,"Century Gothic","Avenir Next",system-ui,sans-serif;color:var(--ink);letter-spacing:.01em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .sheet{max-width:820px;margin:0 auto;background:${sheetLayers},var(--paper);box-shadow:0 0 0 1px ${dark ? "rgb(255 255 255 / .05)" : "rgb(40 20 50 / .06)"},0 2px 4px rgb(0 0 0 / ${dark ? ".35" : ".06"}),0 18px 50px ${dark ? "rgb(0 0 0 / .55)" : "rgb(60 30 80 / .16)"}}
-.band{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:${tex.band},var(--band)}
+.band{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:${bandGlow ? `${bandGlow},` : ""}${tex.band},var(--band)}
 .band .sky{position:absolute;inset:0;width:100%;height:100%;display:block}
 .band>:not(.sky){position:relative}
 .band::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--blend)}

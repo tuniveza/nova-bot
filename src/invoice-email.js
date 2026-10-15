@@ -26,7 +26,9 @@ const bankReady = (bank) => Boolean(bank && bank.accountName && bank.sortCode &&
 const FONT = "Futura,'Century Gothic','Avenir Next','Segoe UI',Helvetica,Arial,sans-serif";
 
 // The band's picture: one per theme, mode and word (scripts/invoice-email-bands.mjs makes them all)
-export const bandPicture = (base, theme, mode, receipt) => `${base}/invoice-email/band-${theme}-${mode}-${receipt ? "receipt" : "invoice"}.jpg`;
+// (Moonstone, the plain paper: band-<theme>-<mode>-<word>.jpg; another paper tints the band too:
+// band-<theme>-<mode>-<word>-<paper>.jpg)
+export const bandPicture = (base, theme, mode, receipt, paper = "moonstone") => `${base}/invoice-email/band-${theme}-${mode}-${receipt ? "receipt" : "invoice"}${paper && paper !== "moonstone" ? `-${paper}` : ""}.jpg`;
 
 // { invoice (publicInvoice's shape), payments, stage, settings, today, base (the site's address),
 //   link (the invoice's own page), greeting, paragraphs (the message above the invoice), mode }
@@ -116,7 +118,7 @@ ${td(`background:${tint};padding:14px 16px;text-align:right;`, `<div style="font
 <body style="margin:0;padding:0;background:${P.outside};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="${P.outside}" style="background:${P.outside};border-collapse:collapse;"><tr><td align="center" style="padding:24px 8px;">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" bgcolor="${P.paper}" style="width:100%;max-width:600px;background:${P.paper};border-collapse:collapse;">
-<tr>${td(`background:${P.band};padding:0;line-height:0;`, `<img src="${esc(bandPicture(base, t.id, dark ? "dark" : "bright", receipt))}" width="600" alt="NOVACANE STUDIOS · ${word}" style="display:block;width:100%;max-width:600px;height:auto;border:0;color:#ffffff;font-family:${FONT};font-size:16px;letter-spacing:4px;line-height:1.6;padding:0;">`, `bgcolor="${P.band}"`)}</tr>
+<tr>${td(`background:${P.band};padding:0;line-height:0;`, `<img src="${esc(bandPicture(base, t.id, dark ? "dark" : "bright", receipt, paper.id))}" width="600" alt="NOVACANE STUDIOS · ${word}" style="display:block;width:100%;max-width:600px;height:auto;border:0;color:#ffffff;font-family:${FONT};font-size:16px;letter-spacing:4px;line-height:1.6;padding:0;">`, `bgcolor="${P.band}"`)}</tr>
 ${message ? `<tr>${td(`padding:26px 32px 6px;font-size:15.5px;line-height:1.6;color:${P.ink};`, message, `class="nv-pad"`)}</tr><tr>${td(`padding:6px 32px 0;`, `<div style="height:1px;line-height:1px;font-size:0;background:${P.hair};">&nbsp;</div>`, `class="nv-pad"`)}</tr>` : ""}
 <tr>${td(`padding:22px 32px 0;font-size:13.5px;color:${lineColour};`, `<span style="color:${lineColour};font-size:16px;">&#9679;</span>&nbsp; ${esc(line.text(s))}`, `class="nv-pad"`)}</tr>
 <tr>${td(`padding:18px 32px 0;`, `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>

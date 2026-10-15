@@ -627,7 +627,7 @@ describe("each invoice's own look", () => {
 	it("the colour, mode and paper chosen for an invoice go with it: its email, its page, its receipt", async () => {
 		const inv = await writeAndSend({ look: { theme: "jade", mode: "dark", paper: "pearl", extra: "x" } });
 		expect(inv.look).toEqual({ theme: "jade", mode: "dark", paper: "pearl" });
-		expect(emails[0].html).toMatch(/\/invoice-email\/band-jade-dark-invoice\.jpg/);
+		expect(emails[0].html).toMatch(/\/invoice-email\/band-jade-dark-invoice-pearl\.jpg/); // (its paper tints the band)
 		const token = (await row(inv.id)).token;
 		const page = await call(new Request(`${BASE}/invoice/${token}`));
 		expect(page.text).toContain((await portal(`money/invoices/${inv.id}/document?stage=deposit`)).text.match(/--paper:#[0-9A-Fa-f]+/)[0]);
