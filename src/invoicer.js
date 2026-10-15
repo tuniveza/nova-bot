@@ -353,6 +353,8 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
   };
   const tex = {
     page: stardust({ size: 460, seed: 11, cloud: 0.09, grain: 0.035, specks: 46, glints: 1 }),
+    // (behind the invoice: a deeper grain and more stardust, the surface it lies on)
+    backdrop: stardust({ size: 520, seed: 67, cloud: t.mono ? 0.07 : 0.14, grain: 0.05, specks: 70, glints: 2 }),
     amount: stardust({ size: 300, seed: 23, cloud: 0.12, grain: 0.03, specks: 22, glints: 1 }),
     notes: stardust({ size: 320, seed: 37, cloud: 0.1, grain: 0.03, specks: 16 }),
     sums: stardust({ size: 300, seed: 41, cloud: 0, grain: 0.03, specks: 10 }),
@@ -361,8 +363,8 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
   const tint = (pct) => (t.mono ? "var(--wash)" : `color-mix(in srgb, var(--accent) ${pct}%, var(--paper))`);
   // The page's colours: Bright (white paper, dark ink) or Dark (the website's near-black, light ink)
   const page = dark
-    ? { band: t.light ? "#0C0908" : t.band, paper: "#17110F", wash: "#211A18", ink: "#F1EBEA", soft: "#A99FA0", hair: "#352C2B", outside: "#0B0807", rule: "#F1EBEA" }
-    : { band: t.band, paper: "#FFFFFF", wash: t.wash, ink: "#1C1618", soft: "#6B6266", hair: "#E7E2E2", outside: "#EDEAEA", rule: "#1C1618" };
+    ? { band: t.light ? "#0C0908" : t.band, paper: "#17110F", wash: "#211A18", ink: "#F1EBEA", soft: "#A99FA0", hair: "#352C2B", outside: "#0A0708", rule: "#F1EBEA" }
+    : { band: t.band, paper: "#FFFFFF", wash: t.wash, ink: "#1C1618", soft: "#6B6266", hair: "#E7E2E2", outside: t.mono ? "#E6E6E6" : "#E9E4E7", rule: "#1C1618" };
 
   return `<!doctype html>
 <html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
@@ -371,9 +373,11 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
 @font-face{font-family:"Jost";src:url(${FONT_DATA_URL}) format("woff2");font-weight:400 600;font-display:block}
 :root{--band:${page.band};--accent:${accent};--accent2:${accent2};--blend:linear-gradient(90deg,var(--accent),var(--accent2));--tint:${tint(dark ? 15 : 8)};--tint2:${tint(dark ? 10 : 5)};--paper:${page.paper};--wash:${page.wash};--ink:${page.ink};--soft:${page.soft};--hair:${page.hair};--rule:${page.rule};--red:${red};--green:${green};--line:${lineColour};--band-ink:${lightBand ? "#1C1618" : "#FFFFFF"};color-scheme:${dark ? "dark" : "light"}}
 *{box-sizing:border-box}
-html{background:${page.outside}}
+/* Behind the invoice: a soft surface under Novacane's sky (screen only: printed, it's just the paper):
+   faint nebulae of the theme's colours in two corners, the edges a shade darker, grain and stardust */
+html{min-height:100%;background:${tex.backdrop},${t.mono ? "" : `radial-gradient(70% 55% at 0% 0%,color-mix(in srgb,${accent2} ${dark ? 22 : 16}%,transparent),transparent 70%),radial-gradient(65% 50% at 100% 100%,color-mix(in srgb,${accent} ${dark ? 20 : 14}%,transparent),transparent 70%),`}radial-gradient(120% 90% at 50% 40%,transparent 55%,${dark ? "rgb(0 0 0 / .45)" : "rgb(60 40 70 / .10)"}),${page.outside};background-attachment:fixed}
 body{margin:0;padding:28px 12px;font:15px/1.55 "Jost",Futura,"Century Gothic","Avenir Next",system-ui,sans-serif;color:var(--ink);letter-spacing:.01em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.sheet{max-width:820px;margin:0 auto;background:${tex.page},var(--paper);box-shadow:0 10px 40px rgb(0 0 0 / .08)}
+.sheet{max-width:820px;margin:0 auto;background:${tex.page},var(--paper);box-shadow:0 0 0 1px ${dark ? "rgb(255 255 255 / .05)" : "rgb(40 20 50 / .06)"},0 2px 4px rgb(0 0 0 / ${dark ? ".35" : ".06"}),0 18px 50px ${dark ? "rgb(0 0 0 / .55)" : "rgb(60 30 80 / .16)"}}
 .band{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:var(--band)}
 .band .sky{position:absolute;inset:0;width:100%;height:100%;display:block}
 .band>:not(.sky){position:relative}
