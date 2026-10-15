@@ -311,16 +311,14 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // lighter on a dark band; black and white: plain, the band's own ink
   // (vivid: the theme's two colours at full saturation, bright on a dark band, deeper on a light one)
   const [from, to] = t.mono ? [t.accentDark, t.accent2Dark] : [vivid(t.accent, lightBand ? 0.46 : 0.64), vivid(t.accent2, lightBand ? 0.46 : 0.66)];
-  // The logo in Novacane's sky: a soft glow of the theme's colours behind it (a nebula, no disc or
-  // border: it's a logo, not a button) and a faint dotted orbit with a small planet crossing behind it
+  // The logo in Novacane's sky: just a soft glow of the theme's colours behind it (a nebula; no disc,
+  // border or orbit over it: it's a logo, not a button)
   const emblemInk = lightBand ? "#2A1F2E" : "#FFFFFF";
   const bandColour = dark && t.light ? "#0C0908" : t.band; // (the same as the page's band below)
   const logo = `<svg class="mark" viewBox="0 0 200 200" role="img" aria-label="Novacane Studios logo"><defs>
 ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient>`}
 <radialGradient id="nv-glow" cx="50%" cy="50%" r="50%"><stop offset=".2" stop-color="${t.mono ? emblemInk : to}" stop-opacity="${t.mono ? 0.08 : lightBand ? 0.18 : 0.32}"/><stop offset="1" stop-color="${t.mono ? emblemInk : to}" stop-opacity="0"/></radialGradient></defs>
 <circle cx="100" cy="100" r="99" fill="url(#nv-glow)"/>
-<ellipse cx="100" cy="100" rx="97" ry="30" fill="none" stroke="${t.mono ? emblemInk : from}" stroke-opacity="${lightBand ? 0.4 : 0.55}" stroke-width="1.3" stroke-dasharray="1.8 4" transform="rotate(-24 100 100)"/>
-<circle cx="${(100 + 97 * Math.cos(Math.PI * 0.86) * Math.cos(-24 * Math.PI / 180) - 30 * Math.sin(Math.PI * 0.86) * Math.sin(-24 * Math.PI / 180)).toFixed(1)}" cy="${(100 + 97 * Math.cos(Math.PI * 0.86) * Math.sin(-24 * Math.PI / 180) + 30 * Math.sin(Math.PI * 0.86) * Math.cos(-24 * Math.PI / 180)).toFixed(1)}" r="3.4" fill="${t.mono ? emblemInk : to}" opacity="${lightBand ? 0.6 : 0.85}"/>
 <g transform="translate(100 100) scale(0.074) translate(-1000 -1000)"><path transform="${LOGO_TRANSFORM}" fill="${t.mono ? "currentColor" : "url(#nv-mark)"}" d="${LOGO_PATH}"/></g></svg>`;
   // A breath of each theme's colour on the page (none for black and white)
   // Textures: paper made of moon dust and stardust, barely there. Each part its own mix, in the
