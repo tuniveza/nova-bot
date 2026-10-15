@@ -257,14 +257,19 @@ const STAGE_LINES = {
 // The note when the invoice has none of its own
 const DEFAULT_NOTE = "Thank you for choosing Novacane Studios. Any questions about this invoice, just get in touch.";
 
-// options: { theme, mode ("bright" or "dark"), note (words for the Notes box instead of the invoice's own) }
+// options: { theme, mode ("bright" or "dark"), note (words for the Notes box instead of the invoice's own),
+//   page: the client's own page (/invoice/<token>): { cardForm (the Pay by card button's form), banner
+//   (a note above the invoice), cancelled, nonce (for the Print button's script), contact (when there's no
+//   way to pay set up yet: how to get in touch) } }
 export function invoiceDocument(invoice, payments, stage, settings, today, options = {}) {
   const s = stageSums(invoice, payments, stage, today);
   const card = studioCard(settings);
   const t = themeOf(options.theme || settings?.invoiceTheme);
   const dark = (options.mode || settings?.invoiceMode) === "dark";
   const receipt = stage === "paid";
-  const line = STAGE_LINES[stage];
+  const client = options.page || null;
+  const cancelled = Boolean(client?.cancelled);
+  const line = cancelled ? { colour: "ink", text: () => "This invoice was cancelled: there's nothing to pay" } : STAGE_LINES[stage];
   const accent = dark ? t.accentDark : t.accent;
   const accent2 = dark ? t.accent2Dark : t.accent2;
   const red = dark ? "#EE6A80" : "#A3233A";
@@ -301,9 +306,10 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   const bank = bankReady(settings?.bank) && !receipt
     ? `<p><span class="k">Bank transfer</span>${esc(settings.bank.accountName)}<br>Sort code ${esc(settings.bank.sortCode)}<br>Account ${esc(settings.bank.accountNumber)}${settings.bank.note ? `<br>${esc(settings.bank.note)}` : ""}</p>`
     : "";
-  const online = invoice.pageUrl && !receipt ? `<p><span class="k">Pay online</span><a href="${esc(invoice.pageUrl)}">${esc(invoice.pageUrl.replace(/^https?:\/\//, ""))}</a></p>` : "";
+  // (on the client's own page: its card button instead of a link to itself)
+  const online = client ? (client.cardForm && !receipt && !cancelled ? `<div class="paynow">${client.cardForm}</div>` : "") : invoice.pageUrl && !receipt ? `<p><span class="k">Pay online</span><a href="${esc(invoice.pageUrl)}">${esc(invoice.pageUrl.replace(/^https?:\/\//, ""))}</a></p>` : "";
   const ref = receipt ? "" : `<p><span class="k">Reference</span>${esc(invoice.number)}</p>`;
-  const pay = receipt ? `<p>Received with thanks${s.payments.length ? `, last payment ${esc(longDay(s.payments[s.payments.length - 1].paidOn))}` : ""}. Nothing more to pay.</p>` : bank || online ? `${online}${bank}${ref}` : `<p>Payment details are in your email.</p>${ref}`;
+  const pay = receipt ? `<p>Received with thanks${s.payments.length ? `, last payment ${esc(longDay(s.payments[s.payments.length - 1].paidOn))}` : ""}. Nothing more to pay.</p>` : cancelled ? "<p>Nothing to pay.</p>" : bank || online ? `${online}${bank}${ref}` : client ? `<p>To pay, get in touch: ${esc(card.email)} or ${esc(card.phone)}.</p>${ref}` : `<p>Payment details are in your email.</p>${ref}`;
 
   const billTo = [invoice.billTo?.name ? `<b>${esc(invoice.billTo.name)}</b>` : "", invoice.billTo?.address ? esc(invoice.billTo.address).replace(/\n/g, "<br>") : "", invoice.billTo?.email ? esc(invoice.billTo.email) : ""].filter(Boolean).join("<br>");
   const facts = [
@@ -433,12 +439,19 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
   .top{grid-template-columns:1fr}.amount{text-align:left}.bottom{grid-template-columns:1fr}
   th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){display:none}
 }
+.pagenote{margin:0 0 18px;padding:10px 14px;border-radius:4px;background:var(--tint);border-left:3px solid var(--accent);font-size:14px}
+.paynow{margin:0 0 14px}.paynow button{font:inherit;font-size:15px;font-weight:600;letter-spacing:.02em;color:#fff;background:var(--blend);border:0;border-radius:6px;padding:12px 22px;cursor:pointer}
+.paynow button:hover{filter:brightness(1.08)}
+.tools{max-width:820px;margin:18px auto 0;display:flex;gap:18px;align-items:center;justify-content:center;font-size:13.5px}
+.tools button{font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--hair);border-radius:6px;padding:9px 18px;cursor:pointer}
+.tools a{color:${dark ? "#cfc6c7" : "#5b5256"}}
 @page{size:A4;margin:12mm}
-@media print{html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
+@media print{.tools,.paynow,.pagenote{display:none!important}html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
 </style></head>
 <body><main class="sheet">
 <header class="band">${bandSky(t, lightBand, from, to)}<div class="brand">${logo}<div><b>NOVACANE</b><small>STUDIOS</small></div></div><div class="doc">${receipt ? "Receipt" : "Invoice"}</div></header>
 <div class="in">
+${client?.banner ? `<p class="pagenote" role="status">${client.banner}</p>` : ""}
 <p class="stage" role="note">${esc(line.text(s))}</p>
 <section class="top">
   <div class="to"><h2>Billed to</h2>${billTo}</div>
@@ -452,5 +465,5 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
   <section class="pay"><h2>${receipt ? "Payment" : "How to pay"}</h2>${pay}</section>
 </div>
 <footer><span class="thanks">Thank you for recording with ${esc(card.name)}.</span><span>${esc(card.address)}</span><span>${esc(card.phone)} · ${esc(card.email)} · ${esc(card.website)}</span><span>Deposits are non-refundable with less than ${CANCEL_NOTICE_HOURS} hours' notice of cancellation.</span></footer>
-</div></main></body></html>`;
+</div></main>${client ? `<p class="tools"><button type="button" id="print">Print or save as PDF</button><a href="/privacy">Privacy</a></p><script nonce="${esc(client.nonce || "")}">document.getElementById("print").addEventListener("click",function(){window.print()})</script>` : ""}</body></html>`;
 }

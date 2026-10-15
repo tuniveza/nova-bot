@@ -37,7 +37,7 @@ import { emailRecipients, mailReady, sendEmail } from "./enquiries.js";
 import { sendStudioEmail } from "./google/gmail.js";
 import { pounds as poundsText, toPence } from "./clients.js";
 import { createInvoiceCheckout, stripeOffline } from "./nova/stripe.js";
-import { INVOICE_MODES, INVOICE_THEMES, STAGES, themeId, catalogue, invoiceDocument, stageEmail, stageOf, stageSums } from "./invoicer.js";
+import { INVOICE_MODES, INVOICE_THEMES, STAGES, studioCard, themeOf, themeId, catalogue, invoiceDocument, stageEmail, stageOf, stageSums } from "./invoicer.js";
 
 export const CATEGORIES = [
   "Equipment",
@@ -135,7 +135,7 @@ export const invoiceNumber = (seq) => PREFIX + String(seq).padStart(4, "0");
 // ===== THE SETTINGS (studio details, bank details, VAT, payment terms) =====
 
 const DEFAULT_SETTINGS = {
-  business: { name: "Novacane Studios", address: "Forest Hill, London", email: "", vatNumber: "", phone: "", website: "" },
+  business: { name: "Novacane Studios", address: "", email: "", vatNumber: "", phone: "", website: "" },
   bank: { accountName: "", sortCode: "", accountNumber: "", note: "" },
   vatRate: 0,
   dueDays: 14,
@@ -618,26 +618,46 @@ export async function previewDocument(env, input = {}) {
 
 // ===== THE EMAILS =====
 
+// An email in the studio's look: a slim near-black band with NOVACANE STUDIOS spaced out (no pictures:
+// many inboxes hide them), a line in the theme's colours, calm text and one button in the theme's colour.
+// Inline styles and tables only, so it looks the same in Gmail, Outlook and phones.
 function emailParts(env, settings, { greeting, paragraphs, link, linkText }) {
   const from = settings.business.name || "Novacane Studios";
-  const text = [greeting, ...paragraphs, `${linkText}: ${link}`, `Thank you,\n${from}`].join("\n\n");
-  const html = `<div style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:16px;line-height:1.5;color:#1d1820;max-width:520px;">
-<p>${esc(greeting)}</p>${paragraphs.map((p) => `<p>${esc(p)}</p>`).join("")}
-<p><a href="${esc(link)}" style="display:inline-block;padding:11px 22px;border-radius:999px;background:#c2337a;color:#fff;text-decoration:none;">${esc(linkText)}</a></p>
-<p>Thank you,<br>${esc(from)}</p></div>`;
+  const t = themeOf(settings.invoiceTheme);
+  const accent = t.mono ? "#1C1618" : t.accent;
+  const accent2 = t.mono ? "#1C1618" : t.accent2;
+  const band = t.light ? "#120C10" : t.band;
+  const card = studioCard(settings);
+  const text = [greeting, ...paragraphs, `${linkText}: ${link}`, `Thank you,\n${from}`, `${card.address} · ${card.phone} · ${card.website}`].join("\n\n");
+  const para = (p) => `<p style="margin:0 0 14px;">${esc(p).replace(/\n/g, "<br>")}</p>`;
+  const html = `<div style="background:#f1eef0;padding:24px 10px;font-family:Futura,'Century Gothic','Avenir Next',system-ui,-apple-system,'Segoe UI',sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-collapse:collapse;">
+<tr><td style="background:${band};padding:20px 28px;color:#ffffff;"><span style="font-size:17px;letter-spacing:6px;font-weight:600;">NOVACANE</span><br><span style="font-size:10px;letter-spacing:5px;color:#e8d9e6;">STUDIOS</span></td></tr>
+<tr><td style="height:3px;line-height:3px;font-size:0;background:${accent};background-image:linear-gradient(90deg,${accent},${accent2});">&nbsp;</td></tr>
+<tr><td style="padding:28px 28px 8px;font-size:16px;line-height:1.55;color:#1c1618;">
+${para(greeting)}${paragraphs.map(para).join("")}
+<p style="margin:22px 0 24px;"><a href="${esc(link)}" style="display:inline-block;padding:12px 26px;border-radius:6px;background:${accent};color:#ffffff;text-decoration:none;font-weight:600;letter-spacing:.3px;">${esc(linkText)}</a></p>
+<p style="margin:0 0 20px;">Thank you,<br>${esc(from)}</p></td></tr>
+<tr><td style="padding:14px 28px 22px;border-top:1px solid #ece6e8;font-size:12px;line-height:1.6;color:#6b6266;">${esc(card.address)}<br>${esc(card.phone)} · ${esc(card.website)}</td></tr>
+</table></div>`;
   return { text, html };
 }
 
+// The invoice email, in the words of its stage: a new invoice asks for the deposit (with the rest due
+// later), one already part paid asks for what's left
 function invoiceEmail(env, settings, row) {
   const number = invoiceNumber(row.seq);
   const link = `${publicUrl(env)}/invoice/${row.token}`;
-  const parts = emailParts(env, settings, {
-    greeting: `Hi ${row.bill_name.split(" ")[0]},`,
-    paragraphs: [`Here's invoice ${number} from ${settings.business.name} for ${money(row.total_pence)}, due by ${dayText(row.due_date)}.`, "You can see it, print it or save it as a PDF, and pay it, on its page:"],
-    link,
-    linkText: "See and pay the invoice",
-  });
-  return { subject: `Invoice ${number} from ${settings.business.name}`, ...parts };
+  const today = ukToday();
+  const invoice = publicInvoice(env, row, today);
+  const stage = stageOf(invoice, today);
+  const sums = stageSums(invoice, [], stage, today);
+  const paragraphs =
+    stage === "deposit"
+      ? [`Thank you for booking with ${settings.business.name}. Here's invoice ${number} for your session, ${money(row.total_pence)} in all.`, `To secure your booking, please pay the ${sums.depositPercent}% deposit of ${money(sums.dueNowPence)} now. The remaining ${money(sums.laterPence)} is due by ${dayText(row.due_date)}.`, "You can see the invoice, save it as a PDF and pay it on its page:"]
+      : [`Here's invoice ${number} from ${settings.business.name}: ${money(sums.dueNowPence)} is due by ${dayText(row.due_date)}.`, "You can see the invoice, save it as a PDF and pay it on its page:"];
+  const parts = emailParts(env, settings, { greeting: `Hi ${row.bill_name.split(" ")[0]},`, paragraphs, link, linkText: stage === "deposit" ? "See the invoice and pay the deposit" : "See and pay the invoice" });
+  return { subject: stage === "deposit" ? `Invoice ${number} from ${settings.business.name}: deposit to secure your booking` : `Invoice ${number} from ${settings.business.name}`, ...parts };
 }
 
 // Email an approved invoice. Only status 'approved' with an approval hash that still matches goes.
@@ -1171,6 +1191,27 @@ function notFoundPage() {
 }
 
 // GET /invoice/<token>, POST /invoice/<token>/pay
+// The client's page for an invoice: the invoice itself (the Invoicer's design, at the stage it's at
+// now, in the studio's theme) with the ways to pay that are set up: a card button (Stripe) for the
+// amount due now (the deposit, at the deposit stage), the bank details, or how to get in touch
+async function clientPage(env, row, settings, { preview = false, paid = false, nonce = "", failed = false } = {}) {
+  const today = ukToday();
+  const invoice = publicInvoice(env, row, today);
+  const payments = await invoicePayments(env, row.id);
+  const stage = stageOf(invoice, today);
+  const due = stageSums(invoice, payments, stage, today).dueNowPence;
+  const canCard = !preview && due > 0 && OPEN.includes(row.status) && cardReady(env);
+  const cardForm = canCard ? `<form method="post" action="/invoice/${esc(row.token)}/pay"><button type="submit">Pay ${esc(money(due))} by card</button></form>` : "";
+  const banner = preview
+    ? "Preview: this is how the client sees it once it's approved and sent."
+    : failed
+      ? "Card payment isn't available just now. Please try again in a minute, or pay by bank transfer."
+      : paid
+        ? "Thank you: your payment is being confirmed. This page shows it as paid within a minute or two."
+        : "";
+  return invoiceDocument(invoice, payments, stage, settings, today, { page: { cardForm, banner: banner ? esc(banner) : "", cancelled: row.status === "void", nonce } });
+}
+
 export async function handleInvoicePage(request, env, pathname) {
   const m = pathname.match(/^\/invoice\/([0-9a-f]{32})(\/pay)?$/);
   if (!m) return notFoundPage();
@@ -1179,12 +1220,15 @@ export async function handleInvoicePage(request, env, pathname) {
   const settings = await readSettings(env);
   if (m[2]) {
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
-    const balance = row.total_pence - row.paid_pence;
-    if (!OPEN.includes(row.status) || balance <= 0 || !cardReady(env)) return Response.redirect(`${publicUrl(env)}/invoice/${row.token}`, 303);
+    // What's due now: the deposit at the deposit stage, else what's left (the same as the page's button)
+    const today = ukToday();
+    const invoice = publicInvoice(env, row, today);
+    const due = stageSums(invoice, await invoicePayments(env, row.id), stageOf(invoice, today), today).dueNowPence;
+    if (!OPEN.includes(row.status) || due <= 0 || !cardReady(env)) return Response.redirect(`${publicUrl(env)}/invoice/${row.token}`, 303);
     try {
       const checkout = await createInvoiceCheckout(env, {
         invoice: { id: row.id, number: invoiceNumber(row.seq), email: row.bill_email, business: settings.business.name },
-        amountPence: balance,
+        amountPence: due,
         successUrl: `${publicUrl(env)}/invoice/${row.token}?paid=1`,
         cancelUrl: `${publicUrl(env)}/invoice/${row.token}`,
       });
@@ -1192,13 +1236,13 @@ export async function handleInvoicePage(request, env, pathname) {
     } catch (err) {
       console.log(`Invoice ${row.id}: checkout failed (${err?.status || err?.name})`);
       const nonce = newNonce();
-      return pageResponse(invoicePage(env, row, settings, { nonce }).replace("<main>", `<main><p class="banner" role="alert">Card payment isn't available just now. Please try again in a minute, or pay by bank transfer.</p>`), nonce, 502);
+      return pageResponse(await clientPage(env, row, settings, { nonce, failed: true }), nonce, 502);
     }
   }
   if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
   const nonce = newNonce();
   const paid = new URL(request.url).searchParams.get("paid") === "1" && row.status !== "paid";
-  return pageResponse(invoicePage(env, row, settings, { nonce, paid }), nonce);
+  return pageResponse(await clientPage(env, row, settings, { nonce, paid }), nonce);
 }
 
 // ===== FOR NOVA AGENT =====
@@ -1252,7 +1296,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
     const row = await readRow(env, Number(preview[1]));
     if (!row) return json({ error: "That invoice doesn't exist." }, 404);
     const nonce = newNonce();
-    return pageResponse(invoicePage(env, row, await readSettings(env), { preview: true, nonce }), nonce, 200, true);
+    return pageResponse(await clientPage(env, row, await readSettings(env), { preview: true, nonce }), nonce, 200, true);
   }
   // The Invoicer (src/invoicer.js): the price list, and an invoice at one of its stages (read-only)
   if (route === "/money/catalogue" && get) return json({ ...catalogue(), themes: INVOICE_THEMES.map(({ id, name, band, accent }) => ({ id, name, band, accent })), modes: INVOICE_MODES, ...(({ invoiceTheme, invoiceMode }) => ({ theme: invoiceTheme, mode: invoiceMode }))(await readSettings(env)) });

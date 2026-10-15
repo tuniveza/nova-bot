@@ -200,7 +200,7 @@ describe("approval", () => {
 		expect(saved.decided_by).toBe("test-admin");
 		expect(emails).toHaveLength(1);
 		expect(emails[0].to).toEqual(["ada@example.com"]);
-		expect(emails[0].subject).toBe("Invoice NS-0001 from Novacane Studios");
+		expect(emails[0].subject).toBe("Invoice NS-0001 from Novacane Studios: deposit to secure your booking");
 		expect(emails[0].text).toContain(`${BASE}/invoice/${saved.token}`);
 		expect(emails[0].text).toContain("£349.99");
 		expect(emails[0].key).toMatch(/^invoice-\d+-/);
@@ -322,24 +322,37 @@ describe("the invoice page", () => {
 		const token = (await row(inv.id)).token;
 		const page = await call(new Request(`${BASE}/invoice/${token}`));
 		expect(page.text).toContain("12-34-56");
-		expect(page.text).toContain("Pay £349.99 by card");
+		expect(page.text).toContain("Pay £175.00 by card"); // the deposit, at the deposit stage
+		expect(page.text).toContain("NOVACANE"); // the Invoicer's design
+		expect(page.text).toContain('id="print"');
 		// Without Stripe's keys: bank only
 		const noCard = await call(new Request(`${BASE}/invoice/${token}`), { ...EMAIL_ENV, STRIPE_SECRET_KEY: "", STRIPE_WEBHOOK_SECRET: "" });
 		expect(noCard.text).not.toContain("by card");
 	});
 
-	it("Pay by card opens Stripe's checkout for what's left; the webhook records it once and marks it paid", async () => {
+	it("Pay by card opens Stripe's checkout for what's due now (the deposit, then the rest); the webhook records each once", async () => {
 		const inv = await writeAndSend();
 		const token = (await row(inv.id)).token;
 		const res = await call(new Request(`${BASE}/invoice/${token}/pay`, { method: "POST" }));
 		expect(res.status).toBe(303);
 		expect(res.headers.get("Location")).toMatch(/^https:\/\/checkout\.stripe\.com\//);
 		expect(stripe.sessions[0].form["metadata[invoice_id]"]).toBe(String(inv.id));
-		expect(stripe.sessions[0].form["line_items[0][price_data][unit_amount]"]).toBe("34999");
+		expect(stripe.sessions[0].form["line_items[0][price_data][unit_amount]"]).toBe("17500"); // the deposit
+		const deposit = {
+			id: "evt_inv_0",
+			type: "checkout.session.completed",
+			data: { object: { id: "cs_test_d", payment_status: "paid", amount_total: 17500, payment_intent: "pi_inv_0", metadata: { invoice_id: String(inv.id) }, client_reference_id: `invoice-${inv.id}` } },
+		};
+		expect((await call(await stripeWebhook(deposit))).status).toBe(200);
+		expect((await row(inv.id)).status).toBe("part_paid");
+		// The rest: the button now asks for what's left
+		expect((await call(new Request(`${BASE}/invoice/${token}`))).text).toContain("Pay £174.99 by card");
+		await call(new Request(`${BASE}/invoice/${token}/pay`, { method: "POST" }));
+		expect(stripe.sessions[1].form["line_items[0][price_data][unit_amount]"]).toBe("17499");
 		const event = {
 			id: "evt_inv_1",
 			type: "checkout.session.completed",
-			data: { object: { id: "cs_test_x", payment_status: "paid", amount_total: 34999, payment_intent: "pi_inv_1", metadata: { invoice_id: String(inv.id) }, client_reference_id: `invoice-${inv.id}` } },
+			data: { object: { id: "cs_test_x", payment_status: "paid", amount_total: 17499, payment_intent: "pi_inv_1", metadata: { invoice_id: String(inv.id) }, client_reference_id: `invoice-${inv.id}` } },
 		};
 		expect((await call(await stripeWebhook(event))).status).toBe(200);
 		expect((await call(await stripeWebhook(event))).status).toBe(200); // Stripe sends it again
@@ -347,7 +360,8 @@ describe("the invoice page", () => {
 		expect(after.status).toBe("paid");
 		expect(after.paid_pence).toBe(34999);
 		const { n } = await env.DB.prepare("SELECT COUNT(*) AS n FROM invoice_payments WHERE invoice_id = ?").bind(inv.id).first();
-		expect(n).toBe(1);
+		expect(n).toBe(2);
+		expect((await call(new Request(`${BASE}/invoice/${token}`))).text).toContain("Paid in full");
 		// A Stripe payment can't be taken back here
 		const p = await env.DB.prepare("SELECT id FROM invoice_payments WHERE invoice_id = ?").bind(inv.id).first();
 		expect((await portal(`money/payments/${p.id}/remove`, { body: {} })).status).toBe(409);
