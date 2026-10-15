@@ -1500,6 +1500,39 @@ const NOT_PAGES = /^\/(lossless\/(ws|ice)|admin\/google(\/callback)?)$/;
 // /agent/<name>: Nova Agent with that panel open
 const PANEL_NAMES = { portal: "/portal/", calendar: "/calendar/", notes: "/notes/", quests: "/quests/", board: "/board/", console: "/console/", index: "/app/memory/", observatory: "/observatory/", lossless: "/lossless/", visualizer: "/visualizer", admin: "/admin", fixer: "/fixer/", computer: "/computer/", invoicer: "/invoicer/", nova: "/visualizer" };
 const AGENT = "/agent/";
+// Every place's addresses: its own, with its group in it (/agent/tools/fixer: what Nova Agent shows in
+// the address bar while it's open), /agent/<name>, and the short one, like the website's (/fixer;
+// /calender and other spellings people type too). open: what Nova Agent opens (a panel's address,
+// or pane:chat, pane:missions, manual).
+export const PLACES = [
+  { name: "portal", group: "apps", open: "/portal/" },
+  { name: "agent", group: "apps", open: "pane:chat", also: ["chat"] },
+  { name: "calendar", group: "apps", open: "/calendar/", also: ["calender", "calander", "calandar", "cal"] },
+  { name: "notes", group: "apps", open: "/notes/", also: ["note"] },
+  { name: "board", group: "apps", open: "/board/", also: ["boards"] },
+  { name: "index", group: "apps", open: "/app/memory/", also: ["memory"] },
+  { name: "quests", group: "plans", open: "/quests/", also: ["quest"] },
+  { name: "missions", group: "plans", open: "pane:missions", also: ["mission"] },
+  { name: "fixer", group: "tools", open: "/fixer/", also: ["fix"] },
+  { name: "computer", group: "tools", open: "/computer/", also: ["vps"] },
+  { name: "lossless", group: "tools", open: "/lossless/" },
+  { name: "observatory", group: "helpers", open: "/observatory/" },
+  { name: "console", group: "helpers", open: "/console/" },
+  { name: "manual", group: "helpers", open: "manual", also: ["help"] },
+  { name: "invoicer", group: "", open: "/invoicer/", also: ["invoice", "invoices", "invoicing"] },
+  { name: "nova", group: "", open: "/visualizer", also: ["visualizer", "visualiser"] },
+];
+const PLACE_GROUPS = ["apps", "plans", "tools", "helpers"];
+// The place an address names (/agent/tools/fixer, /agent/fixer, /fixer, /calender), or null
+export function placeFor(pathname) {
+  const parts = pathname.toLowerCase().replace(/\/+$/, "").split("/").filter(Boolean);
+  let name = null;
+  if (parts[0] === "agent" && parts.length === 3 && PLACE_GROUPS.includes(parts[1])) name = parts[2];
+  else if (parts[0] === "agent" && parts.length === 2) name = parts[1];
+  else if (parts.length === 1 && parts[0] !== "agent") name = parts[0];
+  if (!name) return null;
+  return PLACES.find((p) => p.name === name || (p.also || []).includes(name)) || null;
+}
 // Admin lives inside Portal: an admin page's address opens Portal's Admin section showing it
 function opened(panel, search) {
   if (panel === "/admin" || panel.startsWith("/admin/")) return "/portal/?view=manage&page=" + encodeURIComponent(panel);
@@ -1542,6 +1575,13 @@ function novaAgentPage(request, env, pathname) {
     const panel = PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")];
     return toAgent(opened(panel, url.search));
   }
+  // /agent/<group>/<name>, /agent/<name> and the short /<name> (a page opened in a browser): Nova Agent
+  // with that place open (not /invoice/<token>, a client's page, or anything with a dot: a file)
+  if (pathname.startsWith("/agent/") || request.headers.get("Sec-Fetch-Dest") === "document") {
+    const place = placeFor(pathname);
+    // (Portal's own addresses stay its own: it's also the Portal phone app; /agent/apps/portal opens it here)
+    if (place && !(place.name === "portal" && !pathname.startsWith("/agent/"))) return toAgent(place.open.startsWith("/") ? opened(place.open, url.search) : place.open);
+  }
   if (pathname === AGENT) {
     return env.ASSETS.fetch(new Request(new URL(AGENT, url), request)).then((res) =>
       res.status === 404
@@ -1569,6 +1609,8 @@ function novaAgentPage(request, env, pathname) {
 // and so do the website chat's pages for customers (Nova Bot's own) and connecting Google.
 const CUSTOMER_PAGES = /^\/(book(\/.*)?|referral|privacy|status(\.json)?|enquiry\/stop|join(\/confirm)?|invoice\/[0-9a-f]{32})$/;
 function panelFor(pathname) {
+  const place = placeFor(pathname);
+  if (place && !(place.name === "portal" && !pathname.startsWith(AGENT))) return place.open;
   if (pathname.startsWith(AGENT)) return PANEL_NAMES[pathname.slice(AGENT.length).replace(/\/$/, "")] || "";
   if (PANELS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return pathname;
   if (pathname === "/app" || pathname.startsWith("/app/") || pathname === "/studio" || pathname.startsWith("/studio/")) return "/portal/";
@@ -1589,7 +1631,7 @@ function onlyNovaAgent(request, env, pathname) {
   if (last.includes(".") && !last.endsWith(".html")) return null;
   const url = new URL(request.url);
   const panel = panelFor(pathname);
-  return Response.redirect(new URL(AGENT + (panel ? "?open=" + encodeURIComponent(opened(panel, url.search)) : ""), url).toString(), 302);
+  return Response.redirect(new URL(AGENT + (panel ? "?open=" + encodeURIComponent(panel.startsWith("/") ? opened(panel, url.search) : panel) : ""), url).toString(), 302);
 }
 
 function movedPage(request, env, pathname) {

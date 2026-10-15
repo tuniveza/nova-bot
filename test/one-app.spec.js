@@ -39,10 +39,33 @@ describe("a panel opened on its own opens inside Nova Agent", () => {
     ["/invoicer/", "/invoicer/"],
     ["/agent/invoicer", "/invoicer/"],
     ["/agent/nova", "/visualizer"], // (Nova: the Visualizer's new name)
+    // Each place's address with its group in it, and the short ones (spellings people type too)
+    ["/agent/tools/fixer", "/fixer/"],
+    ["/agent/apps/calendar", "/calendar/"],
+    ["/agent/apps/portal", "/portal/"],
+    ["/agent/helpers/console", "/console/"],
+    ["/agent/plans/quests", "/quests/"],
+    ["/calendar", "/calendar/"],
+    ["/calender", "/calendar/"],
+    ["/fixer", "/fixer/"],
+    ["/invoicer", "/invoicer/"],
+    ["/invoice", "/invoicer/"],
+    ["/nova", "/visualizer"],
+    ["/computer", "/computer/"],
+    ["/Notes", "/notes/"],
+    ["/agent/plans/missions", "pane:missions"],
+    ["/agent/helpers/manual", "manual"],
+    ["/manual", "manual"],
   ])("%s → /agent/?open=%s", async (from, address) => {
     const res = await get(from, onItsOwn);
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(`${BASE}/agent/?open=${encodeURIComponent(address)}`);
+  });
+
+  it("short names don't take over a client's invoice page, files, or Nova Bot's own addresses", async () => {
+    expect((await get("/invoice/" + "a".repeat(32), onItsOwn)).headers.get("Location") || "").not.toContain("open=");
+    expect((await get("/fixer/app.js", onItsOwn)).status).not.toBe(302);
+    expect((await get("/book", onItsOwn)).headers.get("Location") || "").not.toContain("/agent/");
   });
 
   it("Portal's old address (/app/) opens Portal in Nova Agent, on the same view", async () => {
