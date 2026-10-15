@@ -15,7 +15,7 @@
 //   GET /app/api/money/invoices/:id/stage?stage=      -> { stage, autoStage, sums, email, invoice, payments }
 //   GET /app/api/money/invoices/:id/document?stage=   -> the branded invoice, a page
 
-import { FONT_DATA_URL, LOGO_DATA_URL, LOGO_WHITE_DATA_URL } from "./invoicer-logo.js";
+import { FONT_DATA_URL, LOGO_PATH, LOGO_TRANSFORM } from "./invoicer-logo.js";
 import { SESSION_TYPES, DEPOSIT_PERCENT, CANCEL_NOTICE_HOURS, depositFor } from "./nova/studio.js";
 
 export const STAGES = ["deposit", "balance", "overdue", "paid"];
@@ -264,8 +264,10 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   const title = `${receipt ? "Receipt" : "Invoice"} ${invoice.number}`;
   const lightBand = t.light && !dark;
-  // The website's logo in colour (pink into violet); black and white: the white one
-  const logo = t.mono && !lightBand ? LOGO_WHITE_DATA_URL : LOGO_DATA_URL;
+  // The website's logo, drawn as a shape (sharp at any size, and in print) in the theme's two colours,
+  // lighter on a dark band; black and white: plain, the band's own ink
+  const [from, to] = lightBand ? [t.accent, t.accent2] : [t.accentDark, t.accent2Dark];
+  const logo = `<svg class="mark" viewBox="190 190 1620 1620" role="img" aria-label="Novacane Studios logo">${t.mono ? "" : `<defs><linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>`}<path transform="${LOGO_TRANSFORM}" fill="${t.mono ? "currentColor" : "url(#nv-mark)"}" d="${LOGO_PATH}"/></svg>`;
   // A breath of each theme's colour on the page (none for black and white)
   const tint = (pct) => (t.mono ? "var(--wash)" : `color-mix(in srgb, var(--accent) ${pct}%, var(--paper))`);
   // The page's colours: Bright (white paper, dark ink) or Dark (the website's near-black, light ink)
@@ -286,7 +288,7 @@ body{margin:0;padding:28px 12px;font:15px/1.55 "Jost",Futura,"Century Gothic","A
 .band{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:${t.mono ? "var(--band)" : lightBand ? "radial-gradient(120% 220% at 100% 0%,color-mix(in srgb,var(--accent2) 16%,var(--band)),var(--band) 60%)" : "radial-gradient(90% 260% at 100% 0%,color-mix(in srgb,var(--accent2) 42%,var(--band)),transparent 62%),radial-gradient(60% 200% at 0% 100%,color-mix(in srgb,var(--accent) 30%,var(--band)),transparent 70%),var(--band)"}}
 .band::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--blend)}
 .brand{display:flex;align-items:center;gap:16px}
-.brand img{width:50px;height:50px;display:block${t.mono ? "" : ";filter:drop-shadow(0 0 8px color-mix(in srgb,var(--accent) 45%,transparent))"}}
+.brand .mark{width:42px;height:42px;display:block;flex:none}
 .brand b{display:block;font-weight:500;font-size:19px;letter-spacing:.32em}
 .brand small{display:block;margin-top:3px;font-size:10.5px;letter-spacing:.42em;${t.mono ? "opacity:.75" : lightBand ? "color:var(--accent)" : "color:color-mix(in srgb,var(--accent) 45%,#fff)"}}
 .doc{font-weight:400;font-size:13px;letter-spacing:.42em;text-transform:uppercase;opacity:.9}
@@ -332,7 +334,7 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 @media print{html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
 </style></head>
 <body><main class="sheet">
-<header class="band"><div class="brand"><img src="${logo}" alt="Novacane Studios logo" width="46" height="46"><div><b>NOVACANE</b><small>STUDIOS</small></div></div><div class="doc">${receipt ? "Receipt" : "Invoice"}</div></header>
+<header class="band"><div class="brand">${logo}<div><b>NOVACANE</b><small>STUDIOS</small></div></div><div class="doc">${receipt ? "Receipt" : "Invoice"}</div></header>
 <div class="in">
 <p class="stage" role="note">${esc(line.text(s))}</p>
 <section class="top">

@@ -478,7 +478,7 @@ describe("the Invoicer", () => {
 		expect(doc.text).toContain(">Paid<");
 		expect(doc.text).toContain("£0.00");
 		expect(doc.text).toContain("10 Clyde Terrace");
-		expect(doc.text).toContain(`alt="Novacane Studios logo"`); // the website's logo, in the page (so it prints)
+		expect(doc.text).toContain(`aria-label="Novacane Studios logo"`); // the website's logo, in the page (so it prints)
 		expect(doc.headers.get("Content-Security-Policy")).toContain("img-src data:");
 		// The looks: 8 themes, bright or dark; a note for this copy; an admin chooses every invoice's look
 		expect(list.data.themes).toHaveLength(9);
@@ -488,13 +488,14 @@ describe("the Invoicer", () => {
 		expect(dark.text).toContain("color-scheme:dark");
 		expect(dark.text).toContain("#A774E0"); // Violet's accent for the dark page
 		expect(dark.text).toContain("Bring &lt;your&gt; lyrics");
-		// In colour: the website's colour logo and the theme's blend; black and white: the white logo, no blend
-		const { LOGO_DATA_URL, LOGO_WHITE_DATA_URL } = await import("../src/invoicer-logo.js");
-		expect(dark.text).toContain(LOGO_DATA_URL);
+		// The website's logo as a drawn shape (sharp in print), in the theme's colours; black and white: plain
+		const { LOGO_PATH } = await import("../src/invoicer-logo.js");
+		expect(dark.text).toContain(LOGO_PATH);
+		expect(dark.text).toContain('fill="url(#nv-mark)"');
 		expect(dark.text).toContain("--blend:linear-gradient");
+		expect(dark.text).not.toContain("data:image/"); // no picture to go blurry
 		const mono = await portal(`money/invoices/${inv.id}/document?stage=balance&theme=mono`);
-		expect(mono.text).toContain(LOGO_WHITE_DATA_URL);
-		expect(mono.text).not.toContain(LOGO_DATA_URL);
+		expect(mono.text).toContain('fill="currentColor"');
 		expect(dark.headers.get("Content-Security-Policy")).toContain("font-src data:");
 		expect((await portal("money/settings", { body: { invoiceTheme: "dusk", invoiceMode: "dark" } })).status).toBe(200);
 		expect((await portal("money/catalogue")).data).toMatchObject({ theme: "dusk", mode: "dark" });
