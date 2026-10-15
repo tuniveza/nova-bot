@@ -486,7 +486,7 @@ describe("the Invoicer", () => {
 		expect(list.data).toMatchObject({ theme: "night", mode: "bright", modes: ["bright", "dark"] });
 		const dark = await portal(`money/invoices/${inv.id}/document?stage=balance&theme=violet&mode=dark&note=${encodeURIComponent("Bring <your> lyrics")}`);
 		expect(dark.text).toContain("color-scheme:dark");
-		expect(dark.text).toContain("#B07CFF"); // Violet's accent for the dark page
+		expect(dark.text).toContain("#AC78F0"); // Violet's accent for the dark page
 		expect(dark.text).toContain("Bring &lt;your&gt; lyrics");
 		// The website's logo as a drawn shape (sharp in print), in the theme's colours; black and white: plain
 		const { LOGO_PATH } = await import("../src/invoicer-logo.js");
@@ -500,7 +500,7 @@ describe("the Invoicer", () => {
 		expect(dark.headers.get("Content-Security-Policy")).toContain("font-src data:");
 		expect((await portal("money/settings", { body: { invoiceTheme: "dusk", invoiceMode: "dark" } })).status).toBe(200);
 		expect((await portal("money/catalogue")).data).toMatchObject({ theme: "dusk", mode: "dark" });
-		expect((await portal(`money/invoices/${inv.id}/document?stage=balance`)).text).toContain("#A48BFF"); // Dusk, dark
+		expect((await portal(`money/invoices/${inv.id}/document?stage=balance`)).text).toContain("#A08AF6"); // Dusk, dark
 		expect((await portal("money/settings", { body: { invoiceMode: "sepia" } })).status).toBe(400);
 		// The live preview: what's typed so far, drawn, and nothing saved
 		const before = (await env.DB.prepare("SELECT COUNT(*) AS n FROM invoices").first()).n;
@@ -509,7 +509,7 @@ describe("the Invoicer", () => {
 		expect(pre.data.html).toContain("Mo &lt;Artist&gt;");
 		expect(pre.data.html).toContain("£200.00");
 		expect(pre.data.html).toContain(">Draft<");
-		expect(pre.data.html).toContain("#FF79AE"); // Rose, dark
+		expect(pre.data.html).toContain("#F67CAE"); // Rose, dark
 		expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM invoices").first()).n).toBe(before);
 		expect((await portal("money/invoices/preview", { body: {} })).data.html).toContain("Artist name");
 		const overdue = await portal(`money/invoices/${inv.id}/document?stage=overdue`);

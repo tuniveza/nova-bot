@@ -184,14 +184,14 @@ export function stageEmail(invoice, sums, stage, settings) {
 export const INVOICE_THEMES = [
   // accent2: the second colour of each theme's blend (the website logo's pink into violet, and kin);
   // mono: no colour at all, black and white (the white logo)
-  { id: "night", name: "Night", band: "#100806", accent: "#C2268A", accent2: "#7A1FE0", accentDark: "#FF5FB4", accent2Dark: "#B07CFF", wash: "#FBF8F7" },
-  { id: "violet", name: "Violet", band: "#0F0812", accent: "#7A1FE0", accent2: "#C2268A", accentDark: "#B07CFF", accent2Dark: "#FF5FB4", wash: "#F9F7FC" },
-  { id: "plum", name: "Plum", band: "#140A12", accent: "#A8239A", accent2: "#5A33E0", accentDark: "#E866D6", accent2Dark: "#9C8BFF", wash: "#FBF7FA" },
-  { id: "ink", name: "Ink", band: "#0B0B10", accent: "#4338E0", accent2: "#0E9AD6", accentDark: "#8A82FF", accent2Dark: "#4FD0FF", wash: "#F7F7FA" },
-  { id: "ember", name: "Ember", band: "#140806", accent: "#D12E5A", accent2: "#F07A12", accentDark: "#FF6E92", accent2Dark: "#FFAA4D", wash: "#FCF7F6" },
-  { id: "rose", name: "Rose", band: "#12080B", accent: "#E0306F", accent2: "#FF5F9A", accentDark: "#FF79AE", accent2Dark: "#FFA8C6", wash: "#FCF6F8" },
-  { id: "dusk", name: "Dusk", band: "#0D0A14", accent: "#6A33E8", accent2: "#E0306F", accentDark: "#A48BFF", accent2Dark: "#FF79AE", wash: "#F8F7FC" },
-  { id: "paper", name: "Paper", band: "#F4F1EF", accent: "#B0228F", accent2: "#6A2FE0", accentDark: "#EE66CF", accent2Dark: "#A68CFF", wash: "#FAF8F7", light: true },
+  { id: "night", name: "Night", band: "#100806", accent: "#B82E84", accent2: "#7A27CF", accentDark: "#EF60A9", accent2Dark: "#AC78F0", wash: "#FBF8F7" },
+  { id: "violet", name: "Violet", band: "#0F0812", accent: "#7A27CF", accent2: "#B82E84", accentDark: "#AC78F0", accent2Dark: "#EF60A9", wash: "#F9F7FC" },
+  { id: "plum", name: "Plum", band: "#140A12", accent: "#9F2A90", accent2: "#5A39CF", accentDark: "#DB66CA", accent2Dark: "#9A8BF8", wash: "#FBF7FA" },
+  { id: "ink", name: "Ink", band: "#0B0B10", accent: "#4940CC", accent2: "#2394C6", accentDark: "#8C84F8", accent2Dark: "#5DCAF2", wash: "#F7F7FA" },
+  { id: "ember", name: "Ember", band: "#140806", accent: "#C4375C", accent2: "#E07A20", accentDark: "#F27290", accent2Dark: "#F8A95A", wash: "#FCF7F6" },
+  { id: "rose", name: "Rose", band: "#12080B", accent: "#D03B76", accent2: "#EF6D9C", accentDark: "#F67CAE", accent2Dark: "#FBA9C4", wash: "#FCF6F8" },
+  { id: "dusk", name: "Dusk", band: "#0D0A14", accent: "#6A3FD8", accent2: "#D03B76", accentDark: "#A08AF6", accent2Dark: "#F67CAE", wash: "#F8F7FC" },
+  { id: "paper", name: "Paper", band: "#F4F1EF", accent: "#A52B88", accent2: "#6A36D0", accentDark: "#DE69C4", accent2Dark: "#A38CF8", wash: "#FAF8F7", light: true },
   { id: "mono", name: "Black & white", band: "#111111", accent: "#1C1618", accent2: "#1C1618", accentDark: "#EDE8E8", accent2Dark: "#EDE8E8", wash: "#F6F5F5", mono: true },
 ];
 export const INVOICE_MODES = ["bright", "dark"];
@@ -212,13 +212,13 @@ const STARS = (() => {
   return out;
 })();
 // A colour at full saturation and a chosen lightness (the logo's and the sky's vivid colours)
-export function vivid(hex, lightness) {
+export function vivid(hex, lightness, saturation = 0.72) {
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(1 + i, 3 + i), 16) / 255);
   const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
   let h = 0;
   if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
   h = (h * 60 + 360) % 360;
-  const l = lightness, c = (1 - Math.abs(2 * l - 1)), x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2;
+  const l = lightness, c = (1 - Math.abs(2 * l - 1)) * saturation, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2;
   const [r2, g2, b2] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
   return "#" + [r2, g2, b2].map((v) => Math.round((v + m) * 255).toString(16).padStart(2, "0")).join("").toUpperCase();
 }
@@ -230,8 +230,8 @@ function bandSky(t, lightBand, from, to) {
   const k = lightBand ? 0.5 : 1; // (on a light band, everything quieter)
   const nebula = t.mono
     ? ""
-    : `<radialGradient id="nv-neb1" cx="88%" cy="20%" r="55%"><stop offset="0" stop-color="${to}" stop-opacity="${0.55 * k}"/><stop offset="1" stop-color="${to}" stop-opacity="0"/></radialGradient>
-<radialGradient id="nv-neb2" cx="22%" cy="110%" r="50%"><stop offset="0" stop-color="${from}" stop-opacity="${0.45 * k}"/><stop offset="1" stop-color="${from}" stop-opacity="0"/></radialGradient>
+    : `<radialGradient id="nv-neb1" cx="88%" cy="20%" r="55%"><stop offset="0" stop-color="${to}" stop-opacity="${0.46 * k}"/><stop offset="1" stop-color="${to}" stop-opacity="0"/></radialGradient>
+<radialGradient id="nv-neb2" cx="22%" cy="110%" r="50%"><stop offset="0" stop-color="${from}" stop-opacity="${0.38 * k}"/><stop offset="1" stop-color="${from}" stop-opacity="0"/></radialGradient>
 <radialGradient id="nv-neb3" cx="62%" cy="70%" r="30%"><stop offset="0" stop-color="${from}" stop-opacity="${0.14 * k}"/><stop offset="1" stop-color="${from}" stop-opacity="0"/></radialGradient>`;
   const fills = t.mono ? "" : `<rect width="820" height="100" fill="url(#nv-neb1)"/><rect width="820" height="100" fill="url(#nv-neb2)"/><rect width="820" height="100" fill="url(#nv-neb3)"/>`;
   const orbit = `<ellipse cx="700" cy="96" rx="190" ry="62" fill="none" stroke="${t.mono ? star : to}" stroke-opacity="${(t.mono ? 0.16 : 0.32) * k}" stroke-width=".8" stroke-dasharray="1.2 4.2" transform="rotate(-9 700 96)"/>`;
@@ -313,25 +313,40 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   const [from, to] = t.mono ? [t.accentDark, t.accent2Dark] : [vivid(t.accent, lightBand ? 0.46 : 0.64), vivid(t.accent2, lightBand ? 0.46 : 0.66)];
   const logo = `<svg class="mark" viewBox="190 190 1620 1620" role="img" aria-label="Novacane Studios logo">${t.mono ? "" : `<defs><linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/></linearGradient></defs>`}<path transform="${LOGO_TRANSFORM}" fill="${t.mono ? "currentColor" : "url(#nv-mark)"}" d="${LOGO_PATH}"/></svg>`;
   // A breath of each theme's colour on the page (none for black and white)
-  // Textures, a different one for each part, in the theme's colours and barely there (drawn as small
-  // tiles behind the words; light on a dark page): paper grain, fine lines, a dot grid, stardust
+  // Textures: paper made of moon dust and stardust, barely there. Each part its own mix, in the
+  // theme's colours (light on a dark page): soft cloudy mottling (moon dust), a fine grain (the paper's
+  // fibre) and stardust scattered at random (sizes and brightness all different, no pattern), with a
+  // rare tiny glint. Big tiles, so nothing is seen to repeat. Drawn (SVG), so it prints.
   const hex = (c) => c.replace("#", "");
   const rgb = (c) => [0, 2, 4].map((i) => parseInt(hex(c).slice(i, i + 2), 16) / 255);
   const tile = (svg) => `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
-  const inkTone = dark ? "#FFFFFF" : t.mono ? "#000000" : accent;
-  const grain = (c, a) => {
+  const tone = dark ? "#FFFFFF" : t.mono ? "#000000" : accent2;
+  const dustTone = dark ? "#FFFFFF" : t.mono ? "#000000" : accent;
+  const noise = (id, freq, octaves, c, a, seed) => {
     const [r, g, b] = rgb(c);
-    return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><filter id="g"><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 ${r.toFixed(3)} 0 0 0 0 ${g.toFixed(3)} 0 0 0 0 ${b.toFixed(3)} ${a} 0 0 0 0"/></filter><rect width="160" height="160" filter="url(#g)"/></svg>`);
+    return `<filter id="${id}" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="${freq}" numOctaves="${octaves}" seed="${seed}" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 ${r.toFixed(3)} 0 0 0 0 ${g.toFixed(3)} 0 0 0 0 ${b.toFixed(3)} ${a} 0 0 0 ${(-a * 0.35).toFixed(3)}"/></filter>`;
   };
-  const lines = (c, o) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9"><path d="M-1 1l2-2M0 9l9-9M8 10l2-2" stroke="${c}" stroke-opacity="${o}" stroke-width="1"/></svg>`);
-  const dots = (c, o) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11"><circle cx="5.5" cy="5.5" r=".7" fill="${c}" fill-opacity="${o}"/></svg>`);
-  const dust = (c, o) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="90" height="46"><g fill="${c}" fill-opacity="${o}"><circle cx="8" cy="9" r=".8"/><circle cx="37" cy="31" r=".55"/><circle cx="61" cy="6" r=".6"/><circle cx="79" cy="27" r="1"/><circle cx="22" cy="40" r=".5"/><circle cx="51" cy="18" r=".45"/></g></svg>`);
+  const stardust = ({ size, seed, cloud, grain, specks, glints = 0 }) => {
+    let x = seed >>> 0;
+    const rnd = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const k = dark ? 0.75 : 1;
+    let dots = "";
+    for (let i = 0; i < specks; i++) {
+      const r = rnd() < 0.85 ? 0.3 + rnd() * 0.35 : 0.7 + rnd() * 0.5;
+      dots += `<circle cx="${(rnd() * size).toFixed(1)}" cy="${(rnd() * size).toFixed(1)}" r="${r.toFixed(2)}" fill-opacity="${((0.08 + rnd() * 0.22) * k).toFixed(2)}"/>`;
+    }
+    for (let i = 0; i < glints; i++) {
+      const gx = rnd() * size, gy = rnd() * size, gr = 1.4 + rnd() * 0.8;
+      dots += `<path d="M${gx.toFixed(1)} ${(gy - gr).toFixed(1)}l${(gr * 0.2).toFixed(2)} ${(gr * 0.8).toFixed(2)} ${(gr * 0.8).toFixed(2)} ${(gr * 0.2).toFixed(2)} ${(-gr * 0.8).toFixed(2)} ${(gr * 0.2).toFixed(2)} ${(-gr * 0.2).toFixed(2)} ${(gr * 0.8).toFixed(2)} ${(-gr * 0.2).toFixed(2)} ${(-gr * 0.8).toFixed(2)} ${(-gr * 0.8).toFixed(2)} ${(-gr * 0.2).toFixed(2)} ${(gr * 0.8).toFixed(2)} ${(-gr * 0.2).toFixed(2)}z" fill-opacity="${(0.22 * k).toFixed(2)}"/>`;
+    }
+    return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">${cloud ? noise("c", 0.009, 3, tone, cloud * k, seed % 97) : ""}${grain ? noise("g", 0.95, 2, dark ? "#FFFFFF" : "#000000", grain * k, seed % 89) : ""}${cloud ? `<rect width="${size}" height="${size}" filter="url(#c)"/>` : ""}${grain ? `<rect width="${size}" height="${size}" filter="url(#g)"/>` : ""}<g fill="${dustTone}">${dots}</g></svg>`);
+  };
   const tex = {
-    page: grain(dark ? "#FFFFFF" : t.mono ? "#000000" : accent2, dark ? 0.055 : 0.045),
-    amount: lines(inkTone, dark ? 0.07 : t.mono ? 0.05 : 0.09),
-    notes: dots(dark ? "#FFFFFF" : t.mono ? "#000000" : accent2, dark ? 0.16 : 0.22),
-    sums: grain(dark ? "#FFFFFF" : t.mono ? "#000000" : accent, dark ? 0.04 : 0.035),
-    footer: dust(dark ? "#FFFFFF" : t.mono ? "#000000" : accent2, dark ? 0.35 : 0.3),
+    page: stardust({ size: 460, seed: 11, cloud: 0.09, grain: 0.035, specks: 46, glints: 1 }),
+    amount: stardust({ size: 300, seed: 23, cloud: 0.12, grain: 0.03, specks: 22, glints: 1 }),
+    notes: stardust({ size: 320, seed: 37, cloud: 0.1, grain: 0.03, specks: 16 }),
+    sums: stardust({ size: 300, seed: 41, cloud: 0, grain: 0.03, specks: 10 }),
+    footer: stardust({ size: 380, seed: 53, cloud: 0.05, grain: 0, specks: 34, glints: 1 }),
   };
   const tint = (pct) => (t.mono ? "var(--wash)" : `color-mix(in srgb, var(--accent) ${pct}%, var(--paper))`);
   // The page's colours: Bright (white paper, dark ink) or Dark (the website's near-black, light ink)
@@ -344,7 +359,7 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
 <title>${esc(title)} · ${esc(card.name)}</title>
 <style>
 @font-face{font-family:"Jost";src:url(${FONT_DATA_URL}) format("woff2");font-weight:400 600;font-display:block}
-:root{--band:${page.band};--accent:${accent};--accent2:${accent2};--blend:linear-gradient(90deg,var(--accent),var(--accent2));--tint:${tint(dark ? 18 : 10)};--tint2:${tint(dark ? 12 : 6)};--paper:${page.paper};--wash:${page.wash};--ink:${page.ink};--soft:${page.soft};--hair:${page.hair};--rule:${page.rule};--red:${red};--green:${green};--line:${lineColour};--band-ink:${lightBand ? "#1C1618" : "#FFFFFF"};color-scheme:${dark ? "dark" : "light"}}
+:root{--band:${page.band};--accent:${accent};--accent2:${accent2};--blend:linear-gradient(90deg,var(--accent),var(--accent2));--tint:${tint(dark ? 15 : 8)};--tint2:${tint(dark ? 10 : 5)};--paper:${page.paper};--wash:${page.wash};--ink:${page.ink};--soft:${page.soft};--hair:${page.hair};--rule:${page.rule};--red:${red};--green:${green};--line:${lineColour};--band-ink:${lightBand ? "#1C1618" : "#FFFFFF"};color-scheme:${dark ? "dark" : "light"}}
 *{box-sizing:border-box}
 html{background:${page.outside}}
 body{margin:0;padding:28px 12px;font:15px/1.55 "Jost",Futura,"Century Gothic","Avenir Next",system-ui,sans-serif;color:var(--ink);letter-spacing:.01em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
