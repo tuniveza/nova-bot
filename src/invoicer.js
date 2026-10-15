@@ -197,6 +197,37 @@ export const INVOICE_THEMES = [
 export const INVOICE_MODES = ["bright", "dark"];
 export const themeOf = (id) => INVOICE_THEMES.find((t) => t.id === id) || INVOICE_THEMES[0];
 
+// The band's sky: Novacane's night (the website, Nova Agent's sigil) drawn as shapes, faint enough to
+// read over. The same stars on every invoice (a fixed seed), in an 820×100 box the band covers.
+const STARS = (() => {
+  let seed = 20261015;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const out = [];
+  for (let i = 0; i < 58; i++) {
+    const x = rnd() * 820, y = rnd() * 100, big = rnd();
+    // (fewer behind the logo and the name on the left, so they stay clean)
+    if (x < 300 && y > 18 && y < 82 && rnd() < 0.75) continue;
+    out.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10, big > 0.93 ? 1.3 : big > 0.7 ? 0.85 : 0.55, Math.round((0.25 + rnd() * 0.5) * 100) / 100]);
+  }
+  return out;
+})();
+// A four-pointed sparkle (Nova's), at x, y, size r
+const sparkle = (x, y, r, fill, o) => `<path d="M${x} ${y - r}L${x + r * 0.22} ${y - r * 0.22}L${x + r} ${y}L${x + r * 0.22} ${y + r * 0.22}L${x} ${y + r}L${x - r * 0.22} ${y + r * 0.22}L${x - r} ${y}L${x - r * 0.22} ${y - r * 0.22}Z" fill="${fill}" opacity="${o}"/>`;
+function bandSky(t, lightBand, from, to) {
+  const star = lightBand ? "#5B3F6E" : "#FFFFFF";
+  const k = lightBand ? 0.5 : 1; // (on a light band, everything quieter)
+  const nebula = t.mono
+    ? ""
+    : `<radialGradient id="nv-neb1" cx="88%" cy="20%" r="55%"><stop offset="0" stop-color="${to}" stop-opacity="${0.42 * k}"/><stop offset="1" stop-color="${to}" stop-opacity="0"/></radialGradient>
+<radialGradient id="nv-neb2" cx="22%" cy="110%" r="50%"><stop offset="0" stop-color="${from}" stop-opacity="${0.34 * k}"/><stop offset="1" stop-color="${from}" stop-opacity="0"/></radialGradient>
+<radialGradient id="nv-neb3" cx="62%" cy="70%" r="30%"><stop offset="0" stop-color="${from}" stop-opacity="${0.14 * k}"/><stop offset="1" stop-color="${from}" stop-opacity="0"/></radialGradient>`;
+  const fills = t.mono ? "" : `<rect width="820" height="100" fill="url(#nv-neb1)"/><rect width="820" height="100" fill="url(#nv-neb2)"/><rect width="820" height="100" fill="url(#nv-neb3)"/>`;
+  const orbit = `<ellipse cx="700" cy="96" rx="190" ry="62" fill="none" stroke="${t.mono ? star : to}" stroke-opacity="${(t.mono ? 0.16 : 0.32) * k}" stroke-width=".8" stroke-dasharray="1.2 4.2" transform="rotate(-9 700 96)"/>`;
+  const stars = STARS.map(([x, y, r, o]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${star}" opacity="${Math.round(o * k * 100) / 100}"/>`).join("");
+  const glints = sparkle(612, 24, 4.2, star, 0.55 * k) + sparkle(778, 70, 2.8, star, 0.4 * k) + (t.mono ? "" : `<circle cx="${700 + 190 * Math.cos(-0.55)}" cy="${96 + 62 * Math.sin(-0.55)}" r="2.2" fill="${to}" opacity="${0.8 * k}"/>`);
+  return `<svg class="sky" viewBox="0 0 820 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${nebula ? `<defs>${nebula}</defs>` : ""}${fills}${orbit}${stars}${glints}</svg>`;
+}
+
 // A stage, in a few calm words, and its colour (the theme's accent, or a muted red or green)
 const STAGE_LINES = {
   deposit: { colour: "accent", text: (s) => `Deposit due to secure your booking: ${s.depositPercent}% now, the rest by the session` },
@@ -285,7 +316,9 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
 html{background:${page.outside}}
 body{margin:0;padding:28px 12px;font:15px/1.55 "Jost",Futura,"Century Gothic","Avenir Next",system-ui,sans-serif;color:var(--ink);letter-spacing:.01em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .sheet{max-width:820px;margin:0 auto;background:var(--paper);box-shadow:0 10px 40px rgb(0 0 0 / .08)}
-.band{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:${t.mono ? "var(--band)" : lightBand ? "radial-gradient(120% 220% at 100% 0%,color-mix(in srgb,var(--accent2) 16%,var(--band)),var(--band) 60%)" : "radial-gradient(90% 260% at 100% 0%,color-mix(in srgb,var(--accent2) 42%,var(--band)),transparent 62%),radial-gradient(60% 200% at 0% 100%,color-mix(in srgb,var(--accent) 30%,var(--band)),transparent 70%),var(--band)"}}
+.band{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:var(--band)}
+.band .sky{position:absolute;inset:0;width:100%;height:100%;display:block}
+.band>:not(.sky){position:relative}
 .band::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--blend)}
 .brand{display:flex;align-items:center;gap:16px}
 .brand .mark{width:42px;height:42px;display:block;flex:none}
@@ -334,7 +367,7 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 @media print{html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
 </style></head>
 <body><main class="sheet">
-<header class="band"><div class="brand">${logo}<div><b>NOVACANE</b><small>STUDIOS</small></div></div><div class="doc">${receipt ? "Receipt" : "Invoice"}</div></header>
+<header class="band">${bandSky(t, lightBand, from, to)}<div class="brand">${logo}<div><b>NOVACANE</b><small>STUDIOS</small></div></div><div class="doc">${receipt ? "Receipt" : "Invoice"}</div></header>
 <div class="in">
 <p class="stage" role="note">${esc(line.text(s))}</p>
 <section class="top">
