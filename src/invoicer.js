@@ -198,6 +198,22 @@ export const INVOICE_THEMES = [
   { id: "mono", name: "Black & white", band: "#111111", accent: "#1C1618", accent2: "#1C1618", accentDark: "#EDE8E8", accent2Dark: "#EDE8E8", wash: "#F6F5F5", mono: true },
 ];
 export const INVOICE_MODES = ["bright", "dark"];
+// The paper: named after minerals, each a light and a dark sheet with its own tone in the texture.
+// Moonstone is the paper as it was (white, or the website's near-black, tinted by the theme). Pearl
+// has a soft shimmer, Marble faint veins; the rest a breath of their stone's colour.
+export const INVOICE_PAPERS = [
+  { id: "moonstone", name: "Moonstone", light: "#FFFFFF", dark: "#17110F" },
+  { id: "pearl", name: "Pearl", light: "#FCFAF6", dark: "#17151A", tone: "#C9B9C9", sheen: true },
+  { id: "marble", name: "Marble", light: "#FBFAF8", dark: "#141415", tone: "#8C8A8E", veins: true },
+  { id: "sapphire", name: "Sapphire", light: "#F6F8FD", dark: "#0E1220", tone: "#3557C9" },
+  { id: "ruby", name: "Ruby", light: "#FDF6F7", dark: "#1B0D11", tone: "#C2334E" },
+  { id: "emerald", name: "Emerald", light: "#F5FBF7", dark: "#0C1712", tone: "#1E8A5A" },
+  { id: "amethyst", name: "Amethyst", light: "#F9F6FD", dark: "#150F1E", tone: "#8350C8" },
+  { id: "rosequartz", name: "Rose quartz", light: "#FDF6F6", dark: "#1A1113", tone: "#D98A9A" },
+  { id: "citrine", name: "Citrine", light: "#FDFAF1", dark: "#18140B", tone: "#C9952A" },
+  { id: "onyx", name: "Onyx", light: "#F4F3F2", dark: "#0E0E10", tone: "#5A5560" },
+];
+export const paperOf = (id) => INVOICE_PAPERS.find((x) => x.id === id) || INVOICE_PAPERS[0];
 // The themes before the spectrum (15 October 2026), each now the nearest colour in it
 const OLD_THEMES = { plum: "violet", ink: "sapphire", ember: "amber", rose: "ruby", dusk: "violet" };
 // A theme's id as it is now (an old one moved to its nearest), or null if there's no such theme
@@ -228,6 +244,13 @@ export function vivid(hex, lightness, saturation = 0.72) {
   const l = lightness, c = (1 - Math.abs(2 * l - 1)) * saturation, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2;
   const [r2, g2, b2] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
   return "#" + [r2, g2, b2].map((v) => Math.round((v + m) * 255).toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+// Two colours mixed: a share of a over b ("#rrggbb")
+export function mixHex(a, b, share) {
+  const p = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+  const [x, y] = [p(a), p(b)];
+  return "#" + x.map((v, i) => Math.round(v * share + y[i] * (1 - share)).toString(16).padStart(2, "0")).join("").toUpperCase();
 }
 
 // A four-pointed sparkle (Nova's), at x, y, size r
@@ -266,6 +289,7 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   const card = studioCard(settings);
   const t = themeOf(options.theme || settings?.invoiceTheme);
   const dark = (options.mode || settings?.invoiceMode) === "dark";
+  const paper = paperOf(options.paper || settings?.invoicePaper);
   const receipt = stage === "paid";
   const client = options.page || null;
   const cancelled = Boolean(client?.cancelled);
@@ -341,7 +365,7 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
   const hex = (c) => c.replace("#", "");
   const rgb = (c) => [0, 2, 4].map((i) => parseInt(hex(c).slice(i, i + 2), 16) / 255);
   const tile = (svg) => `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
-  const tone = dark ? "#FFFFFF" : t.mono ? "#000000" : accent2;
+  const tone = paper.tone ? (dark ? mixHex(paper.tone, "#FFFFFF", 0.55) : paper.tone) : dark ? "#FFFFFF" : t.mono ? "#000000" : accent2;
   const dustTone = dark ? "#FFFFFF" : t.mono ? "#000000" : accent;
   const noise = (id, freq, octaves, c, a, seed) => {
     const [r, g, b] = rgb(c);
@@ -363,7 +387,7 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
     return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">${cloud ? noise("c", 0.009, 3, cloudTone, cloud * k, seed % 97) : ""}${grain ? noise("g", 0.95, 2, grainTone, grain * k, seed % 89) : ""}${cloud ? `<rect width="${size}" height="${size}" filter="url(#c)"/>` : ""}${grain ? `<rect width="${size}" height="${size}" filter="url(#g)"/>` : ""}<g fill="${speckTone}">${dots}</g></svg>`);
   };
   const tex = {
-    page: stardust({ size: 460, seed: 11, cloud: 0.09, grain: 0.035, specks: 46, glints: 1 }),
+    page: stardust({ size: 460, seed: 11, cloud: paper.tone ? 0.13 : 0.09, grain: 0.035, specks: 46, glints: 1 }),
     // (the band: wisps of the theme's colour, a fine velvet grain and faint star dust, under its sky;
     // on the light Paper band, quieter and dark)
     band: stardust({ size: 400, seed: 79, cloud: t.mono ? 0.06 : lightBand ? 0.1 : 0.2, grain: lightBand ? 0.04 : 0.07, specks: 52, glints: 1, cloudTone: t.mono ? (lightBand ? "#000000" : "#FFFFFF") : vivid(t.accent2, lightBand ? 0.5 : 0.62), speckTone: lightBand ? "#3A2A44" : "#FFFFFF", grainTone: lightBand ? "#000000" : "#FFFFFF", strength: lightBand ? 0.6 : 1 }),
@@ -376,9 +400,14 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
   };
   const tint = (pct) => (t.mono ? "var(--wash)" : `color-mix(in srgb, var(--accent) ${pct}%, var(--paper))`);
   // The page's colours: Bright (white paper, dark ink) or Dark (the website's near-black, light ink)
+  const sheet = dark ? paper.dark : paper.light;
   const page = dark
-    ? { band: t.light ? "#0C0908" : t.band, paper: "#17110F", wash: "#211A18", ink: "#F1EBEA", soft: "#A99FA0", hair: "#352C2B", outside: "#0A0708", rule: "#F1EBEA" }
-    : { band: t.band, paper: "#FFFFFF", wash: t.wash, ink: "#1C1618", soft: "#6B6266", hair: "#E7E2E2", outside: t.mono ? "#E6E6E6" : "#E9E4E7", rule: "#1C1618" };
+    ? { band: t.light ? "#0C0908" : t.band, paper: sheet, wash: mixHex("#FFFFFF", sheet, 0.05), ink: "#F1EBEA", soft: "#A99FA0", hair: mixHex("#FFFFFF", sheet, 0.12), outside: mixHex("#000000", sheet, 0.45), rule: "#F1EBEA" }
+    : { band: t.band, paper: sheet, wash: paper.tone ? mixHex(paper.tone, sheet, 0.05) : t.wash, ink: "#1C1618", soft: "#6B6266", hair: paper.tone ? mixHex(paper.tone, "#E7E2E2", 0.12) : "#E7E2E2", outside: t.mono ? "#E6E6E6" : paper.tone ? mixHex(paper.tone, "#E9E4E7", 0.14) : "#E9E4E7", rule: "#1C1618" };
+  // Pearl's shimmer and Marble's veins, over the paper's own texture
+  const marbleVeins = paper.veins ? tile(`<svg xmlns="http://www.w3.org/2000/svg" width="700" height="700"><filter id="v"><feTurbulence type="turbulence" baseFrequency="0.0035 0.012" numOctaves="3" seed="7" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 ${dark ? 1 : 0.35} 0 0 0 0 ${dark ? 1 : 0.34} 0 0 0 0 ${dark ? 1 : 0.38} -${dark ? 0.6 : 0.9} 0 0 0 ${dark ? 0.12 : 0.16}"/></filter><rect width="700" height="700" filter="url(#v)"/></svg>`) : "";
+  const pearlSheen = paper.sheen ? `linear-gradient(125deg, ${dark ? "rgb(255 200 230 / .05)" : "rgb(255 214 236 / .35)"}, ${dark ? "rgb(190 220 255 / .04)" : "rgb(208 230 255 / .28)"} 45%, ${dark ? "rgb(200 255 225 / .04)" : "rgb(214 245 226 / .3)"} 75%, ${dark ? "rgb(255 236 210 / .04)" : "rgb(255 240 220 / .3)"})` : "";
+  const sheetLayers = [tex.page, marbleVeins, pearlSheen].filter(Boolean).join(",");
 
   return `<!doctype html>
 <html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
@@ -391,7 +420,7 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
    faint nebulae of the theme's colours in two corners, the edges a shade darker, grain and stardust */
 html{min-height:100%;background:${tex.backdrop},${t.mono ? "" : `radial-gradient(70% 55% at 0% 0%,color-mix(in srgb,${accent2} ${dark ? 22 : 16}%,transparent),transparent 70%),radial-gradient(65% 50% at 100% 100%,color-mix(in srgb,${accent} ${dark ? 20 : 14}%,transparent),transparent 70%),`}radial-gradient(120% 90% at 50% 40%,transparent 55%,${dark ? "rgb(0 0 0 / .45)" : "rgb(60 40 70 / .10)"}),${page.outside};background-attachment:fixed}
 body{margin:0;padding:28px 12px;font:15px/1.55 "Jost",Futura,"Century Gothic","Avenir Next",system-ui,sans-serif;color:var(--ink);letter-spacing:.01em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.sheet{max-width:820px;margin:0 auto;background:${tex.page},var(--paper);box-shadow:0 0 0 1px ${dark ? "rgb(255 255 255 / .05)" : "rgb(40 20 50 / .06)"},0 2px 4px rgb(0 0 0 / ${dark ? ".35" : ".06"}),0 18px 50px ${dark ? "rgb(0 0 0 / .55)" : "rgb(60 30 80 / .16)"}}
+.sheet{max-width:820px;margin:0 auto;background:${sheetLayers},var(--paper);box-shadow:0 0 0 1px ${dark ? "rgb(255 255 255 / .05)" : "rgb(40 20 50 / .06)"},0 2px 4px rgb(0 0 0 / ${dark ? ".35" : ".06"}),0 18px 50px ${dark ? "rgb(0 0 0 / .55)" : "rgb(60 30 80 / .16)"}}
 .band{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:${tex.band},var(--band)}
 .band .sky{position:absolute;inset:0;width:100%;height:100%;display:block}
 .band>:not(.sky){position:relative}

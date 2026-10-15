@@ -207,8 +207,9 @@ describe("approval", () => {
 		const again = await portal(`money/invoices/${inv.id}/approve`, { body: {} });
 		expect(again.data.repeated).toBe(true);
 		expect(emails).toHaveLength(1);
-		// Sent ones can't change
-		expect((await portal(`money/invoices/${inv.id}/edit`, { body: { notes: "x" } })).status).toBe(409);
+		// A sent one can change, but only through another approval (see "changing an invoice after it's been sent")
+		expect((await portal(`money/invoices/${inv.id}/edit`, { body: { notes: "x" } })).data.invoice.status).toBe("pending_approval");
+		expect(emails).toHaveLength(1);
 	});
 
 	it("won't send what changed after approval (the hash) and needs an email address", async () => {
@@ -603,5 +604,53 @@ describe("a test of the receipt", () => {
 		expect(emails[0].html).toContain("Your receipt is below.");
 		expect(emails[0].text).toContain("RECEIPT NS-0001");
 		expect(emails[0].to).not.toContain("ada@example.com");
+	});
+});
+
+describe("the invoice's paper", () => {
+	it("ten minerals, each light and dark; chosen per invoice (?paper=) or for every invoice (an admin)", async () => {
+		const list = await portal("money/catalogue");
+		expect(list.data.papers.map((p) => p.id)).toEqual(["moonstone", "pearl", "marble", "sapphire", "ruby", "emerald", "amethyst", "rosequartz", "citrine", "onyx"]);
+		expect(list.data.paper).toBe("moonstone");
+		const inv = await writeAndSend();
+		const sapphire = await portal(`money/invoices/${inv.id}/document?stage=balance&paper=sapphire`);
+		expect(sapphire.text).toContain("--paper:#F6F8FD");
+		const dark = await portal(`money/invoices/${inv.id}/document?stage=balance&paper=ruby&mode=dark`);
+		expect(dark.text).toContain("--paper:#1B0D11");
+		expect((await portal("money/settings", { body: { invoicePaper: "pearl" } })).status).toBe(200);
+		expect((await portal("money/catalogue")).data.paper).toBe("pearl");
+		expect((await portal("money/settings", { body: { invoicePaper: "plastic" } })).status).toBe(400);
+	});
+});
+
+describe("changing an invoice after it's been sent", () => {
+	it("goes for approval again, its page says it's being updated, then the client gets the updated invoice", async () => {
+		const inv = await writeAndSend();
+		const token = (await row(inv.id)).token;
+		await portal(`money/invoices/${inv.id}/payments`, { body: { amount: "100", method: "bank", paidOn: "2026-10-01" } });
+		// Not below what's been paid
+		expect((await portal(`money/invoices/${inv.id}/edit`, { body: { lines: [{ description: "Mixing", qty: 1, unit: "50" }] } })).status).toBe(409);
+		emails.length = 0;
+		const changed = await portal(`money/invoices/${inv.id}/edit`, { body: { lines: [...LINES, { description: "Extra hour", qty: 1, unit: "50" }] } });
+		expect(changed.status).toBe(200);
+		expect(changed.data.invoice.status).toBe("pending_approval");
+		expect(emails).toHaveLength(0); // nothing goes until an admin approves
+		const page = await call(new Request(`${BASE}/invoice/${token}`));
+		expect(page.status).toBe(200);
+		expect(page.text).toContain("being updated");
+		const sent = await portal(`money/invoices/${inv.id}/approve`, { body: {} });
+		expect(sent.data.invoice.status).toBe("part_paid"); // the payment's still on it
+		expect(emails[0].subject).toBe("Updated invoice NS-0001 from Novacane Studios");
+		expect(emails[0].html).toContain("Extra hour");
+		expect((await row(inv.id)).total_pence).toBe(39999);
+	});
+
+	it("paid in full or removed: it can't change", async () => {
+		const inv = await writeAndSend();
+		await portal(`money/invoices/${inv.id}/payments`, { body: { amount: "349.99", method: "bank", paidOn: "2026-10-01" } });
+		expect((await portal(`money/invoices/${inv.id}/edit`, { body: { notes: "x" } })).status).toBe(409);
+		const other = await write();
+		expect((await portal(`money/invoices/${other.id}/void`, { body: {} })).status).toBe(200);
+		expect((await portal(`money/invoices/${other.id}/edit`, { body: { notes: "x" } })).status).toBe(409);
 	});
 });

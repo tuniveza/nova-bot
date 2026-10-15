@@ -38,7 +38,7 @@ import { sendStudioEmail } from "./google/gmail.js";
 import { pounds as poundsText, toPence } from "./clients.js";
 import { createInvoiceCheckout, stripeOffline } from "./nova/stripe.js";
 import { invoiceEmailParts } from "./invoice-email.js";
-import { INVOICE_MODES, INVOICE_THEMES, STAGES, themeId, catalogue, invoiceDocument, stageEmail, stageOf, stageSums } from "./invoicer.js";
+import { INVOICE_MODES, INVOICE_PAPERS, INVOICE_THEMES, STAGES, themeId, catalogue, invoiceDocument, stageEmail, stageOf, stageSums } from "./invoicer.js";
 
 export const CATEGORIES = [
   "Equipment",
@@ -142,6 +142,7 @@ const DEFAULT_SETTINGS = {
   dueDays: 14,
   invoiceTheme: "night",
   invoiceMode: "bright",
+  invoicePaper: "moonstone",
 };
 
 export async function readSettings(env) {
@@ -156,6 +157,7 @@ export async function readSettings(env) {
     dueDays: Number.isInteger(saved.dueDays) ? saved.dueDays : DEFAULT_SETTINGS.dueDays,
     invoiceTheme: themeId(saved.invoiceTheme) || DEFAULT_SETTINGS.invoiceTheme,
     invoiceMode: INVOICE_MODES.includes(saved.invoiceMode) ? saved.invoiceMode : DEFAULT_SETTINGS.invoiceMode,
+    invoicePaper: INVOICE_PAPERS.some((x) => x.id === saved.invoicePaper) ? saved.invoicePaper : DEFAULT_SETTINGS.invoicePaper,
   };
 }
 export const bankReady = (s) => Boolean(s.bank.accountName && s.bank.sortCode && s.bank.accountNumber);
@@ -183,7 +185,12 @@ export async function saveSettings(env, me, input) {
     dueDays: s.dueDays,
     invoiceTheme: s.invoiceTheme,
     invoiceMode: s.invoiceMode,
+    invoicePaper: s.invoicePaper,
   };
+  if (input?.invoicePaper !== undefined) {
+    if (!INVOICE_PAPERS.some((x) => x.id === input.invoicePaper)) return fail(400, "invoicePaper: one of " + INVOICE_PAPERS.map((x) => x.id).join(", ") + ".");
+    next.invoicePaper = input.invoicePaper;
+  }
   if (input?.invoiceMode !== undefined) {
     if (!INVOICE_MODES.includes(input.invoiceMode)) return fail(400, "invoiceMode: bright or dark.");
     next.invoiceMode = input.invoiceMode;
@@ -453,10 +460,15 @@ export async function editInvoice(env, by, id, input) {
   if (!id) return fail(400, "Which invoice?");
   const row = await readRow(env, id);
   if (!row) return fail(404, "That invoice doesn't exist.");
-  if (["sent", "part_paid", "paid", "void"].includes(row.status)) return fail(409, `${invoiceNumber(row.seq)} has already been sent, so it can't change. Void it and write a new one if it was wrong.`);
+  if (row.status === "paid") return fail(409, `${invoiceNumber(row.seq)} is paid in full, so it can't change.`);
+  if (row.status === "void") return fail(409, `${invoiceNumber(row.seq)} was removed, so it can't change.`);
   if (row.status === "approved" && !isStuck(row)) return fail(409, "It's being sent right now.");
   const fields = await checkFields(env, input || {}, row);
   if (fields.error) return fields;
+  // (a sent one can change too: it goes for approval again, then the client gets the updated invoice;
+  // never below what's already been paid)
+  const wasSent = OPEN.includes(row.status);
+  if (wasSent && fields.total_pence < row.paid_pence) return fail(409, `${money(row.paid_pence)} has already been paid, so the total can't go below that.`);
   const keys = ["client_id", "bill_name", "bill_email", "bill_address", "lines", "vat_rate", "total_pence", "issue_date", "due_date", "notes"];
   const changed = keys.filter((k) => (fields[k] ?? null) !== (row[k] ?? null));
   if (!changed.length && WAITING.includes(row.status)) return { invoice: publicInvoice(env, row), unchanged: true };
@@ -470,9 +482,10 @@ export async function editInvoice(env, by, id, input) {
     .bind(fields.client_id, fields.bill_name, fields.bill_email, fields.bill_address, fields.lines, fields.vat_rate, fields.subtotal_pence, fields.vat_pence, fields.total_pence, fields.issue_date, fields.due_date, fields.notes, now, now, id, row.status, row.updated_at)
     .run();
   if (!meta.changes) return fail(409, "Someone else changed it at the same moment. Look at it again.");
+  if (wasSent && row.client_id) await env.DB.batch(clientDelta(env, row.client_id, { invoiced: -row.total_pence, owed: -(row.total_pence - row.paid_pence) }, by));
   const names = { client_id: "client", bill_name: "name", bill_email: "email", bill_address: "address", lines: "lines", vat_rate: "VAT", total_pence: "total", issue_date: "issue date", due_date: "due date", notes: "notes" };
   await env.DB.batch([
-    logEntry(env, { invoice: id, event: "edited", by, detail: changed.length ? `Changed: ${changed.map((k) => names[k]).join(", ")}` : "Sent for approval again" }),
+    logEntry(env, { invoice: id, event: "edited", by, detail: `${wasSent ? "Changed after it was sent (the client gets the updated invoice once it's approved). " : ""}${changed.length ? `Changed: ${changed.map((k) => names[k]).join(", ")}` : "Sent for approval again"}` }),
     logEntry(env, { invoice: id, event: "submitted", by }),
   ]);
   const invoice = await getInvoice(env, id);
@@ -613,7 +626,7 @@ export async function previewDocument(env, input = {}) {
     pageUrl: null,
   };
   const stage = STAGES.includes(input.stage) ? input.stage : "deposit";
-  const options = { theme: themeId(input.theme), mode: INVOICE_MODES.includes(input.mode) ? input.mode : null };
+  const options = { theme: themeId(input.theme), mode: INVOICE_MODES.includes(input.mode) ? input.mode : null, paper: INVOICE_PAPERS.some((x) => x.id === input.paper) ? input.paper : null };
   return invoiceDocument(invoice, [], stage, settings, today, options);
 }
 
@@ -668,7 +681,9 @@ export async function sendApprovedInvoice(env, id) {
   }
   if (!emailReady(env)) return failWith(NOT_READY);
   const settings = await readSettings(env);
+  const updated = Boolean(row.sent_at);
   const email = invoiceEmail(env, settings, row);
+  if (updated) email.subject = `Updated invoice ${invoiceNumber(row.seq)} from ${settings.business.name}`;
   // (the studio's own mail server, with Gmail as the backup: src/google/gmail.js)
   const result = await sendStudioEmail(env, {
     to: [row.bill_email],
@@ -683,10 +698,12 @@ export async function sendApprovedInvoice(env, id) {
   const now = nowIso();
   const statements = [
     env.DB.prepare("UPDATE invoices SET status = 'sent', sent_at = ?, email_id = ?, error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'").bind(now, result.id || null, now, id),
-    logEntry(env, { invoice: id, event: "sent", by: "nova", detail: `Emailed to the client (${money(row.total_pence)}, due ${dayText(row.due_date)})` }),
+    logEntry(env, { invoice: id, event: "sent", by: "nova", detail: `${updated ? "The updated invoice emailed" : "Emailed"} to the client (${money(row.total_pence)}, due ${dayText(row.due_date)})` }),
   ];
-  if (row.client_id) statements.push(...clientDelta(env, row.client_id, { invoiced: row.total_pence, owed: row.total_pence }, "nova"));
+  if (row.client_id) statements.push(...clientDelta(env, row.client_id, { invoiced: row.total_pence, owed: row.total_pence - row.paid_pence }, "nova"));
   await env.DB.batch(statements);
+  // (an updated invoice with payments already on it: part paid, not just sent)
+  if (row.paid_pence > 0) await settle(env, id);
   console.log(`Invoice ${id}: sent`);
   return getInvoice(env, id);
 }
@@ -1213,9 +1230,12 @@ export async function clientPage(env, row, settings, { preview = false, paid = f
   const payments = await invoicePayments(env, row.id);
   const stage = stageOf(invoice, today);
   const due = stageSums(invoice, payments, stage, today).dueNowPence;
-  const canCard = !preview && due > 0 && OPEN.includes(row.status) && cardReady(env);
+  const updating = !preview && row.sent_at && !PAGE_STATUSES.includes(row.status);
+  const canCard = !preview && !updating && due > 0 && OPEN.includes(row.status) && cardReady(env);
   const cardForm = canCard ? `<form method="post" action="/invoice/${esc(row.token)}/pay"><button type="submit">Pay ${esc(money(due))} by card</button></form>` : "";
-  const banner = preview
+  const banner = updating
+    ? "This invoice is being updated. You'll get the new one by email shortly."
+    : preview
     ? "Preview: this is how the client sees it once it's approved and sent."
     : failed
       ? "Card payment isn't available just now. Please try again in a minute, or pay by bank transfer."
@@ -1229,9 +1249,12 @@ export async function handleInvoicePage(request, env, pathname) {
   const m = pathname.match(/^\/invoice\/([0-9a-f]{32})(\/pay)?$/);
   if (!m) return notFoundPage();
   const row = await env.DB.prepare(`${SELECT} WHERE i.token = ?`).bind(m[1]).first();
-  if (!row || !PAGE_STATUSES.includes(row.status)) return notFoundPage();
+  // (one already sent and now changed, waiting to be approved again: its page says it's being updated)
+  const updating = row && row.sent_at && ["pending_approval", "approved", "rejected", "failed", "draft"].includes(row.status);
+  if (!row || (!PAGE_STATUSES.includes(row.status) && !updating)) return notFoundPage();
   const settings = await readSettings(env);
   if (m[2]) {
+    if (updating) return Response.redirect(`${publicUrl(env)}/invoice/${row.token}`, 303);
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
     // What's due now: the deposit at the deposit stage, else what's left (the same as the page's button)
     const today = ukToday();
@@ -1312,7 +1335,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
     return pageResponse(await clientPage(env, row, await readSettings(env), { preview: true, nonce }), nonce, 200, true);
   }
   // The Invoicer (src/invoicer.js): the price list, and an invoice at one of its stages (read-only)
-  if (route === "/money/catalogue" && get) return json({ ...catalogue(), themes: INVOICE_THEMES.map(({ id, name, band, accent }) => ({ id, name, band, accent })), modes: INVOICE_MODES, ...(({ invoiceTheme, invoiceMode }) => ({ theme: invoiceTheme, mode: invoiceMode }))(await readSettings(env)) });
+  if (route === "/money/catalogue" && get) return json({ ...catalogue(), themes: INVOICE_THEMES.map(({ id, name, band, accent }) => ({ id, name, band, accent })), modes: INVOICE_MODES, papers: INVOICE_PAPERS.map(({ id, name, light, dark, tone }) => ({ id, name, light, dark, tone: tone || null })), ...(({ invoiceTheme, invoiceMode, invoicePaper }) => ({ theme: invoiceTheme, mode: invoiceMode, paper: invoicePaper }))(await readSettings(env)) });
   const staged = route.match(/^\/money\/invoices\/(\d{1,12})\/(stage|document|email)$/);
   if (staged && get) {
     const row = await readRow(env, Number(staged[1]));
@@ -1338,7 +1361,8 @@ export async function handleMoneyForStaff(request, env, me, route) {
       const theme = url.searchParams.get("theme");
       const note = url.searchParams.get("note");
       const mode = url.searchParams.get("mode");
-      const options = { theme: themeId(theme), mode: INVOICE_MODES.includes(mode) ? mode : null, note: note === null ? null : cleanText(note, 800) };
+      const paper = url.searchParams.get("paper");
+      const options = { theme: themeId(theme), mode: INVOICE_MODES.includes(mode) ? mode : null, paper: INVOICE_PAPERS.some((x) => x.id === paper) ? paper : null, note: note === null ? null : cleanText(note, 800) };
       return pageResponse(invoiceDocument(invoice, payments, stage, settings, today, options), nonce, 200, true);
     }
     const sums = stageSums(invoice, payments, stage, today);

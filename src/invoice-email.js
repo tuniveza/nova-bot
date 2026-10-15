@@ -13,7 +13,7 @@
 // Each email is HTML with a plain-text twin (multipart/alternative: the mail server sends both), so an
 // email app that can't show HTML shows the whole invoice as text instead.
 
-import { STAGE_LINES, longDay, pounds, stageSums, studioCard, themeOf } from "./invoicer.js";
+import { STAGE_LINES, longDay, paperOf, pounds, stageSums, studioCard, themeOf } from "./invoicer.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // Two colours mixed (email apps can't mix them themselves): a share of a over b
@@ -31,9 +31,11 @@ export const bandPicture = (base, theme, mode, receipt) => `${base}/invoice-emai
 // { invoice (publicInvoice's shape), payments, stage, settings, today, base (the site's address),
 //   link (the invoice's own page), greeting, paragraphs (the message above the invoice), mode }
 //   -> { html, text }
-export function invoiceEmailParts({ invoice, payments = [], stage, settings, today, base, link, greeting, paragraphs = [], mode = null }) {
+export function invoiceEmailParts({ invoice, payments = [], stage, settings, today, base, link, greeting, paragraphs = [], mode = null, paper: paperId = null }) {
   const t = themeOf(settings?.invoiceTheme);
   const dark = (mode || settings?.invoiceMode) === "dark";
+  const paper = paperOf(paperId || settings?.invoicePaper);
+  const sheet = dark ? paper.dark : paper.light;
   const s = stageSums(invoice, payments, stage, today);
   const card = studioCard(settings);
   const receipt = stage === "paid";
@@ -42,8 +44,8 @@ export function invoiceEmailParts({ invoice, payments = [], stage, settings, tod
   const red = dark ? "#EE6A80" : "#A3233A";
   const green = dark ? "#5CC795" : "#1F7A55";
   const P = dark
-    ? { paper: "#17110F", ink: "#F1EBEA", soft: "#A99FA0", hair: "#352C2B", outside: "#0B0807", rule: "#F1EBEA", band: t.light ? "#0C0908" : t.band }
-    : { paper: "#FFFFFF", ink: "#1C1618", soft: "#6B6266", hair: "#E7E2E2", outside: t.mono ? "#E9E9E9" : mix(accent2, "#ECE9EA", 0.1), rule: "#1C1618", band: t.band };
+    ? { paper: sheet, ink: "#F1EBEA", soft: "#A99FA0", hair: mix("#FFFFFF", sheet, 0.12), outside: mix("#000000", sheet, 0.45), rule: "#F1EBEA", band: t.light ? "#0C0908" : t.band }
+    : { paper: sheet, ink: "#1C1618", soft: "#6B6266", hair: paper.tone ? mix(paper.tone, "#E7E2E2", 0.12) : "#E7E2E2", outside: t.mono ? "#E9E9E9" : mix(paper.tone || accent2, "#ECE9EA", 0.12), rule: "#1C1618", band: t.band };
   const tint = t.mono ? (dark ? "#211A18" : "#F6F5F5") : mix(accent, P.paper, dark ? 0.15 : 0.08);
   const tint2 = t.mono ? (dark ? "#1E1816" : "#F8F7F7") : mix(accent2, P.paper, dark ? 0.1 : 0.05);
   const heading = t.mono ? P.soft : accent;
