@@ -537,7 +537,9 @@ function replyTo(env, settings) {
 }
 
 // Approve, then email it straight away. Only from 'pending_approval' (or 'draft').
-export async function approveInvoice(env, me, { id }) {
+// byHand: approved to be shared by the admin themselves (WhatsApp, a message, its link), not emailed:
+// it counts as sent, and its page opens for whoever has the link
+export async function approveInvoice(env, me, { id, byHand = false }) {
   id = positiveId(id);
   if (!id) return fail(400, "Which invoice?");
   const row = await readRow(env, id);
@@ -545,8 +547,8 @@ export async function approveInvoice(env, me, { id }) {
   if (["approved", "sent", "part_paid", "paid"].includes(row.status)) return { invoice: publicInvoice(env, row), repeated: true };
   if (row.status === "void") return fail(409, "That invoice was voided.");
   if (row.status === "rejected" || row.status === "failed") return fail(409, `That invoice ${row.status === "rejected" ? "was rejected" : "didn't send"}. Edit it (or just save it again) to send it for approval again.`);
-  if (!row.bill_email) return fail(409, "It has no email address to go to. Edit it and add one.");
-  if (!emailReady(env)) return fail(409, NOT_READY);
+  if (!byHand && !row.bill_email) return fail(409, "It has no email address to go to. Edit it and add one, or approve it to share by hand.");
+  if (!byHand && !emailReady(env)) return fail(409, NOT_READY);
   const hash = await invoiceHash(row);
   const now = nowIso();
   const { meta } = await env.DB.prepare(
@@ -560,9 +562,9 @@ export async function approveInvoice(env, me, { id }) {
     if (latest && ["approved", "sent", "part_paid", "paid"].includes(latest.status)) return { invoice: publicInvoice(env, latest), repeated: true };
     return fail(409, "It changed while you were looking at it. Check it again, then approve.");
   }
-  await logEntry(env, { invoice: id, event: "approved", by: me.id, detail: `${money(row.total_pence)}, emailed now` }).run();
+  await logEntry(env, { invoice: id, event: "approved", by: me.id, detail: `${money(row.total_pence)}, ${byHand ? "to share by hand (no email)" : "emailed now"}` }).run();
   console.log(`Invoice ${id} approved by ${me.id}`);
-  return { invoice: await sendApprovedInvoice(env, id) };
+  return { invoice: await sendApprovedInvoice(env, id, { byHand }) };
 }
 
 export async function rejectInvoice(env, me, { id, note }) {
@@ -714,7 +716,7 @@ export function invoiceEmail(env, settings, row) {
 }
 
 // Email an approved invoice. Only status 'approved' with an approval hash that still matches goes.
-export async function sendApprovedInvoice(env, id) {
+export async function sendApprovedInvoice(env, id, { byHand = false } = {}) {
   const row = await readRow(env, id);
   if (!row || row.status !== "approved") return publicInvoice(env, row);
   const failWith = async (error) => {
@@ -736,9 +738,25 @@ export async function sendApprovedInvoice(env, id) {
     ]);
     return getInvoice(env, id);
   }
-  if (!emailReady(env)) return failWith(NOT_READY);
-  const settings = await readSettings(env);
   const updated = Boolean(row.sent_at);
+  // (shared by hand: no email; it's sent the moment it's approved, its page open to its link)
+  const result = byHand ? { ok: true, id: null } : await emailApproved(env, id, row, updated);
+  if (!result.ok) return failWith(result.message);
+  const now = nowIso();
+  const statements = [
+    env.DB.prepare("UPDATE invoices SET status = 'sent', sent_at = ?, email_id = ?, error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'").bind(now, result.id || null, now, id),
+    logEntry(env, { invoice: id, event: "sent", by: "nova", detail: byHand ? `Approved to share by hand (WhatsApp, a message or its link; no email) (${money(row.total_pence)}, due ${dayText(row.due_date)})` : `${updated ? "The updated invoice emailed" : "Emailed"} to the client (${money(row.total_pence)}, due ${dayText(row.due_date)})` }),
+  ];
+  if (row.client_id) statements.push(...clientDelta(env, row.client_id, { invoiced: row.total_pence, owed: row.total_pence - row.paid_pence }, "nova"));
+  await env.DB.batch(statements);
+  // (an updated invoice with payments already on it: part paid, not just sent)
+  if (row.paid_pence > 0) await settle(env, id);
+  console.log(`Invoice ${id}: sent`);
+  return getInvoice(env, id);
+}
+async function emailApproved(env, id, row, updated) {
+  if (!emailReady(env)) return { ok: false, message: NOT_READY };
+  const settings = await readSettings(env);
   const email = invoiceEmail(env, settings, row);
   if (updated) email.subject = `Updated invoice ${invoiceNumber(row.seq)} from ${settings.business.name}`;
   // (the studio's own mail server, with Gmail as the backup: src/google/gmail.js)
@@ -751,18 +769,7 @@ export async function sendApprovedInvoice(env, id) {
     html: email.html,
     idempotencyKey: `invoice-${id}-${row.approved_hash.slice(0, 24)}`,
   }, { kind: "invoice", id });
-  if (!result.ok) return failWith(result.message);
-  const now = nowIso();
-  const statements = [
-    env.DB.prepare("UPDATE invoices SET status = 'sent', sent_at = ?, email_id = ?, error = NULL, updated_at = ? WHERE id = ? AND status = 'approved'").bind(now, result.id || null, now, id),
-    logEntry(env, { invoice: id, event: "sent", by: "nova", detail: `${updated ? "The updated invoice emailed" : "Emailed"} to the client (${money(row.total_pence)}, due ${dayText(row.due_date)})` }),
-  ];
-  if (row.client_id) statements.push(...clientDelta(env, row.client_id, { invoiced: row.total_pence, owed: row.total_pence - row.paid_pence }, "nova"));
-  await env.DB.batch(statements);
-  // (an updated invoice with payments already on it: part paid, not just sent)
-  if (row.paid_pence > 0) await settle(env, id);
-  console.log(`Invoice ${id}: sent`);
-  return getInvoice(env, id);
+  return result;
 }
 
 // "Send me a test": the email, once, to the admin who pressed it, marked [TEST], with a link to the
@@ -1476,7 +1483,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
   if (route === "/money/invoices/test-send") return answer(await testSendInvoice(env, me, { id: body.id, stage: body.stage, body: body.body }));
   if (takeBack) return answer(await removePayment(env, me, { paymentId: Number(takeBack[1]) }));
   if (reminder) return answer(await decideReminder(env, me, { id: Number(reminder[1]), approve: reminder[2] === "approve" }));
-  if (decide[2] === "approve") return answer(await approveInvoice(env, me, { id: Number(decide[1]) }));
+  if (decide[2] === "approve") return answer(await approveInvoice(env, me, { id: Number(decide[1]), byHand: body.byHand === true }));
   if (decide[2] === "reject") return answer(await rejectInvoice(env, me, { id: Number(decide[1]), note: body.note }));
   return answer(await voidInvoice(env, me, { id: Number(decide[1]), note: body.note }));
 }

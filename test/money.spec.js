@@ -649,6 +649,25 @@ describe("each invoice's own look", () => {
 	});
 });
 
+describe("sharing an invoice by hand", () => {
+	it("an admin approves it to share (WhatsApp, a message, its link): no email, even with no address; its page opens", async () => {
+		const inv = await write({ billEmail: "" });
+		expect((await portal(`money/invoices/${inv.id}/approve`, { body: {} })).status).toBe(409); // (no address to email)
+		const { staff } = await otherSignIns();
+		expect((await portal(`money/invoices/${inv.id}/approve`, { body: { byHand: true }, headers: staff })).status).toBe(403); // admins only
+		emails.length = 0;
+		const r = await portal(`money/invoices/${inv.id}/approve`, { body: { byHand: true } });
+		expect(r.status).toBe(200);
+		expect(r.data.invoice.status).toBe("sent");
+		expect(r.data.invoice.pageUrl).toMatch(/\/invoice\/[0-9a-f]{32}$/);
+		expect(emails).toHaveLength(0);
+		const page = await call(new Request(r.data.invoice.pageUrl.replace(/^https?:\/\/[^/]+/, BASE)));
+		expect(page.status).toBe(200);
+		const log = (await portal(`money/invoices/${inv.id}`)).data.log.map((l) => l.detail || "").join(" ");
+		expect(log).toContain("share by hand");
+	});
+});
+
 describe("starting the numbers again (testing)", () => {
 	it("an admin makes every invoice so far a TEST invoice (nothing deleted); the next is NS-0001", async () => {
 		const a = await writeAndSend();
