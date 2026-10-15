@@ -37,7 +37,8 @@ import { emailRecipients, mailReady, sendEmail } from "./enquiries.js";
 import { sendStudioEmail } from "./google/gmail.js";
 import { pounds as poundsText, toPence } from "./clients.js";
 import { createInvoiceCheckout, stripeOffline } from "./nova/stripe.js";
-import { INVOICE_MODES, INVOICE_THEMES, STAGES, studioCard, themeOf, themeId, catalogue, invoiceDocument, stageEmail, stageOf, stageSums } from "./invoicer.js";
+import { invoiceEmailParts } from "./invoice-email.js";
+import { INVOICE_MODES, INVOICE_THEMES, STAGES, themeId, catalogue, invoiceDocument, stageEmail, stageOf, stageSums } from "./invoicer.js";
 
 export const CATEGORIES = [
   "Equipment",
@@ -251,7 +252,7 @@ export function invoiceHash(row) {
     JSON.stringify(["nova-invoice-v1", row.client_id ?? null, row.bill_name, row.bill_email || null, row.bill_address || "", row.lines, Number(row.vat_rate) || 0, row.total_pence, row.issue_date, row.due_date, row.notes || ""])
   );
 }
-const reminderHash = (row, invoice) => sha256Hex(JSON.stringify(["nova-invoice-reminder-v1", row.invoice_id, row.body, invoice.bill_email || null, invoice.total_pence - invoice.paid_pence]));
+const reminderHash = (row, invoice) => sha256Hex(JSON.stringify(["nova-invoice-reminder-v2", row.kind || "reminder", row.invoice_id, row.body, invoice.bill_email || null, invoice.total_pence - invoice.paid_pence]));
 
 // ===== READING =====
 
@@ -335,7 +336,7 @@ export async function invoicePayments(env, id) {
 }
 
 function reminderShape(r) {
-  return { id: r.id, invoiceId: r.invoice_id, body: r.body, status: r.status, createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at, decidedByName: r.decided_by_name || null, decidedAt: r.decided_at || null, sentAt: r.sent_at || null, error: r.error || null };
+  return { id: r.id, invoiceId: r.invoice_id, kind: r.kind || "reminder", body: r.body, status: r.status, createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at, decidedByName: r.decided_by_name || null, decidedAt: r.decided_at || null, sentAt: r.sent_at || null, error: r.error || null };
 }
 const REMINDER_SELECT = "SELECT r.*, s.display_name AS decided_by_name FROM invoice_reminders r LEFT JOIN staff s ON s.id = r.decided_by";
 
@@ -399,7 +400,7 @@ async function checkFields(env, input, base = null, settings = null) {
   return { client_id: clientId, bill_name: name, bill_email, bill_address, lines: JSON.stringify(lines), vat_rate, ...sums, issue_date, due_date, notes };
 }
 
-const WRITERS = { agent: "Agent", "staff-chat": "Portal's staff chat" };
+const WRITERS = { agent: "Agent", "staff-chat": "Portal's staff chat", nova: "Nova Bot" };
 
 // A quiet ping to the admins' phones (they're the ones who can approve). Not to the person who
 // wrote it, if that's an admin.
@@ -618,45 +619,27 @@ export async function previewDocument(env, input = {}) {
 
 // ===== THE EMAILS =====
 
-// An email in the studio's look: a slim near-black band with NOVACANE STUDIOS spaced out (no pictures:
-// many inboxes hide them), a line in the theme's colours, calm text and one button in the theme's colour.
-// Inline styles and tables only, so it looks the same in Gmail, Outlook and phones.
-function emailParts(env, settings, { greeting, paragraphs, link, linkText }) {
-  const from = settings.business.name || "Novacane Studios";
-  const t = themeOf(settings.invoiceTheme);
-  const accent = t.mono ? "#1C1618" : t.accent;
-  const accent2 = t.mono ? "#1C1618" : t.accent2;
-  const band = t.light ? "#120C10" : t.band;
-  const card = studioCard(settings);
-  const text = [greeting, ...paragraphs, `${linkText}: ${link}`, `Thank you,\n${from}`, `${card.address} · ${card.phone} · ${card.website}`].join("\n\n");
-  const para = (p) => `<p style="margin:0 0 14px;">${esc(p).replace(/\n/g, "<br>")}</p>`;
-  const html = `<div style="background:#f1eef0;padding:24px 10px;font-family:Futura,'Century Gothic','Avenir Next',system-ui,-apple-system,'Segoe UI',sans-serif;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-collapse:collapse;">
-<tr><td style="background:${band};padding:20px 28px;color:#ffffff;"><span style="font-size:17px;letter-spacing:6px;font-weight:600;">NOVACANE</span><br><span style="font-size:10px;letter-spacing:5px;color:#e8d9e6;">STUDIOS</span></td></tr>
-<tr><td style="height:3px;line-height:3px;font-size:0;background:${accent};background-image:linear-gradient(90deg,${accent},${accent2});">&nbsp;</td></tr>
-<tr><td style="padding:28px 28px 8px;font-size:16px;line-height:1.55;color:#1c1618;">
-${para(greeting)}${paragraphs.map(para).join("")}
-<p style="margin:22px 0 24px;"><a href="${esc(link)}" style="display:inline-block;padding:12px 26px;border-radius:6px;background:${accent};color:#ffffff;text-decoration:none;font-weight:600;letter-spacing:.3px;">${esc(linkText)}</a></p>
-<p style="margin:0 0 20px;">Thank you,<br>${esc(from)}</p></td></tr>
-<tr><td style="padding:14px 28px 22px;border-top:1px solid #ece6e8;font-size:12px;line-height:1.6;color:#6b6266;">${esc(card.address)}<br>${esc(card.phone)} · ${esc(card.website)}</td></tr>
-</table></div>`;
-  return { text, html };
+// The invoice emails: the Nova invoice itself (src/invoice-email.js: the Invoicer's design, built for
+// email apps, with a plain-text twin), with a short message above it
+function invoiceMail(env, settings, row, payments, stage, { greeting, paragraphs }) {
+  const today = ukToday();
+  return invoiceEmailParts({ invoice: publicInvoice(env, row, today), payments, stage, settings, today, base: publicUrl(env), link: `${publicUrl(env)}/invoice/${row.token}`, greeting, paragraphs });
 }
+const firstName = (row) => `Hi ${String(row.bill_name || "").trim().split(/\s+/)[0] || "there"},`;
 
 // The invoice email, in the words of its stage: a new invoice asks for the deposit (with the rest due
 // later), one already part paid asks for what's left
 export function invoiceEmail(env, settings, row) {
   const number = invoiceNumber(row.seq);
-  const link = `${publicUrl(env)}/invoice/${row.token}`;
   const today = ukToday();
   const invoice = publicInvoice(env, row, today);
   const stage = stageOf(invoice, today);
   const sums = stageSums(invoice, [], stage, today);
   const paragraphs =
     stage === "deposit"
-      ? [`Thank you for booking with ${settings.business.name}. Here's invoice ${number} for your session, ${money(row.total_pence)} in all.`, `To secure your booking, please pay the ${sums.depositPercent}% deposit of ${money(sums.dueNowPence)} now. The remaining ${money(sums.laterPence)} is due by ${dayText(row.due_date)}.`, "You can see the invoice, save it as a PDF and pay it on its page:"]
-      : [`Here's invoice ${number} from ${settings.business.name}: ${money(sums.dueNowPence)} is due by ${dayText(row.due_date)}.`, "You can see the invoice, save it as a PDF and pay it on its page:"];
-  const parts = emailParts(env, settings, { greeting: `Hi ${row.bill_name.split(" ")[0]},`, paragraphs, link, linkText: stage === "deposit" ? "See the invoice and pay the deposit" : "See and pay the invoice" });
+      ? [`Thank you for booking with ${settings.business.name}. Here's invoice ${number} for your session, ${money(row.total_pence)} in all.`, `To secure your booking, please pay the ${sums.depositPercent}% deposit of ${money(sums.dueNowPence)} now. The remaining ${money(sums.laterPence)} is due by ${dayText(row.due_date)}. You can pay, and save the invoice as a PDF, on its page.`]
+      : [`Here's invoice ${number} from ${settings.business.name}: ${money(sums.dueNowPence)} is due by ${dayText(row.due_date)}. You can pay, and save it as a PDF, on its page.`];
+  const parts = invoiceMail(env, settings, row, [], stage, { greeting: firstName(row), paragraphs });
   return { subject: stage === "deposit" ? `Invoice ${number} from ${settings.business.name}: deposit to secure your booking` : `Invoice ${number} from ${settings.business.name}`, ...parts };
 }
 
@@ -710,7 +693,8 @@ export async function sendApprovedInvoice(env, id) {
 
 // "Send me a test": the email, once, to the admin who pressed it, marked [TEST], with a link to the
 // invoice's preview in Portal (the client's page only opens once it's really been sent)
-export async function testSendInvoice(env, me, { id }) {
+// stage and body (from the Invoicer): the email at that stage with that message, as the client would get it
+export async function testSendInvoice(env, me, { id, stage = null, body = "" }) {
   id = positiveId(id);
   if (!id) return fail(400, "Which invoice?");
   const row = await readRow(env, id);
@@ -723,7 +707,14 @@ export async function testSendInvoice(env, me, { id }) {
   if (last && Date.now() - Date.parse(last) < TEST_GAP_MS) return fail(429, "One just went. Wait half a minute before sending another.");
   await env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(key, nowIso()).run();
   const settings = await readSettings(env);
-  const email = invoiceEmail(env, settings, row);
+  let email = invoiceEmail(env, settings, row);
+  if (STAGES.includes(stage) && (stage !== "deposit" || String(body || "").trim())) {
+    const paragraphs = String(body || "").slice(0, 4000).split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    const greeting = paragraphs.length > 1 && /^(hi|hello|dear)\b/i.test(paragraphs[0]) ? paragraphs.shift() : firstName(row);
+    const mail = invoiceMail(env, settings, row, await invoicePayments(env, id), stage, { greeting, paragraphs });
+    const number = invoiceNumber(row.seq);
+    email = { ...mail, subject: stage === "paid" ? `Receipt for invoice ${number} from ${settings.business.name}: paid in full, thank you` : stage === "overdue" ? `Reminder: invoice ${number} from ${settings.business.name} is past due` : stage === "balance" ? `Reminder: invoice ${number} from ${settings.business.name}` : email.subject };
+  }
   const preview = `${publicUrl(env)}/app/api/money/invoices/${id}/preview`;
   const result = await sendEmail(env, {
     to: [to],
@@ -731,7 +722,7 @@ export async function testSendInvoice(env, me, { id }) {
     replyTo: replyTo(env, settings),
     subject: `[TEST] ${email.subject}`,
     text: `This is a test of invoice ${invoiceNumber(row.seq)}, sent only to you from Portal. The client's link opens once it's approved and sent; the preview (signed in to Portal) is at ${preview}\n\n---\n\n${email.text}`,
-    html: `<p style="font-family:system-ui,sans-serif;color:#6b6270;">This is a test, sent only to you from Portal. <a href="${esc(preview)}">See the invoice's preview</a> (signed in to Portal); the client's link opens once it's approved and sent.</p><hr>${email.html}`,
+    html: email.html.replace(/(<body[^>]*>)/, `$1<div style="font-family:system-ui,sans-serif;font-size:13px;color:#6b6270;text-align:center;padding:10px 12px;">This is a test, sent only to you. <a href="${esc(preview)}" style="color:#6b6270;">See the invoice's preview</a> (signed in); the client's link opens once it's approved and sent.</div>`),
   });
   return result.ok ? { ok: true, to, message: `Test sent to ${to}. Check the inbox (and spam).` } : fail(502, result.message);
 }
@@ -779,6 +770,11 @@ export async function recordPayment(env, by, { invoiceId, amount, amountPence, p
   if (row.client_id) statements.push(...clientDelta(env, row.client_id, { owed: -pence }, by));
   await env.DB.batch(statements);
   console.log(`Invoice ${id}: payment recorded (${how})`);
+  // Paid in full: its receipt is written now, and waits for an admin's Approve like every email
+  if (result.status === "paid" && result.before !== "paid" && row.bill_email) {
+    const r = await draftReminder(env, "nova", { invoiceId: id, kind: "receipt" }).catch((err) => ({ error: String(err?.message || err) }));
+    if (r?.error) console.log(`Invoice ${id}: its receipt couldn't be written (${r.status || "error"})`);
+  }
   return { invoice: await getInvoice(env, id) };
 }
 
@@ -809,32 +805,39 @@ export async function invoicePaidByStripe(env, { invoiceId, amountPence, stripeI
 
 // ===== REMINDERS =====
 
-function reminderText(env, settings, invoice) {
+function reminderText(env, settings, invoice, kind = "reminder") {
+  const number = invoiceNumber(invoice.seq);
+  if (kind === "receipt") return `${firstName(invoice)}\n\nThank you! We've received your payment and invoice ${number} (${money(invoice.total_pence)}) is paid in full. Your receipt is below.\n\nIt was a pleasure working on your music. We'd love to have you back in the studio for the next one.`;
   const balance = invoice.total_pence - invoice.paid_pence;
-  return `Hi ${invoice.bill_name.split(" ")[0]},\n\nJust a friendly reminder that invoice ${invoiceNumber(invoice.seq)} for ${money(balance)}${invoice.paid_pence ? " (what's left of it)" : ""} was due on ${dayText(invoice.due_date)}. If you've already paid, thank you, and please ignore this.`;
+  return `${firstName(invoice)}\n\nJust a friendly reminder that invoice ${number} for ${money(balance)}${invoice.paid_pence ? " (what's left of it)" : ""} was due on ${dayText(invoice.due_date)}. If you've already paid, thank you, and please ignore this.`;
 }
 
-// A reminder email for an unpaid invoice, waiting for an admin's Approve
-export async function draftReminder(env, by, { invoiceId, body }) {
+// An email for a sent invoice, waiting for an admin's Approve: a reminder (unpaid: the balance due, or
+// overdue) or a receipt (paid in full; written by itself when it's paid, see recordPayment)
+export async function draftReminder(env, by, { invoiceId, body, kind = "reminder" }) {
   const id = positiveId(invoiceId);
   if (!id) return fail(400, "Which invoice?");
+  if (!["reminder", "receipt"].includes(kind)) return fail(400, "kind: reminder or receipt.");
   const invoice = await readRow(env, id);
   if (!invoice) return fail(404, "That invoice doesn't exist.");
-  if (!OPEN.includes(invoice.status)) return fail(409, "Reminders are only for invoices that have been sent and aren't paid.");
+  if (kind === "receipt" && invoice.status !== "paid") return fail(409, "A receipt is for an invoice that's paid in full.");
+  if (kind === "reminder" && !OPEN.includes(invoice.status)) return fail(409, "Reminders are only for invoices that have been sent and aren't paid.");
   if (!invoice.bill_email) return fail(409, "That invoice has no email address.");
-  const waiting = await env.DB.prepare("SELECT id FROM invoice_reminders WHERE invoice_id = ? AND status = 'pending_approval'").bind(id).first();
-  if (waiting) return fail(409, "A reminder for it is already waiting for approval.");
+  const waiting = await env.DB.prepare("SELECT id FROM invoice_reminders WHERE invoice_id = ? AND kind = ? AND status = 'pending_approval'").bind(id, kind).first();
+  if (waiting) return fail(409, `A ${kind} for it is already waiting for approval.`);
+  if (kind === "receipt" && (await env.DB.prepare("SELECT id FROM invoice_reminders WHERE invoice_id = ? AND kind = 'receipt' AND status = 'sent'").bind(id).first()))
+    return fail(409, "Its receipt has already been sent.");
   const settings = await readSettings(env);
-  const text = cleanText(body, 4000) || reminderText(env, settings, invoice);
+  const text = cleanText(body, 4000) || reminderText(env, settings, invoice, kind);
   if (text.length < 10) return fail(400, "body: write the reminder (at least a sentence).");
   const now = nowIso();
-  const row = await env.DB.prepare("INSERT INTO invoice_reminders (invoice_id, body, status, created_by, created_at, updated_at) VALUES (?, ?, 'pending_approval', ?, ?, ?) RETURNING id")
-    .bind(id, text, String(by), now, now)
+  const row = await env.DB.prepare("INSERT INTO invoice_reminders (invoice_id, kind, body, status, created_by, created_at, updated_at) VALUES (?, ?, ?, 'pending_approval', ?, ?, ?) RETURNING id")
+    .bind(id, kind, text, String(by), now, now)
     .first();
-  await logEntry(env, { invoice: id, event: "reminder", by, detail: "A reminder is waiting for approval" }).run();
+  await logEntry(env, { invoice: id, event: "reminder", by, detail: kind === "receipt" ? "A receipt is waiting for approval" : "A reminder is waiting for approval" }).run();
   await pingAdmins(env, {
-    title: "Payment reminder to approve",
-    body: `${whoWrote(by)} wrote a reminder for invoice ${invoiceNumber(invoice.seq)} (${invoice.bill_name}). Nothing is emailed until an admin approves it in Portal → Money.`,
+    title: kind === "receipt" ? "Receipt to approve" : "Payment reminder to approve",
+    body: `${kind === "receipt" ? `Invoice ${invoiceNumber(invoice.seq)} (${invoice.bill_name}) is paid in full: its receipt is ready` : `${whoWrote(by)} wrote a reminder for invoice ${invoiceNumber(invoice.seq)} (${invoice.bill_name})`}. Nothing is emailed until an admin approves it in the Invoicer or Portal → Money.`,
     url: `/portal/?view=money&invoice=${id}`,
     tag: `invoice-${id}-reminder`,
     by,
@@ -852,10 +855,12 @@ export async function decideReminder(env, me, { id, approve }) {
   const now = nowIso();
   if (!approve) {
     await env.DB.prepare("UPDATE invoice_reminders SET status = 'rejected', decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND status = 'pending_approval'").bind(me.id, now, now, rid).run();
-    await logEntry(env, { invoice: r.invoice_id, event: "reminder", by: me.id, detail: "Reminder rejected" }).run();
+    await logEntry(env, { invoice: r.invoice_id, event: "reminder", by: me.id, detail: r.kind === "receipt" ? "Receipt rejected" : "Reminder rejected" }).run();
     return { reminder: reminderShape(await env.DB.prepare(`${REMINDER_SELECT} WHERE r.id = ?`).bind(rid).first()) };
   }
-  if (!OPEN.includes(invoice.status)) return fail(409, invoice.status === "paid" ? "It's been paid since, so no reminder is needed. Reject this one." : "That invoice isn't waiting for payment.");
+  const receipt = r.kind === "receipt";
+  if (receipt && invoice.status !== "paid") return fail(409, "It isn't paid in full any more (a payment was taken back), so the receipt can't go. Reject this one.");
+  if (!receipt && !OPEN.includes(invoice.status)) return fail(409, invoice.status === "paid" ? "It's been paid since, so no reminder is needed. Reject this one." : "That invoice isn't waiting for payment.");
   if (!emailReady(env)) return fail(409, NOT_READY);
   const hash = await reminderHash(r, invoice);
   const { meta } = await env.DB.prepare("UPDATE invoice_reminders SET status = 'approved', approved_hash = ?, decided_by = ?, decided_at = ?, updated_at = ? WHERE id = ? AND status = 'pending_approval' AND updated_at = ?")
@@ -866,15 +871,23 @@ export async function decideReminder(env, me, { id, approve }) {
   const approved = await env.DB.prepare("SELECT * FROM invoice_reminders WHERE id = ?").bind(rid).first();
   if (approved.approved_hash !== (await reminderHash(approved, invoice))) return fail(409, "It changed after it was approved, so it wasn't sent.");
   const settings = await readSettings(env);
-  const link = `${publicUrl(env)}/invoice/${invoice.token}`;
   const paragraphs = approved.body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   const greeting = paragraphs.length > 1 && /^(hi|hello|dear)\b/i.test(paragraphs[0]) ? paragraphs.shift() : "Hello,";
-  const email = emailParts(env, settings, { greeting, paragraphs, link, linkText: "See and pay the invoice" });
+  // The invoice itself under the message, at its stage now (a receipt: paid in full)
+  const today = ukToday();
+  const stage = receipt ? "paid" : stageOf(publicInvoice(env, invoice, today), today);
+  const email = invoiceMail(env, settings, invoice, await invoicePayments(env, invoice.id), stage, { greeting, paragraphs });
+  const number = invoiceNumber(invoice.seq);
+  const subject = receipt
+    ? `Receipt for invoice ${number} from ${settings.business.name}: paid in full, thank you`
+    : stage === "overdue"
+      ? `Reminder: invoice ${number} from ${settings.business.name} is past due`
+      : `Reminder: invoice ${number} from ${settings.business.name}`;
   const result = await sendStudioEmail(env, {
     to: [invoice.bill_email],
     from: invoiceFrom(env),
     replyTo: replyTo(env, settings),
-    subject: `Reminder: invoice ${invoiceNumber(invoice.seq)} from ${settings.business.name}`,
+    subject,
     text: email.text,
     html: email.html,
     idempotencyKey: `invoice-reminder-${rid}`,
@@ -883,13 +896,13 @@ export async function decideReminder(env, me, { id, approve }) {
   if (!result.ok) {
     await env.DB.batch([
       env.DB.prepare("UPDATE invoice_reminders SET status = 'failed', error = ?, updated_at = ? WHERE id = ?").bind(result.message, done, rid),
-      logEntry(env, { invoice: r.invoice_id, event: "failed", by: "nova", detail: "Reminder didn't send: " + result.message }),
+      logEntry(env, { invoice: r.invoice_id, event: "failed", by: "nova", detail: `${receipt ? "Receipt" : "Reminder"} didn't send: ` + result.message }),
     ]);
     return fail(502, result.message);
   }
   await env.DB.batch([
     env.DB.prepare("UPDATE invoice_reminders SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?").bind(done, done, rid),
-    logEntry(env, { invoice: r.invoice_id, event: "reminder", by: "nova", detail: "Reminder emailed to the client" }),
+    logEntry(env, { invoice: r.invoice_id, event: "reminder", by: "nova", detail: receipt ? "Receipt emailed to the client" : "Reminder emailed to the client" }),
   ]);
   return { reminder: reminderShape(await env.DB.prepare(`${REMINDER_SELECT} WHERE r.id = ?`).bind(rid).first()) };
 }
@@ -1177,7 +1190,7 @@ function pageResponse(html, nonce, status = 200, frame = false) {
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'nonce-${nonce}'; form-action 'self' https://checkout.stripe.com; frame-ancestors ${frame ? "'self'" : "'none'"}; base-uri 'none'`,
+      "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; img-src data: 'self'; font-src data:; script-src 'nonce-${nonce}'; form-action 'self' https://checkout.stripe.com; frame-ancestors ${frame ? "'self'" : "'none'"}; base-uri 'none'`,
     },
   });
 }
@@ -1300,7 +1313,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
   }
   // The Invoicer (src/invoicer.js): the price list, and an invoice at one of its stages (read-only)
   if (route === "/money/catalogue" && get) return json({ ...catalogue(), themes: INVOICE_THEMES.map(({ id, name, band, accent }) => ({ id, name, band, accent })), modes: INVOICE_MODES, ...(({ invoiceTheme, invoiceMode }) => ({ theme: invoiceTheme, mode: invoiceMode }))(await readSettings(env)) });
-  const staged = route.match(/^\/money\/invoices\/(\d{1,12})\/(stage|document)$/);
+  const staged = route.match(/^\/money\/invoices\/(\d{1,12})\/(stage|document|email)$/);
   if (staged && get) {
     const row = await readRow(env, Number(staged[1]));
     if (!row) return json({ error: "That invoice doesn't exist." }, 404);
@@ -1310,6 +1323,15 @@ export async function handleMoneyForStaff(request, env, me, route) {
     const autoStage = stageOf(invoice, today);
     const asked = url.searchParams.get("stage");
     const stage = STAGES.includes(asked) ? asked : autoStage;
+    // The email as the client gets it, at this stage (the message typed in the Invoicer above the invoice)
+    if (staged[2] === "email") {
+      const text = String(url.searchParams.get("body") || "").slice(0, 4000);
+      const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+      const greeting = paragraphs.length > 1 && /^(hi|hello|dear)\b/i.test(paragraphs[0]) ? paragraphs.shift() : firstName(row);
+      const mail = stage === "deposit" && !text ? invoiceEmail(env, settings, row) : invoiceMail(env, settings, row, payments, stage, { greeting, paragraphs });
+      const nonce = newNonce();
+      return pageResponse(mail.html, nonce, 200, true);
+    }
     if (staged[2] === "document") {
       const nonce = newNonce();
       // ?theme= one of the invoice's themes and ?mode=bright|dark (else the studio's chosen ones); ?note= the Notes box's words for this copy
@@ -1348,7 +1370,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
   const pay = route.match(/^\/money\/invoices\/(\d{1,12})\/payments$/);
   if (pay) return answer(await recordPayment(env, me.id, { invoiceId: Number(pay[1]), amount: body.amount, paidOn: body.paidOn, method: body.method === "stripe" ? "other" : body.method, note: body.note }));
   const remind = route.match(/^\/money\/invoices\/(\d{1,12})\/reminder$/);
-  if (remind) return answer(await draftReminder(env, me.id, { invoiceId: Number(remind[1]), body: body.body }));
+  if (remind) return answer(await draftReminder(env, me.id, { invoiceId: Number(remind[1]), body: body.body, kind: body.kind === "receipt" ? "receipt" : "reminder" }));
   if (route === "/money/expenses") return answer(await addExpense(env, me.id, body));
   const exp = route.match(/^\/money\/expenses\/(\d{1,12})\/(edit|confirm|delete)$/);
   if (exp) {
@@ -1364,7 +1386,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
   if (!adminOnly) return null;
   if (!canDecide(me)) return json({ error: "Only an admin, with Portal open in a browser and signed in, can do that.", onlineUrl: `${publicUrl(env)}/portal/?view=money` }, 403);
   if (route === "/money/settings") return answer(await saveSettings(env, me, body));
-  if (route === "/money/invoices/test-send") return answer(await testSendInvoice(env, me, { id: body.id }));
+  if (route === "/money/invoices/test-send") return answer(await testSendInvoice(env, me, { id: body.id, stage: body.stage, body: body.body }));
   if (takeBack) return answer(await removePayment(env, me, { paymentId: Number(takeBack[1]) }));
   if (reminder) return answer(await decideReminder(env, me, { id: Number(reminder[1]), approve: reminder[2] === "approve" }));
   if (decide[2] === "approve") return answer(await approveInvoice(env, me, { id: Number(decide[1]) }));

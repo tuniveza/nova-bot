@@ -248,7 +248,7 @@ function bandSky(t, lightBand, from, to) {
 }
 
 // A stage, in a few calm words, and its colour (the theme's accent, or a muted red or green)
-const STAGE_LINES = {
+export const STAGE_LINES = {
   deposit: { colour: "accent", text: (s) => `Deposit due to secure your booking: ${s.depositPercent}% now, the rest by the session` },
   balance: { colour: "ink", text: () => "Balance due: the remaining amount for your session" },
   overdue: { colour: "#A3233A", text: (s) => `Past due: this invoice was due on ${longDay(s.dueBy)}` },

@@ -535,3 +535,58 @@ describe("the Invoicer", () => {
 		expect((await portal("money/catalogue", { headers: {} })).status).toBe(401);
 	});
 });
+
+// ===== THE NOVA INVOICE AS AN EMAIL, AND RECEIPTS =====
+
+describe("invoice emails are the Nova invoice", () => {
+	it("the invoice email is the invoice itself, as HTML (band, items, the deposit, the button) with a whole text twin", async () => {
+		await writeAndSend();
+		const e = emails[0];
+		expect(e.html).toMatch(/\/invoice-email\/band-night-bright-invoice\.jpg/);
+		expect(e.html).toContain("alt=\"NOVACANE STUDIOS · INVOICE\"");
+		expect(e.html).toContain("Deposit due now (50%)");
+		expect(e.html).toContain("£175.00");
+		expect(e.html).toContain("Mixing, per song");
+		expect(e.html).toMatch(/Pay £175\.00 or see the invoice/);
+		expect(e.html).not.toMatch(/<svg|<script|url\(data:/); // (nothing email apps don't show)
+		// The text twin: everything, for email apps without HTML
+		expect(e.text).toContain("INVOICE NS-0001");
+		expect(e.text).toContain("Mixing, per song");
+		expect(e.text).toContain("Deposit due now (50%)");
+		expect(e.text).toMatch(/\/invoice\/[0-9a-f]{32}/);
+	});
+
+	it("paid in full: its receipt is written by itself, waits for an admin, then goes once (the invoice as a RECEIPT)", async () => {
+		const inv = await writeAndSend();
+		emails.length = 0;
+		await portal(`money/invoices/${inv.id}/payments`, { body: { amount: "349.99", method: "bank", paidOn: "2026-10-01" } });
+		expect(emails).toHaveLength(0); // nothing goes by itself
+		const waiting = await env.DB.prepare("SELECT * FROM invoice_reminders WHERE invoice_id = ?").bind(inv.id).all();
+		expect(waiting.results).toHaveLength(1);
+		expect(waiting.results[0]).toMatchObject({ kind: "receipt", status: "pending_approval", created_by: "nova" });
+		// No second one while it waits
+		expect((await portal(`money/invoices/${inv.id}/reminder`, { body: { kind: "receipt" } })).status).toBe(409);
+		// A reminder can't be written for a paid invoice
+		expect((await portal(`money/invoices/${inv.id}/reminder`, { body: {} })).status).toBe(409);
+		const sent = await portal(`money/reminders/${waiting.results[0].id}/approve`, { body: {} });
+		expect(sent.status).toBe(200);
+		expect(sent.data.reminder).toMatchObject({ kind: "receipt", status: "sent" });
+		expect(emails).toHaveLength(1);
+		expect(emails[0].subject).toBe("Receipt for invoice NS-0001 from Novacane Studios: paid in full, thank you");
+		expect(emails[0].html).toMatch(/band-night-bright-receipt\.jpg/);
+		expect(emails[0].html).toContain("£0.00 (paid in full)");
+		expect(emails[0].text).toContain("RECEIPT NS-0001");
+		// Sent once: not again
+		expect((await portal(`money/invoices/${inv.id}/reminder`, { body: { kind: "receipt" } })).status).toBe(409);
+	});
+
+	it("a reminder shows the invoice at its stage now (overdue: past due)", async () => {
+		const inv = await writeAndSend({ issueDate: "2026-01-01", dueDate: "2026-01-10" });
+		emails.length = 0;
+		const r = await portal(`money/invoices/${inv.id}/reminder`, { body: {} });
+		await portal(`money/reminders/${r.data.reminder.id}/approve`, { body: {} });
+		expect(emails[0].subject).toMatch(/is past due$/);
+		expect(emails[0].html).toContain("Past due: this invoice was due on 10 January 2026");
+		expect(emails[0].text).toContain("Remaining balance");
+	});
+});
