@@ -15,6 +15,7 @@
 //   GET /app/api/money/invoices/:id/stage?stage=      -> { stage, autoStage, sums, email, invoice, payments }
 //   GET /app/api/money/invoices/:id/document?stage=   -> the branded invoice, a page
 
+import { LOGO_DATA_URL } from "./invoicer-logo.js";
 import { SESSION_TYPES, DEPOSIT_PERCENT, CANCEL_NOTICE_HOURS, depositFor } from "./nova/studio.js";
 
 export const STAGES = ["deposit", "balance", "overdue", "paid"];
@@ -173,18 +174,8 @@ export function stageEmail(invoice, sums, stage, settings) {
 
 // ===== THE PAGE: the invoice itself, to print or save as a PDF =====
 
-// The Novacane sigil (Nova Agent's icon: the N in its orbit, under the night sky), drawn in the page so
-// it prints and goes into the PDF with no image to fetch
-const SIGIL = `<svg class="sigil" viewBox="0 0 512 512" role="img" aria-label="Novacane Studios sigil"><defs>
-<radialGradient id="nv-sky" cx="50%" cy="15%" r="95%"><stop offset="0" stop-color="#B01D68"/><stop offset=".42" stop-color="#25194D"/><stop offset="1" stop-color="#06040D"/></radialGradient>
-<radialGradient id="nv-neb" cx="88%" cy="92%" r="55%"><stop offset="0" stop-color="#7A1F86" stop-opacity=".75"/><stop offset="1" stop-color="#7A1F86" stop-opacity="0"/></radialGradient>
-<linearGradient id="nv-letter" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD1EA"/><stop offset=".5" stop-color="#FF5FA8"/><stop offset="1" stop-color="#C7A4FF"/></linearGradient>
-<clipPath id="nv-round"><rect width="512" height="512" rx="112"/></clipPath></defs>
-<g clip-path="url(#nv-round)"><rect width="512" height="512" fill="url(#nv-sky)"/><rect width="512" height="512" fill="url(#nv-neb)"/>
-<g fill="#fff"><circle cx="70" cy="90" r="5" opacity=".8"/><circle cx="440" cy="70" r="4" opacity=".6"/><circle cx="462" cy="330" r="4.5" opacity=".6"/><circle cx="80" cy="420" r="3.5" opacity=".55"/><circle cx="290" cy="470" r="3" opacity=".5"/><circle cx="380" cy="160" r="3" opacity=".5"/></g>
-<path d="M365.2 179.5A133.3 133.3 0 0 1 179.5 365.2M146.8 332.5A133.3 133.3 0 0 1 332.5 146.8M148 364 246.7 196M262.7 206.7 276 309.3M292 316 364 148" fill="none" stroke="#FF5FA8" stroke-width="44" stroke-linecap="round" opacity=".28"/>
-<path d="M365.2 179.5A133.3 133.3 0 0 1 179.5 365.2M146.8 332.5A133.3 133.3 0 0 1 332.5 146.8M148 364 246.7 196M262.7 206.7 276 309.3M292 316 364 148" fill="none" stroke="url(#nv-letter)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="256" cy="256" r="164" fill="none" stroke="url(#nv-letter)" stroke-opacity=".22" stroke-width="4"/></g></svg>`;
+// The studio's logo (from novacane.co.uk), in the page so it prints and goes into the PDF
+const LOGO = `<img class="sigil" src="${LOGO_DATA_URL}" alt="Novacane Studios logo" width="68" height="68">`;
 
 const BANNERS = {
   deposit: { colour: "#7B2CBF", text: (s) => `Action required: ${s.depositPercent}% deposit due to secure your booking` },
@@ -283,7 +274,7 @@ a{color:#7B2CBF}
 ${receipt ? '<div class="stamp" aria-hidden="true">PAID</div>' : ""}
 <div class="in">
 <header>
-  <div><div class="brand">${SIGIL}<div class="mark" aria-label="${esc(card.name)}"><b>NOVACANE</b><span>STUDIOS</span></div></div>
+  <div><div class="brand">${LOGO}<div class="mark" aria-label="${esc(card.name)}"><b>NOVACANE</b><span>STUDIOS</span></div></div>
   <div class="studio">${esc(card.address)}<br>${esc(card.phone)} · ${esc(card.email)}<br>${esc(card.website)}${card.vatNumber ? `<br>VAT number ${esc(card.vatNumber)}` : ""}</div></div>
   <div class="meta">${stage === "overdue" ? '<div class="badge">Overdue notice</div>' : ""}${receipt ? '<div class="badge" style="border-color:#0F7B4A;color:#0F7B4A">Paid in full</div>' : ""}
     <h1>${receipt ? "RECEIPT" : "INVOICE"}</h1>

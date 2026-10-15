@@ -1105,7 +1105,7 @@ function pageResponse(html, nonce, status = 200, frame = false) {
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; form-action 'self' https://checkout.stripe.com; frame-ancestors ${frame ? "'self'" : "'none'"}; base-uri 'none'`,
+      "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'nonce-${nonce}'; form-action 'self' https://checkout.stripe.com; frame-ancestors ${frame ? "'self'" : "'none'"}; base-uri 'none'`,
     },
   });
 }
