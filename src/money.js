@@ -721,7 +721,7 @@ export async function testSendInvoice(env, me, { id, stage = null, body = "" }) 
     from: invoiceFrom(env),
     replyTo: replyTo(env, settings),
     subject: `[TEST] ${email.subject}`,
-    text: `This is a test of invoice ${invoiceNumber(row.seq)}, sent only to you from Portal. The client's link opens once it's approved and sent; the preview (signed in to Portal) is at ${preview}\n\n---\n\n${email.text}`,
+    text: `This is a test of invoice ${invoiceNumber(row.seq)}, sent only to you. The client's link opens once it's approved and sent; the preview (signed in) is at ${preview}\n\n---\n\n${email.text}`,
     html: email.html.replace(/(<body[^>]*>)/, `$1<div style="font-family:system-ui,sans-serif;font-size:13px;color:#6b6270;text-align:center;padding:10px 12px;">This is a test, sent only to you. <a href="${esc(preview)}" style="color:#6b6270;">See the invoice's preview</a> (signed in); the client's link opens once it's approved and sent.</div>`),
   });
   return result.ok ? { ok: true, to, message: `Test sent to ${to}. Check the inbox (and spam).` } : fail(502, result.message);
