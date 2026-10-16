@@ -2848,3 +2848,8 @@ html.nv-page-locked body {
   -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 44%, rgba(0, 0, 0, .7) 52%, rgba(0, 0, 0, .38) 60%, rgba(0, 0, 0, .16) 70%, rgba(0, 0, 0, .06) 84%, rgba(0, 0, 0, .03) 100%);
   mask-image: linear-gradient(to bottom, #000 0%, #000 44%, rgba(0, 0, 0, .7) 52%, rgba(0, 0, 0, .38) 60%, rgba(0, 0, 0, .16) 70%, rgba(0, 0, 0, .06) 84%, rgba(0, 0, 0, .03) 100%);
 }
+/* (the peaks' line is see-through too: it lights the edge softly and never hides the words, which
+   pass under it and show straight through it) */
+.nv-peak-lines { z-index: 2; opacity: .5; mix-blend-mode: screen; filter: drop-shadow(0 0 3px rgba(255, 95, 168, .45)); }
+.nv-peak-lines path { stroke: rgba(255, 150, 205, .55); stroke-width: 1.1px; }
+#nv-chat-messages { z-index: 3; }
