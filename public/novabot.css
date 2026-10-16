@@ -2853,3 +2853,8 @@ html.nv-page-locked body {
 .nv-peak-lines { z-index: 2; opacity: .5; mix-blend-mode: screen; filter: drop-shadow(0 0 3px rgba(255, 95, 168, .45)); }
 .nv-peak-lines path { stroke: rgba(255, 150, 205, .55); stroke-width: 1.1px; }
 #nv-chat-messages { z-index: 3; }
+/* (lite mode too: the messages reach up between the peak lines, as everywhere else) */
+#nv-chat.nv-lite #nv-chat-messages {
+  margin-top: calc(-1 * var(--nv-peaks, 34px));
+  padding-top: calc(22px + var(--nv-peaks, 34px));
+}

@@ -36,6 +36,8 @@ describe("the options (the cogwheel, bottom left)", () => {
   it("the peaks are only their edges: see-through inside, a glowing line round them", () => {
     expect(js).toContain('<svg class="nv-peak-lines"');
     expect(css).toContain(".nv-peak-lines path {");
+    // (lite mode, Android and slower computers, too: the messages reach up between the lines)
+    expect(css).toMatch(/#nv-chat\.nv-lite #nv-chat-messages \{\s*margin-top: calc\(-1 \* var\(--nv-peaks, 34px\)\);/);
   });
   it("has the sound, its volume, the theme and the website's tint", () => {
     for (const id of ['id="nv-options-open"', 'id="nv-keep-sound"', 'id="nv-new-sound"', 'id="nv-volume"', 'class="nv-opt-row nv-themes"', 'data-tint="0"', 'data-tint="2"']) expect(js).toContain(id);
