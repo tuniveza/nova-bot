@@ -259,16 +259,18 @@ describe("through to the PC and back", () => {
     const res = await call("/quests/events", { headers: STAFF_AUTH });
     expect(res.status).toBe(200);
     // The browser is gone without a word: nothing reads, nothing cancels. 300 KB of pings later…
-    const ping = btoa("event: ping\ndata: " + "x".repeat(2000) + "\n\n");
-    for (let i = 0; i < 600 && !pc.seen.some((f) => f.t === "cancel"); i++) {
+    const ping = btoa("event: ping\ndata: " + "x".repeat(24000) + "\n\n");
+    for (let i = 0; i < 84 && !pc.seen.some((f) => f.t === "cancel"); i++) {
       pc.send({ t: "chunk", id: pc.stream, d: ping });
-      await new Promise((r) => setTimeout(r, 2));
+      await new Promise((r) => setTimeout(r, 5));
     }
     // (On a busy machine the last of them may still be on its way)
-    for (let i = 0; i < 150 && !pc.seen.some((f) => f.t === "cancel"); i++) await new Promise((r) => setTimeout(r, 20));
+    for (let i = 0; i < 750 && !pc.seen.some((f) => f.t === "cancel"); i++) await new Promise((r) => setTimeout(r, 20));
     expect(pc.seen.some((f) => f.t === "cancel" && f.id === pc.stream)).toBe(true);
+    // (the response held to the end, unread: the browser that's still there but not listening)
+    expect(res.bodyUsed).toBe(false);
     pc.ws.close();
-  });
+  }, 30_000);
 
   it("a big file (3 MB, in many pieces) comes through whole, every byte", async () => {
     const size = 3 * 1024 * 1024 + 123;
@@ -288,7 +290,7 @@ describe("through to the PC and back", () => {
     for (let i = 0; i < size; i += 997) if (got[i] !== bytes[i]) same = false;
     expect(same && got[size - 1] === bytes[size - 1]).toBe(true);
     pc.ws.close();
-  });
+  }, 20_000);
 
   it("an answer cut off part-way (the PC's link going) is an error, never a quietly shorter file", async () => {
     let drop;

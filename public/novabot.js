@@ -1081,6 +1081,128 @@
       return end;
     },
   };
+  // ===== The sounds, 16 Oct 2026: calm, sparse and beautiful =====
+  // Like the Novacane website after dark: a soft electric piano (a Rhodes, warm and round, with a
+  // slow shimmer), a velvet pad, and air, all in G minor pentatonic (G Bb C D F: no two notes
+  // ever clash), in the big warm room the sounds share. Sparse on purpose: only what matters
+  // makes a sound (opening, closing, sending, a reply, booking, a few of the chat's own buttons),
+  // never every key, link or scroll, and never the same twice in a row.
+  const SCROLL_SOUNDS = false;
+  const PENTA = [N.G3, N.Bb3, N.C4, N.D4, N.F4, N.G4, N.Bb4, 523.25, N.D5, N.F5, N.G5];
+  let lastPick = -1;
+  const fresh = (list) => { let k; do { k = Math.floor(Math.random() * list.length); } while (list.length > 1 && k === lastPick); lastPick = k; return list[k]; };
+  // A soft electric piano note: the body, its bell an octave up fading fast, a tiny tine, a
+  // slow shimmer (tremolo), the tone darkening as it fades
+  function keys({ freq, at = 0, volume = 0.012, length = 1.8, pan = 0 }) {
+    const now = sfx.currentTime + at;
+    const tone = sfx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.setValueAtTime(2600, now);
+    tone.frequency.exponentialRampToValueAtTime(650, now + length);
+    const shimmer = sfx.createGain();
+    const lfo = sfx.createOscillator();
+    const depth = sfx.createGain();
+    lfo.frequency.value = 4.2 + Math.random() * 0.8;
+    depth.gain.value = 0.12;
+    shimmer.gain.value = 0.88;
+    lfo.connect(depth).connect(shimmer.gain);
+    const place = sfx.createStereoPanner ? sfx.createStereoPanner() : null;
+    if (place) place.pan.value = pan;
+    tone.connect(shimmer).connect(place || sfx.out);
+    if (place) place.connect(sfx.out);
+    [[1, volume, length], [2, volume * 0.32, length * 0.32], [7.02, volume * 0.05, 0.14]].forEach(([mult, v, len]) => {
+      const osc = sfx.createOscillator();
+      const level = sfx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq * mult;
+      level.gain.setValueAtTime(0.0001, now);
+      level.gain.exponentialRampToValueAtTime(v, now + 0.008);
+      level.gain.exponentialRampToValueAtTime(0.0001, now + len);
+      osc.connect(level).connect(tone);
+      osc.start(now);
+      osc.stop(now + len + 0.05);
+    });
+    lfo.start(now);
+    lfo.stop(now + length + 0.05);
+  }
+  // A velvet pad: a few notes swelling in slowly and fading out slower, warm and dark
+  function padSwell(notes, { at = 0, length = 2.4, volume = 0.006, from = 450, to = 1300 } = {}) {
+    notes.forEach((freq, i) => voice({ freq, at: at + i * 0.04, attack: 0.5, release: length, volume, type: "sawtooth", bright: from, brightTo: to, pan: (i % 2 ? 1 : -1) * 0.45, detune: 11 }));
+  }
+  const BUTTON_NOTES = { "#nv-chat-send": N.D5, ".nv-book": N.F5, "#nv-mic": N.Bb4, "#nv-voice-toggle": N.G4, "#nv-sounds": 523.25, "#nv-chat-close": N.D4, "#nv-chat-toggle": N.G4 };
+  let lastHoverAt = 0;
+  let words = 0;
+  Object.assign(sound, {
+    // Opening: a velvet G minor 9 swelling in, one piano note on top, a breath of air
+    open() {
+      if (!canPlay()) return;
+      padSwell([N.G3, N.Bb3, N.D4, N.F4, N.A4], { length: 2.6, volume: 0.0055 });
+      keys({ freq: fresh([N.D5, N.F5, N.G5]), at: 0.35, volume: 0.011, length: 2.2, pan: 0.25 });
+      breath({ length: 0.9, volume: 0.006, from: 500, to: 2600 });
+    },
+    // Closing: two piano notes settling down, the pad darkening away
+    close() {
+      if (!canPlay()) return;
+      keys({ freq: N.D5, volume: 0.009, length: 1.2, pan: 0.2 });
+      keys({ freq: N.G4, at: 0.18, volume: 0.01, length: 1.8, pan: -0.2 });
+      padSwell([N.G3, N.D4, N.Bb4], { length: 1.4, volume: 0.004, from: 1200, to: 300 });
+    },
+    // Folding into the chat button: a breath drawn in, one low note as the button catches it
+    tuck() {
+      if (!canPlay()) return;
+      breath({ length: 0.6, volume: 0.009, from: 2400, to: 400 });
+      keys({ freq: N.G3, at: 0.5, volume: 0.012, length: 2, pan: 0.3 });
+    },
+    // The chat's own buttons only, and only now and then: one quiet piano note each
+    hover(button) {
+      if (!canPlay() || Date.now() - lastHoverAt < 900 || !button) return;
+      const match = Object.keys(BUTTON_NOTES).find((sel) => button.matches(sel));
+      if (!match) return; // (links and buttons on the website: silent)
+      lastHoverAt = Date.now();
+      keys({ freq: BUTTON_NOTES[match], volume: 0.005, length: 1.1, pan: 0.15 });
+    },
+    // Typing: silent letters; now and then a word (about every fourth) leaves one faint note,
+    // walking gently up the scale and back, so a sentence becomes a slow, quiet melody
+    key(key) {
+      if (!canPlay()) return;
+      if (key !== " ") return;
+      words++;
+      if (words % 4) return;
+      const k = Math.floor(words / 4) % 8;
+      const step = [0, 1, 2, 3, 4, 3, 2, 1][k];
+      keys({ freq: PENTA[4 + step], volume: 0.0035, length: 1.2, pan: (k % 2 ? 1 : -1) * 0.3 });
+    },
+    // Sending: air rising away, two notes going up
+    send() {
+      if (!canPlay()) return;
+      breath({ length: 0.55, volume: 0.009, from: 500, to: 3200 });
+      keys({ freq: N.D5, at: 0.05, volume: 0.009, length: 1.1, pan: -0.15 });
+      keys({ freq: fresh([N.G5, N.F5]), at: 0.18, volume: 0.007, length: 1.5, pan: 0.2 });
+    },
+    // A reply: a warm two-note piano chord, a different pair each time
+    reply() {
+      if (!canPlay()) return;
+      const [a, b] = fresh([[N.Bb4, N.F5], [N.G4, N.D5], [N.D5, N.G5], [N.F4, 523.25]]);
+      keys({ freq: a, volume: 0.011, length: 2, pan: -0.2 });
+      keys({ freq: b, at: 0.12, volume: 0.008, length: 2.4, pan: 0.2 });
+    },
+    // Booked: a slow piano arpeggio rising over the pad, a soft high note to finish
+    booked() {
+      if (!canPlay()) return;
+      padSwell([N.G3, N.Bb3, N.D4, N.F4], { length: 3.2, volume: 0.005, to: 1800 });
+      [N.G4, N.Bb4, N.D5, N.F5, N.G5].forEach((freq, i) => keys({ freq, at: 0.15 + i * 0.16, volume: 0.009, length: 2.2, pan: (i % 2 ? 1 : -1) * 0.3 }));
+      keys({ freq: 1174.66, at: 1.1, volume: 0.004, length: 2.6 });
+    },
+    // The switch: one note up (on) or down (off)
+    slide(on) {
+      if (!canPlay()) return;
+      keys({ freq: on ? N.D5 : N.G4, volume: 0.008, length: 1.2 });
+    },
+    // Quiet now: clicks, the scrollbar's trail
+    click() {},
+    trail() {},
+  });
+
 
   function setSounds(on) {
     soundsOn = on;
@@ -1151,7 +1273,8 @@
   // How deep the header's jagged edge is: its peaks start 28% up from its
   // bottom (see the clip-path in novabot.css), so messages start below them
   function measurePeaks() {
-    if (header.offsetHeight) widget.style.setProperty("--nv-peaks", Math.ceil(header.offsetHeight * 0.32) + "px");
+    // (the deepest valley between the peaks is 42% up from the header's bottom: novabot.css)
+    if (header.offsetHeight) widget.style.setProperty("--nv-peaks", Math.ceil(header.offsetHeight * 0.42) + "px");
   }
   window.addEventListener("resize", measurePeaks, { passive: true });
   requestAnimationFrame(measurePeaks);
@@ -2277,10 +2400,10 @@
   }).observe(panel, { attributes: true, attributeFilter: ["class"] });
 
   // ===== NovaBot's voice (text to speech) =====
-  // 1. If the visitor's device has a good British female voice (most phones,
-  //    Chrome, Edge, Macs), NovaBot uses that: British, free, no download.
-  // 2. Otherwise the Worker makes the speech (MeloTTS, female, American accent).
-  // 3. If that's unavailable too, any English voice on the device reads it.
+  // 1. The Worker makes the speech: on the studio's server a calm British woman's voice
+  //    (vps/voice, nothing saved), the same on every device.
+  // 2. If that's unavailable, the device's own voice reads it (a good British female voice if
+  //    the device has one, otherwise its best English voice).
 
   const synth = window.speechSynthesis;
   const player = new Audio();
@@ -2361,12 +2484,8 @@
     const words = forSpeech(text);
     if (!words) return;
 
-    // Device has a good British voice: use it
-    if (britishVoice) {
-      speakWithBrowser(words);
-      return;
-    }
-
+    // The studio's own voice first (a calm British woman, the same for everyone; on the VPS it's
+    // made on the studio's server), then the device's own voice if that can't be reached
     try {
       const res = await fetch(WORKER_URL + "/speak", {
         method: "POST",
@@ -2583,6 +2702,61 @@
     mic.hidden = false;
     mic.addEventListener("click", () => (recording ? stopListening() : startListening()));
   }
+
+  // ===== Resting: it fades when nobody's using it =====
+  // After 8 seconds with nothing done in it (no pointer over or near it, no touch, nothing typed,
+  // not listening, not speaking, no new message), the window fades slowly to see-through so the
+  // page shows (novabot.css .nv-resting). The mouse coming near it, a touch, a key or a message
+  // brings it back at once.
+  const REST_AFTER = 8000;
+  const NEAR = 70;
+  let restTimer = null;
+  let restBox = null;
+  const busyNow = () =>
+    panel.matches(":hover") || panel.contains(document.activeElement) || !!recording ||
+    (player && !player.paused) || (synth && synth.speaking) || panel.classList.contains("nv-booking");
+  function wake() {
+    if (panel.classList.contains("nv-resting")) {
+      panel.classList.add("nv-waking");
+      panel.classList.remove("nv-resting");
+      setTimeout(() => panel.classList.remove("nv-waking"), 220);
+    }
+    clearTimeout(restTimer);
+    restTimer = setTimeout(rest, REST_AFTER);
+  }
+  function rest() {
+    if (!isShowing() || panel.classList.contains("nv-small")) return wake();
+    if (busyNow()) return wake();
+    restBox = panel.getBoundingClientRect();
+    panel.classList.add("nv-resting");
+  }
+  ["pointerdown", "pointerenter", "keydown", "focusin", "wheel", "touchstart", "input"].forEach((type) =>
+    panel.addEventListener(type, wake, { passive: true })
+  );
+  // The mouse coming near it (only measured while it rests)
+  document.addEventListener("pointermove", (e) => {
+    if (!restBox || !panel.classList.contains("nv-resting")) return;
+    const b = restBox;
+    if (e.clientX > b.left - NEAR && e.clientX < b.right + NEAR && e.clientY > b.top - NEAR && e.clientY < b.bottom + NEAR) wake();
+  }, { passive: true });
+  // A new message, or it opening again
+  new MutationObserver(wake).observe(list, { childList: true });
+  let wasClosed = panel.classList.contains("nv-closed");
+  new MutationObserver(() => {
+    const closedNow = panel.classList.contains("nv-closed");
+    if (wasClosed && !closedNow) wake(); // (only opening: resting itself changes the class too)
+    wasClosed = closedNow;
+  }).observe(panel, { attributes: true, attributeFilter: ["class"] });
+  wake();
+
+  // Escape closes it (from inside the chat)
+  panel.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isShowing() && !document.querySelector(".nv-card:focus-within")) {
+      e.preventDefault();
+      openClose();
+      toggle.focus();
+    }
+  });
 
   // Carry on the chat from the last page, or greet the visitor (the greeting
   // is shown on screen only, not sent to the Worker)
@@ -2814,7 +2988,7 @@
     "scroll",
     (e) => {
       if (usingTouch || (!holding && Date.now() - lastScrollInput > 600)) return;
-      scrollSound(e.target);
+      if (SCROLL_SOUNDS) scrollSound(e.target);
     },
     { capture: true, passive: true }
   );

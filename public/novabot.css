@@ -2569,3 +2569,104 @@ html.nv-page-locked body {
 @media (min-width: 521px) {
   #nv-chat.nv-lite #nv-chat-panel.nv-booking #nv-chat-messages { padding: 14px 16px 24px; }
 }
+
+
+/* ===================================================================================== */
+/* ----- The 16 Oct 2026 look: smaller, the peaks are the header's own edge, the close
+   button on the left, one sigil (the header's), and a rest when it's not being used ----- */
+
+/* Smaller: less of the page covered (380 × up to 600 on a computer); its glow layer the same */
+#nv-chat-panel,
+.nv-panel-glow {
+  width: 380px;
+  height: min(600px, calc(100dvh - 130px));
+  border-radius: 40px 40px 52px 40px;
+}
+/* The header's sigil constellation on the right, clear of the close button (also where the
+   header doesn't drift: phones and lite mode) */
+.nv-header { background-position: right 6px top -30px, 0 0, 0 0, 0% 50%; }
+/* The first message starts just below the peaks (later ones scroll up through them) */
+#nv-chat-messages { padding-top: calc(22px + var(--nv-peaks, 34px)); }
+@keyframes nv-drift-header {
+  0%, 100% { background-position: right 6px top -30px, 0 0, 0 0, 0% 50%; }
+  50%      { background-position: right 6px top -30px, 36px 18px, 0 0, 100% 50%; }
+}
+#nv-chat-messages { padding: 12px 14px; }
+.nv-composer { padding-top: 10px; }
+.nv-tools { gap: 6px; }
+
+/* The close button: on the left of the header, clear of the title */
+.nv-header { padding-left: 56px; padding-right: 56px; }
+#nv-chat-close {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  z-index: 3;
+  transform: none;
+  font-size: 34px;
+  padding: 6px 10px;
+  border-radius: 14px;
+  opacity: .85;
+  transition: opacity .15s, background-color .15s;
+}
+#nv-chat-close:hover { opacity: 1; background: rgba(255, 255, 255, .08); }
+
+/* The peaks ARE the header's bottom edge: tall, sharp and uneven like the homepage's, in the
+   header's own colours, fading to see-through toward their tips, so the messages scrolling up
+   show through them and between them (no band of mountains of its own) */
+.nv-header {
+  padding-bottom: 72px;
+  clip-path: polygon(
+    0 0, 100% 0, 100% 62%,
+    96% 90%, 92% 66%, 87% 100%, 81% 70%, 76% 88%, 70% 58%, 64% 97%, 58% 68%,
+    52% 91%, 47% 60%, 41% 100%, 35% 72%, 29% 93%, 23% 58%, 17% 98%, 11% 69%, 6% 90%, 0 64%
+  );
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 58%, rgba(0, 0, 0, .82) 72%, rgba(0, 0, 0, .5) 88%, rgba(0, 0, 0, .34) 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 58%, rgba(0, 0, 0, .82) 72%, rgba(0, 0, 0, .5) 88%, rgba(0, 0, 0, .34) 100%);
+}
+
+/* One sigil: the header's. Behind the messages, only the stars and the grain */
+#nv-chat-panel {
+  background:
+    var(--nv-grain) 0 0 / 140px 140px,
+    radial-gradient(ellipse at 100% 100%, rgba(74, 26, 120, 0.55) 0%, transparent 60%),
+    #150d1f;
+}
+
+/* Resting (novabot.js: nobody's used it for a while): it fades slowly to see-through, so the
+   page shows; it's back at once when the mouse comes near, a finger touches it, or a message
+   comes in. Never while typing, listening or speaking. */
+#nv-chat-panel.nv-resting,
+#nv-chat-panel.nv-resting:hover {
+  opacity: .3;
+  transition: opacity 1.8s ease, transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1), height 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+#nv-chat-panel.nv-resting ~ .nv-panel-glow { opacity: .15; transition: opacity 1.8s ease; }
+#nv-chat-panel.nv-waking { transition-duration: .18s; }
+@media (hover: none) and (pointer: coarse) {
+  #nv-chat-panel.nv-resting { opacity: .3; }
+}
+
+/* Phones: not the whole screen any more. A sheet from the bottom, about three quarters of the
+   screen, the page still showing above it; the whole height only while the keyboard is up */
+@media (max-width: 480px), (max-height: 560px) {
+  #nv-chat-panel,
+  #nv-chat-panel.nv-small {
+    top: calc(var(--nv-view-top, 0px) + var(--nv-view-height, 100dvh) * 0.24);
+    right: 0;
+    width: 100%;
+    max-width: none;
+    height: calc(var(--nv-view-height, 100dvh) * 0.76);
+    border-radius: 28px 28px 0 0;
+  }
+  #nv-chat-panel.nv-keyboard {
+    top: var(--nv-view-top, 0px);
+    height: var(--nv-view-height, 100%);
+    border-radius: 0;
+  }
+  #nv-chat-close { left: 8px; top: 8px; transform: none; }
+  .nv-header { padding: 14px 52px 66px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #nv-chat-panel.nv-resting { transition: none; }
+}

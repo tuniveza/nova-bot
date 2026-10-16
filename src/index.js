@@ -1390,6 +1390,17 @@ async function speak(request, env, cors) {
   text = shortenForSpeech(text);
   if (!text) return reply({ error: "No text" }, 400, cors);
 
+  // On the VPS: its own voice service (vps/voice: a British voice, nothing saved)
+  if (env.VOICE_URL && env.VOICE_KEY) {
+    try {
+      const res = await voiceService(env, "/speak", JSON.stringify({ text }), "application/json");
+      if (!res.ok) throw new Error(`voice service ${res.status}`);
+      return audioReply(new Uint8Array(await res.arrayBuffer()), cors);
+    } catch (err) {
+      console.log("Voice failed:", String(err));
+      return reply({ error: "Voice unavailable" }, 503, cors);
+    }
+  }
   try {
     const audio = await env.AI.run("@cf/myshell-ai/melotts", { prompt: text, lang: "en" });
     return audioReply(await toBytes(audio), cors);
@@ -1399,6 +1410,16 @@ async function speak(request, env, cors) {
   }
 }
 
+// The VPS's voice service (vps/voice/server.py, only on 127.0.0.1, with its own key)
+function voiceService(env, path, body, type) {
+  return fetch(env.VOICE_URL.replace(/\/$/, "") + path, {
+    method: "POST",
+    headers: { "Content-Type": type, Authorization: `Bearer ${env.VOICE_KEY}` },
+    body,
+    signal: AbortSignal.timeout(30_000),
+  });
+}
+
 // Audio in (whatever the browser recorded), text out, using Whisper
 async function listen(request, env, cors) {
   const audio = await request.arrayBuffer();
@@ -1406,6 +1427,18 @@ async function listen(request, env, cors) {
   // About a minute of speech at most, so one visitor can't eat the allowance
   if (audio.byteLength > 1500000) return reply({ error: "Too long" }, 413, cors);
 
+  // On the VPS: its own voice service (Whisper on the server; nothing saved)
+  if (env.VOICE_URL && env.VOICE_KEY) {
+    try {
+      const res = await voiceService(env, "/listen", audio, "audio/wav");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(`voice service ${res.status} ${data.error || ""}`);
+      return reply({ text: String(data.text || "").trim() }, 200, cors);
+    } catch (err) {
+      console.log("Listening failed:", String(err));
+      return reply({ error: "Listening unavailable" }, 503, cors);
+    }
+  }
   const input = {
     audio: toBase64(new Uint8Array(audio)),
     language: "en",

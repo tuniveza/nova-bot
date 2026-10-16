@@ -1,0 +1,17 @@
+[Unit]
+Description=NovaBot's voice (speech to text and a British voice, on the server: vps/voice/server.py)
+After=network.target
+
+[Service]
+User=nova
+WorkingDirectory=/srv/nova/voice
+EnvironmentFile=/srv/nova/voice.env
+Environment=OMP_NUM_THREADS=2
+ExecStart=/srv/nova/voice/venv/bin/python /srv/nova/voice/server.py
+Restart=always
+RestartSec=5
+MemoryMax=1200M
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

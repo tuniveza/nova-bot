@@ -45,6 +45,16 @@ for kv in "MAIL_API_URL=http://127.0.0.1:8790" "MAIL_KEY=$mailkey" "MAIL_FIRST=v
   k=${kv%%=*}; { grep -v "^$k=" /srv/nova/secrets.env || true; echo "$kv"; } > /srv/nova/secrets.env.new && mv /srv/nova/secrets.env.new /srv/nova/secrets.env
 done
 unset mailkey
+# NovaBot's voice on the server (vps/voice): its key made once, then Nova Bot is told to use it
+[ -s /srv/nova/voice/models/en_GB-jenny_dioco-medium.onnx ] || bash vps/voice/setup.sh
+install -m 644 vps/voice/server.py /srv/nova/voice/server.py
+if [ ! -s /srv/nova/voice.env ]; then umask 077; printf 'VOICE_KEY=%s\nVOICE_PORT=8791\n' "$(openssl rand -hex 24)" > /srv/nova/voice.env; fi
+chown nova:nova /srv/nova/voice.env; chmod 600 /srv/nova/voice.env
+voicekey=$(grep '^VOICE_KEY=' /srv/nova/voice.env | cut -d= -f2-)
+for kv in "VOICE_URL=http://127.0.0.1:8791" "VOICE_KEY=$voicekey"; do
+  k=${kv%%=*}; { grep -v "^$k=" /srv/nova/secrets.env || true; echo "$kv"; } > /srv/nova/secrets.env.new && mv /srv/nova/secrets.env.new /srv/nova/secrets.env
+done
+unset voicekey
 # The from addresses (not secret): the studio's own domain, unless set already
 for kv in "ENQUIRY_EMAIL_FROM=Novacane Studios <hello@novacane.co.uk>" "CAMPAIGN_FROM=Novacane Studios <hello@novacane.co.uk>"; do
   k=${kv%%=*}; grep -q "^$k=" /srv/nova/secrets.env || echo "$kv" >> /srv/nova/secrets.env
@@ -58,6 +68,7 @@ mkdir -p /var/log/caddy && chown caddy:caddy /var/log/caddy
 chown -R nova:nova /srv/nova
 systemctl daemon-reload
 systemctl enable --now nova-heal.timer
+systemctl enable nova-voice.service && systemctl restart nova-voice.service
 REMOTE
 
 echo "4/5 Secrets the studio PC already has (only with DESK_COPY_PC_SECRETS=1, only if missing; never shown)"
