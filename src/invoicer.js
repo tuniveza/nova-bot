@@ -15,7 +15,7 @@
 //   GET /app/api/money/invoices/:id/stage?stage=      -> { stage, autoStage, sums, email, invoice, payments }
 //   GET /app/api/money/invoices/:id/document?stage=   -> the branded invoice, a page
 
-import { FONT_DATA_URL, LOGO_PATH, LOGO_TRANSFORM } from "./invoicer-logo.js";
+import { LOGO_PATH, LOGO_TRANSFORM, SAIRA_DATA_URL } from "./invoicer-logo.js";
 import { SESSION_TYPES, DEPOSIT_PERCENT, CANCEL_NOTICE_HOURS, depositFor } from "./nova/studio.js";
 
 export const STAGES = ["deposit", "balance", "overdue", "paid"];
@@ -279,6 +279,10 @@ export const STAGE_LINES = {
   overdue: { colour: "#A3233A", text: (s) => `Past due: this invoice was due on ${longDay(s.dueBy)}` },
   paid: { colour: "#1F7A55", text: () => "Paid in full. Thank you for recording with us" },
 };
+// Each sentence on a line of its own (16 October 2026): a line breaks after a full stop (or ! or ?),
+// never carrying the first words of the next sentence with it. On escaped text: "\n" (the Notes box
+// keeps line breaks) or "<br>".
+export const sentenceLines = (text, br = "\n") => String(text).replace(/([.!?])[ \t]+(?=["“'‘(£$€0-9A-Z])/g, `$1${br}`);
 // The note when the invoice has none of its own
 const DEFAULT_NOTE = "Thank you for choosing Novacane Studios. Any questions about this invoice, just get in touch.";
 
@@ -337,7 +341,7 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // (on the client's own page: its card button instead of a link to itself)
   const online = client ? (client.cardForm && !receipt && !cancelled ? `<div class="paynow">${client.cardForm}</div>` : "") : invoice.pageUrl && !receipt ? `<p><span class="k">Pay online</span><a href="${esc(invoice.pageUrl)}">${esc(invoice.pageUrl.replace(/^https?:\/\//, ""))}</a></p>` : "";
   const ref = receipt ? "" : `<p><span class="k">Reference</span>${esc(invoice.number)}</p>`;
-  const pay = receipt ? `<p>Received with thanks${s.payments.length ? `, last payment ${esc(longDay(s.payments[s.payments.length - 1].paidOn))}` : ""}. Nothing more to pay.</p>` : cancelled ? "<p>Nothing to pay.</p>" : bank || online ? `${online}${bank}${ref}` : client ? `<p>To pay, get in touch: ${esc(card.email)} or ${esc(card.phone)}.</p>${ref}` : `<p>Payment details are in your email.</p>${ref}`;
+  const pay = receipt ? `<p>Received with thanks${s.payments.length ? `, last payment ${esc(longDay(s.payments[s.payments.length - 1].paidOn))}` : ""}.<br>Nothing more to pay.</p>` : cancelled ? "<p>Nothing to pay.</p>" : bank || online ? `${online}${bank}${ref}` : client ? `<p>To pay, get in touch: ${esc(card.email)} or ${esc(card.phone)}.</p>${ref}` : `<p>Payment details are in your email.</p>${ref}`;
 
   const billTo = [invoice.billTo?.name ? `<b>${esc(invoice.billTo.name)}</b>` : "", invoice.billTo?.address ? esc(invoice.billTo.address).replace(/\n/g, "<br>") : "", invoice.billTo?.email ? esc(invoice.billTo.email) : ""].filter(Boolean).join("<br>");
   const facts = [
@@ -391,17 +395,30 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
     return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">${cloud ? noise("c", 0.009, 3, cloudTone, cloud * k, seed % 97) : ""}${grain ? noise("g", 0.95, 2, grainTone, grain * k, seed % 89) : ""}${cloud ? `<rect width="${size}" height="${size}" filter="url(#c)"/>` : ""}${grain ? `<rect width="${size}" height="${size}" filter="url(#g)"/>` : ""}<g fill="${speckTone}">${dots}</g></svg>`);
   };
   const tex = {
-    page: stardust({ size: 460, seed: 11, cloud: paper.tone ? 0.2 : 0.09, grain: 0.035, specks: 46, glints: 1 }),
+    // (made a little easier to see, 16 October 2026: still subtle, but there on any screen)
+    page: stardust({ size: 460, seed: 11, cloud: paper.tone ? 0.27 : 0.15, grain: 0.06, specks: 72, glints: 2 }),
     // (the band: wisps of the theme's colour, a fine velvet grain and faint star dust, under its sky;
     // on the light Paper band, quieter and dark)
     band: stardust({ size: 400, seed: 79, cloud: t.mono ? 0.06 : lightBand ? 0.1 : 0.2, grain: lightBand ? 0.04 : 0.07, specks: 52, glints: 1, cloudTone: t.mono ? (lightBand ? "#000000" : "#FFFFFF") : vivid(t.accent2, lightBand ? 0.5 : 0.62), speckTone: lightBand ? "#3A2A44" : "#FFFFFF", grainTone: lightBand ? "#000000" : "#FFFFFF", strength: lightBand ? 0.6 : 1 }),
     // (behind the invoice: a deeper grain and more stardust, the surface it lies on)
     backdrop: stardust({ size: 520, seed: 67, cloud: t.mono ? 0.07 : 0.14, grain: 0.05, specks: 70, glints: 2 }),
-    amount: stardust({ size: 300, seed: 23, cloud: 0.12, grain: 0.03, specks: 22, glints: 1 }),
-    notes: stardust({ size: 320, seed: 37, cloud: 0.1, grain: 0.03, specks: 16 }),
-    sums: stardust({ size: 300, seed: 41, cloud: 0, grain: 0.03, specks: 10 }),
-    footer: stardust({ size: 380, seed: 53, cloud: 0.05, grain: 0, specks: 34, glints: 1 }),
+    amount: stardust({ size: 300, seed: 23, cloud: 0.16, grain: 0.05, specks: 30, glints: 1 }),
+    notes: stardust({ size: 320, seed: 37, cloud: 0.14, grain: 0.05, specks: 24 }),
+    sums: stardust({ size: 300, seed: 41, cloud: 0, grain: 0.045, specks: 14 }),
+    footer: stardust({ size: 380, seed: 53, cloud: 0.07, grain: 0.02, specks: 40, glints: 1 }),
   };
+  // The moving sky behind the invoice (screen only): two layers of stars that drift past very slowly
+  // and twinkle, in the theme's colours on a dark page or soft and dark on a light one
+  const skyStars = (size, n, seed, fill, big) => {
+    let x = seed >>> 0;
+    const rnd = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
+    let dots = "";
+    for (let i = 0; i < n; i++) dots += `<circle cx="${(rnd() * size).toFixed(1)}" cy="${(rnd() * size).toFixed(1)}" r="${(big ? 0.8 + rnd() * 0.9 : 0.4 + rnd() * 0.5).toFixed(2)}" fill-opacity="${(0.25 + rnd() * 0.55).toFixed(2)}"/>`;
+    return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><g fill="${fill}">${dots}</g></svg>`);
+  };
+  const starInk = dark ? "#FFFFFF" : t.mono ? "#3A3A3A" : mixHex(accent, "#3A2A44", 0.5);
+  const skyNear = skyStars(560, 26, 101, starInk, true);
+  const skyFar = skyStars(380, 60, 211, dark ? "#FFFFFF" : t.mono ? "#555555" : accent2, false);
   const tint = (pct) => (t.mono ? "var(--wash)" : `color-mix(in srgb, var(--accent) ${pct}%, var(--paper))`);
   // The page's colours: Bright (white paper, dark ink) or Dark (the website's near-black, light ink)
   const sheet = dark ? paper.dark : paper.light;
@@ -424,75 +441,87 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
 <html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
 <title>${esc(title)} · ${esc(card.name)}</title>
 <style>
-@font-face{font-family:"Jost";src:url(${FONT_DATA_URL}) format("woff2");font-weight:400 600;font-display:block}
+@font-face{font-family:"Saira";src:url(${SAIRA_DATA_URL}) format("woff2");font-weight:300 600;font-stretch:100% 125%;font-display:block}
 :root{--band:${page.band};--accent:${accent};--accent2:${accent2};--blend:linear-gradient(90deg,var(--accent),var(--accent2));--tint:${tint(dark ? 15 : 8)};--tint2:${tint(dark ? 10 : 5)};--paper:${page.paper};--wash:${page.wash};--ink:${page.ink};--soft:${page.soft};--hair:${page.hair};--rule:${page.rule};--red:${red};--green:${green};--line:${lineColour};--band-ink:${lightBand ? "#1C1618" : "#FFFFFF"};color-scheme:${dark ? "dark" : "light"}}
 *{box-sizing:border-box}
 /* Behind the invoice: a soft surface under Novacane's sky (screen only: printed, it's just the paper):
    faint nebulae of the theme's colours in two corners, the edges a shade darker, grain and stardust */
 html{min-height:100%;background:${tex.backdrop},${t.mono ? "" : `radial-gradient(70% 55% at 0% 0%,color-mix(in srgb,${accent2} ${dark ? 22 : 16}%,transparent),transparent 70%),radial-gradient(65% 50% at 100% 100%,color-mix(in srgb,${accent} ${dark ? 20 : 14}%,transparent),transparent 70%),`}radial-gradient(120% 90% at 50% 40%,transparent 55%,${dark ? "rgb(0 0 0 / .45)" : "rgb(60 40 70 / .10)"}),${page.outside};background-attachment:fixed}
-body{margin:0;padding:28px 12px;font:15px/1.55 "Jost",Futura,"Century Gothic","Avenir Next",system-ui,sans-serif;color:var(--ink);letter-spacing:.01em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;padding:28px 12px;font:300 15px/1.6 "Saira",Futura,"Century Gothic","Avenir Next",system-ui,sans-serif;color:var(--ink);letter-spacing:.015em;text-align:center;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+b,strong,.to b{font-weight:500}
+/* The sky behind it moves (16 October 2026): Novacane's night, in the invoice's own colours, drifting
+   very slowly (a nebula breathing, two layers of stars passing and twinkling); still for anyone who
+   asks for less motion, and gone in print */
+body::before,body::after{content:"";position:fixed;inset:-25%;z-index:-1;pointer-events:none}
+body::before{background:${t.mono ? "" : `radial-gradient(38% 30% at 30% 35%,color-mix(in srgb,${accent2} ${dark ? 26 : 18}%,transparent),transparent 70%),radial-gradient(34% 28% at 72% 68%,color-mix(in srgb,${accent} ${dark ? 24 : 16}%,transparent),transparent 70%),`}${skyFar};background-size:auto,auto,380px 380px;animation:nv-drift 90s ease-in-out infinite alternate}
+body::after{background:${skyNear};background-size:560px 560px;animation:nv-pass 160s linear infinite,nv-twinkle 7s ease-in-out infinite alternate}
+@keyframes nv-drift{from{transform:translate3d(-3%,-2%,0) rotate(-2deg)}to{transform:translate3d(3%,2%,0) rotate(2deg)}}
+@keyframes nv-pass{from{background-position:0 0}to{background-position:560px 280px}}
+@keyframes nv-twinkle{from{opacity:.45}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){body::before,body::after{animation:none}}
+.sheet{position:relative}
 .sheet{max-width:820px;margin:0 auto;background:${sheetLayers},var(--paper);box-shadow:0 0 0 1px ${dark ? "rgb(255 255 255 / .05)" : "rgb(40 20 50 / .06)"},0 2px 4px rgb(0 0 0 / ${dark ? ".35" : ".06"}),0 18px 50px ${dark ? "rgb(0 0 0 / .55)" : "rgb(60 30 80 / .16)"}}
-.band{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:${bandGlow ? `${bandGlow},` : ""}${tex.band},var(--band)}
+.band{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:22px 40px 18px;color:var(--band-ink);background:${bandGlow ? `${bandGlow},` : ""}${tex.band},var(--band)}
 .band .sky{position:absolute;inset:0;width:100%;height:100%;display:block}
 .band>:not(.sky){position:relative}
 .band::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--blend)}
-.brand{display:flex;align-items:center;gap:16px}
+.brand{display:flex;align-items:center;justify-content:center;gap:14px;text-align:left}
 .brand .mark{width:86px;height:86px;display:block;flex:none;margin:-18px -2px -18px -16px;overflow:visible}
-.brand b{display:block;font-weight:500;font-size:21px;letter-spacing:.32em}
+.brand b{display:block;font-weight:400;font-stretch:125%;font-size:21px;letter-spacing:.3em}
 .brand small{display:block;margin-top:3px;font-size:10.5px;letter-spacing:.42em;${t.mono ? "opacity:.75" : lightBand ? "color:var(--accent)" : "color:color-mix(in srgb,var(--accent) 45%,#fff)"}}
-.doc{font-weight:400;font-size:13px;letter-spacing:.42em;text-transform:uppercase;opacity:.9}
+.doc{font-weight:400;font-stretch:125%;font-size:12px;letter-spacing:.5em;text-transform:uppercase;opacity:.9;margin-right:-.5em}
 .in{padding:30px 40px 34px}
-.stage{display:flex;align-items:center;gap:10px;margin:0 0 26px;font-size:13.5px;color:var(--line)}
+.stage{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 0 26px;font-size:13.5px;color:var(--line)}
 .stage::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
-.top{display:grid;grid-template-columns:1.1fr 1fr auto;gap:28px;align-items:start}
-.k,.top h2,.notes h2,.pay h2{display:block;margin:0 0 6px;font-size:10.5px;font-weight:500;letter-spacing:.24em;text-transform:uppercase;color:${t.mono ? "var(--soft)" : "var(--accent)"}}
+.top{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;align-items:start;justify-items:center}
+.k,.top h2,.notes h2,.pay h2{display:block;margin:0 0 6px;font-size:10.5px;font-weight:500;font-stretch:115%;letter-spacing:.24em;text-transform:uppercase;color:${t.mono ? "var(--soft)" : "var(--accent)"}}
 .to{font-size:14px;line-height:1.6}.to b{font-weight:600}
-dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:13.5px}
-dt{color:var(--soft)}dd{margin:0;font-variant-numeric:tabular-nums}
+dl{margin:0;display:grid;grid-template-columns:auto auto;justify-content:center;gap:3px 14px;font-size:13.5px}
+dt{color:var(--soft);text-align:right}dd{margin:0;text-align:left;font-variant-numeric:tabular-nums}
 .late{color:var(--red);font-weight:500}
-.amount{position:relative;min-width:200px;padding:16px 18px;background:${tex.amount},var(--tint);border-left:3px solid var(--accent);border-image:linear-gradient(180deg,var(--accent),var(--accent2)) 1;text-align:right}
+.amount{position:relative;min-width:200px;padding:16px 18px;background:${tex.amount},var(--tint);border-top:3px solid var(--accent);border-image:var(--blend) 1;text-align:center}
 .amount .lbl{display:block;font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--soft)}
 .amount b{display:block;margin:4px 0 2px;font-size:28px;font-weight:500;letter-spacing:.01em;font-variant-numeric:tabular-nums;color:var(--accent)}
 .amount .when{font-size:13px;color:var(--soft)}
-.amount.late{border-image:none;border-left-color:var(--red)}.amount.late .when,.amount.late b{color:var(--red);font-weight:500}
-.amount.done{border-image:none;border-left-color:var(--green);padding-top:24px}.amount.done .when,.amount.done b{color:var(--green);font-weight:500}
-.stamp{position:absolute;right:12px;top:-13px;transform:rotate(-6deg);padding:1px 10px;background:var(--paper);border:2px solid var(--green);border-radius:6px;color:var(--green);font-size:14px;font-weight:600;letter-spacing:.3em;text-transform:uppercase;opacity:.75}
+.amount.late{border-image:none;border-top-color:var(--red)}.amount.late .when,.amount.late b{color:var(--red);font-weight:500}
+.amount.done{border-image:none;border-top-color:var(--green);padding-top:24px}.amount.done .when,.amount.done b{color:var(--green);font-weight:500}
+.stamp{position:absolute;right:50%;margin-right:-44px;top:-13px;transform:rotate(-6deg);padding:1px 10px;background:var(--paper);border:2px solid var(--green);border-radius:6px;color:var(--green);font-size:14px;font-weight:600;letter-spacing:.3em;text-transform:uppercase;opacity:.75}
 table{width:100%;margin-top:30px;border-collapse:collapse;font-size:14px}
-th{padding:0 0 9px;text-align:left;font-size:10.5px;font-weight:500;letter-spacing:.24em;text-transform:uppercase;color:${t.mono ? "var(--soft)" : "var(--accent)"};border-bottom:2px solid var(--rule);border-image:${t.mono ? "none" : "var(--blend) 1"}}
+th{padding:0 0 9px;text-align:center;font-size:10.5px;font-weight:500;letter-spacing:.24em;text-transform:uppercase;color:${t.mono ? "var(--soft)" : "var(--accent)"};border-bottom:2px solid var(--rule);border-image:${t.mono ? "none" : "var(--blend) 1"}}
 td{padding:12px 0;border-bottom:1px solid var(--hair);vertical-align:top}
-th.n,td.n{text-align:right;white-space:nowrap;padding-left:18px;font-variant-numeric:tabular-nums}
+th.n,td.n{text-align:center;white-space:nowrap;padding-left:18px;font-variant-numeric:tabular-nums}
 tr{break-inside:avoid}
-.sums{margin:12px 0 0 auto;max-width:340px;padding:0 10px;border-radius:4px;background:${tex.sums};break-inside:avoid}
+.sums{margin:12px auto 0;max-width:340px;padding:0 10px;border-radius:4px;background:${tex.sums};break-inside:avoid}
 .r{display:flex;justify-content:space-between;gap:18px;padding:6px 0;font-size:14px}
 .r b{font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
 .r.soft{color:var(--soft)}.r small{font-size:12px}
 .r.strong{border-top:1px solid var(--hair);margin-top:4px;padding-top:10px}
 .r.due{margin-top:6px;padding:10px 0 4px;border-top:2px solid var(--rule);border-image:${t.mono ? "none" : "var(--blend) 1"};font-size:16px;font-weight:600}.r.due b{font-weight:600;color:var(--accent)}
 .bottom{display:grid;grid-template-columns:1.2fr 1fr;gap:28px;align-items:start;margin-top:30px;break-inside:avoid}
-.notes{padding:14px 16px;background:${tex.notes},var(--tint2);border-left:3px solid var(--accent2);border-radius:4px;font-size:13.5px;line-height:1.6;white-space:pre-line}
+.notes{padding:14px 16px;background:${tex.notes},var(--tint2);border-top:3px solid var(--accent2);border-radius:4px;font-size:13.5px;line-height:1.6;white-space:pre-line}
 .pay{font-size:13.5px;line-height:1.6}.pay p{margin:0 0 10px}
 .pay a{color:var(--accent);text-decoration:none;border-bottom:1px solid currentColor}
-footer{background:${tex.footer};display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 18px;margin-top:30px;padding-top:14px;border-top:1px solid var(--hair);font-size:11.5px;color:var(--soft);letter-spacing:.02em}
+footer{background:${tex.footer};display:flex;flex-wrap:wrap;justify-content:center;text-align:center;gap:6px 18px;margin-top:30px;padding-top:14px;border-top:1px solid var(--hair);font-size:11.5px;color:var(--soft);letter-spacing:.02em}
 footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 @media (max-width:640px){
   body{padding:0}.band{padding:18px 20px}.brand b{font-size:15px;letter-spacing:.24em}.brand .mark{width:58px;height:58px;margin:-10px -4px -10px -8px}.doc{display:none}.in{padding:22px 20px}
-  .top{grid-template-columns:1fr}.amount{text-align:left}.bottom{grid-template-columns:1fr}
+  .top{grid-template-columns:1fr}.bottom{grid-template-columns:1fr}
   th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){display:none}
 }
-.pagenote{margin:0 0 18px;padding:10px 14px;border-radius:4px;background:var(--tint);border-left:3px solid var(--accent);font-size:14px}
+.pagenote{margin:0 0 18px;padding:10px 14px;border-radius:4px;background:var(--tint);border-top:3px solid var(--accent);font-size:14px}
 .paynow{margin:0 0 14px}.paynow button{font:inherit;font-size:15px;font-weight:600;letter-spacing:.02em;color:#fff;background:var(--blend);border:0;border-radius:6px;padding:12px 22px;cursor:pointer}
 .paynow button:hover{filter:brightness(1.08)}
 .tools{max-width:820px;margin:18px auto 0;display:flex;gap:18px;align-items:center;justify-content:center;font-size:13.5px}
 .tools button{font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--hair);border-radius:6px;padding:9px 18px;cursor:pointer}
 .tools a{color:${dark ? "#cfc6c7" : "#5b5256"}}
 @page{size:A4;margin:12mm}
-@media print{.tools,.paynow,.pagenote{display:none!important}html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
+@media print{.tools,.paynow,.pagenote{display:none!important}body::before,body::after{display:none}html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
 </style></head>
 <body><main class="sheet">
 <header class="band">${bandSky(t, lightBand, from, to)}<div class="brand">${logo}<div><b>NOVACANE</b><small>STUDIOS</small></div></div><div class="doc">${receipt ? "Receipt" : "Invoice"}</div></header>
 <div class="in">
 ${client?.banner ? `<p class="pagenote" role="status">${client.banner}</p>` : ""}
-<p class="stage" role="note">${esc(line.text(s))}</p>
+<p class="stage" role="note">${sentenceLines(esc(line.text(s)), "<br>")}</p>
 <section class="top">
   <div class="to"><h2>Billed to</h2>${billTo}</div>
   <dl>${facts}</dl>
@@ -501,7 +530,7 @@ ${client?.banner ? `<p class="pagenote" role="status">${client.banner}</p>` : ""
 <table><thead><tr><th>Description</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th></tr></thead><tbody>${rows}</tbody></table>
 <section class="sums" aria-label="Totals">${sums.join("")}</section>
 <div class="bottom">
-  <section class="notes" aria-label="Notes"><h2>Notes</h2>${esc(note)}</section>
+  <section class="notes" aria-label="Notes"><h2>Notes</h2>${sentenceLines(esc(note))}</section>
   <section class="pay"><h2>${receipt ? "Payment" : "How to pay"}</h2>${pay}</section>
 </div>
 <footer><span class="thanks">Thank you for recording with ${esc(card.name)}.</span><span>${esc(card.address)}</span><span>${esc(card.phone)} · ${esc(card.email)} · ${esc(card.website)}</span><span>Deposits are non-refundable with less than ${CANCEL_NOTICE_HOURS} hours' notice of cancellation.</span></footer>

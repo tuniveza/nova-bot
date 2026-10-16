@@ -514,6 +514,15 @@ describe("the Invoicer", () => {
 		const mono = await portal(`money/invoices/${inv.id}/document?stage=balance&theme=mono`);
 		expect(mono.text).toContain('fill="currentColor"');
 		expect(dark.headers.get("Content-Security-Policy")).toContain("font-src data:");
+		// (16 Oct 2026) Novacane's own type (Saira, carried with it), every line centred, and the sky behind
+		// it drifting slowly in its colours (still for less motion, gone in print)
+		const { SAIRA_DATA_URL } = await import("../src/invoicer-logo.js");
+		expect(dark.text).toContain(SAIRA_DATA_URL);
+		expect(dark.text).toContain('font-family:"Saira"');
+		expect(dark.text).toMatch(/body\{[^}]*text-align:center/);
+		expect(dark.text).toContain("animation:nv-drift 90s");
+		expect(dark.text).toContain("@media (prefers-reduced-motion:reduce){body::before,body::after{animation:none}}");
+		expect(dark.text).toContain("body::before,body::after{display:none}");
 		expect((await portal("money/settings", { body: { invoiceTheme: "sapphire", invoiceMode: "dark" } })).status).toBe(200);
 		expect((await portal("money/catalogue")).data).toMatchObject({ theme: "sapphire", mode: "dark" });
 		expect((await portal(`money/invoices/${inv.id}/document?stage=balance`)).text).toContain("#6C93EF"); // Sapphire, dark
