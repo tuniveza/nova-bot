@@ -2796,3 +2796,20 @@ html.nv-page-locked body {
 #nv-chat:not([data-theme="novacane"]) #nv-chat-panel { filter: var(--nv-theme-filter, none); }
 /* (the colour dots in the options show each theme's own colour: the chosen theme's turn undone) */
 .nv-theme::before { filter: var(--nv-theme-undo, none); }
+
+/* ----- 16 Oct 2026 (later still) ----- */
+/* The peaks are a backdrop: the messages scroll OVER them (the words always fully readable), fading
+   softly just at the very top of their area; the title part of the header stays clear above */
+#nv-chat-messages {
+  z-index: 3;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+}
+/* (as a backdrop the peaks can be the header's own colour, a little lighter toward their tips) */
+.nv-header {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 58%, rgba(0, 0, 0, .9) 75%, rgba(0, 0, 0, .7) 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 58%, rgba(0, 0, 0, .9) 75%, rgba(0, 0, 0, .7) 100%);
+}
+/* The options' cogwheel belongs to the chat, not the booking card: away while booking */
+#nv-chat-panel.nv-booking .nv-gear,
+#nv-chat-panel.nv-booking .nv-options { display: none; }

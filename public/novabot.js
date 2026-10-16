@@ -2837,6 +2837,8 @@
     if (on) drawOptions();
   }
   gear.addEventListener("click", (e) => { e.stopPropagation(); showOptions(options.hidden); });
+  // (booking: the options close; the cogwheel's away until the booking card is)
+  new MutationObserver(() => { if (panel.classList.contains("nv-booking") && !options.hidden) showOptions(false); }).observe(panel, { attributes: true, attributeFilter: ["class"] });
   document.addEventListener("click", (e) => { if (!options.hidden && !options.contains(e.target) && e.target !== gear) showOptions(false); });
   options.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); showOptions(false); gear.focus(); } });
   // The sound
