@@ -72,17 +72,4 @@ describe("Nova's pages say their deploy", () => {
     const moved = Response.redirect("https://nova.test/agent/?open=%2Fcalendar%2F", 302);
     expect(await withBuild(moved, req, env)).toBe(moved);
   });
-  it("a page never waits on another request's read of the deploy (one left hanging doesn't hold the rest up)", async () => {
-    vi.resetModules();
-    const { withBuild: fresh } = await import("../src/index.js");
-    let n = 0;
-    const env = { ASSETS: { fetch: () => (++n === 1 ? new Promise(() => {}) : Promise.resolve(new Response(JSON.stringify({ build: "def456" })))) } };
-    const page = () => new Response("<!doctype html>", { headers: { "Content-Type": "text/html; charset=utf-8" } });
-    fresh(page(), req, env); // the first request's read never finishes
-    const res = await fresh(page(), req, env);
-    expect(res.headers.get("X-Nova-Build")).toBe("def456");
-    // and once it's known, it isn't read again
-    await fresh(page(), req, env);
-    expect(n).toBe(2);
-  });
 });

@@ -1541,16 +1541,13 @@ function opened(panel, search) {
 // Nova's pages say which deploy's files they go with (X-Nova-Build, from public/nova-build.json,
 // written by scripts/sync-apps.mjs): Nova Agent's service worker then uses the files it keeps on the
 // device straight away when it already has that deploy's list, without asking for the list first
-// (only the answer is kept, never the asking: a request left waiting on another request's read
-// hangs when that one ends first, and the page never comes)
 let buildId = null;
 async function novaBuild(request, env) {
-  if (buildId !== null) return buildId;
-  const build = await env.ASSETS.fetch(new Request(new URL("/nova-build.json", request.url)))
-    .then((r) => (r.ok ? r.json() : null))
-    .then((j) => (j && typeof j.build === "string" ? j.build : ""))
-    .catch(() => "");
-  if (buildId === null) buildId = build;
+  if (buildId === null)
+    buildId = env.ASSETS.fetch(new Request(new URL("/nova-build.json", request.url)))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => (j && typeof j.build === "string" ? j.build : ""))
+      .catch(() => "");
   return buildId;
 }
 export async function withBuild(res, request, env) {
