@@ -1,0 +1,7 @@
+[Unit]
+Description=Restart Nova Bot if it stops answering (three silent minutes)
+
+[Service]
+Type=oneshot
+# vps/bin/heal, installed as /usr/local/sbin/nova-heal (root's, not in /srv/nova)
+ExecStart=/usr/local/sbin/nova-heal

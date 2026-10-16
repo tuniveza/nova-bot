@@ -38,6 +38,8 @@ Workers AI (voice) only exists on Cloudflare, so on the VPS voice falls back to 
   `https://nova.novacane.co.uk/status.json`, keyword `"ok":true`, alert when it **doesn't exist**,
   every 5 minutes → alert contact **admin@kulturekingdom.uk** → Create. (Better Stack's free plan
   works the same way: Monitors → Create → "Keyword", same URL and keyword.)
+- **Self-restart** (`nova-heal.timer`, `vps/bin/heal`): every minute it asks Nova Bot for /status.json;
+  three silent minutes in a row (and up at least 3 minutes) → `systemctl restart nova`. See `journalctl -u nova-heal`.
 - **The PC's watchdog** (Nova Agent's src/watchdog.ts): every 5 minutes; after 2 misses in a row a
   desktop notification (and a phone one through ntfy.sh if NTFY_TOPIC is set in Nova Agent's .env).
 - **The laptop-off test**: `vps/laptop-off-test.sh` unplugs the PC for about 2 minutes, checks what

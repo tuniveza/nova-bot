@@ -33,6 +33,7 @@ printf 'DESK_ADDRESS=%s\nDESK_HOSTNAME=%s\nDESK_URL=https://%s\n' "$ADDR" "$ADDR
 names="$ADDR"; [ -n "$ALSO" ] && [ "$ALSO" != "$ADDR" ] && names="$ADDR, $ALSO"
 sed "s/{\$DESK_HOSTNAME}/$names/" vps/Caddyfile > /etc/caddy/Caddyfile
 install -m 755 vps/bin/backup /srv/nova/bin/backup
+install -m 755 -o root vps/bin/heal /usr/local/sbin/nova-heal
 mkdir -p /srv/nova/desk-status && install -m 644 vps/desk-status/server.mjs /srv/nova/desk-status/server.mjs
 # The VPS's own mail service (vps/mail): its key is made once, then Nova Bot is told to use it
 mkdir -p /srv/nova/mail && install -m 644 vps/mail/server.mjs /srv/nova/mail/server.mjs
@@ -56,6 +57,7 @@ ln -sf /srv/nova/secrets.env /srv/nova/app/.dev.vars
 mkdir -p /var/log/caddy && chown caddy:caddy /var/log/caddy
 chown -R nova:nova /srv/nova
 systemctl daemon-reload
+systemctl enable --now nova-heal.timer
 REMOTE
 
 echo "4/5 Secrets the studio PC already has (only with DESK_COPY_PC_SECRETS=1, only if missing; never shown)"

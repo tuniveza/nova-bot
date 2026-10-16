@@ -1,0 +1,9 @@
+[Unit]
+Description=Every minute: is Nova Bot answering?
+
+[Timer]
+OnCalendar=*-*-* *:*:30
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
