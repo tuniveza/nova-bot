@@ -84,6 +84,11 @@
         </div>
         <button id="nv-chat-close" type="button" aria-label="Close chat">×</button>
       </div>
+      <!-- The peaks' edges: a fine glowing line (the peaks themselves are see-through, so the dark
+           backdrop and the messages run through them; novabot.css .nv-header) -->
+      <svg class="nv-peak-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M100 64 92 100 84 62 74 96 63 58 52 100 41 60 30 95 19 58 9 100 0 66"/>
+      </svg>
 
       <div id="nv-chat-messages"></div>
 
@@ -180,6 +185,9 @@
             <button type="button" class="nv-opt-chip" role="radio" data-tint="0">Off</button>
             <button type="button" class="nv-opt-chip" role="radio" data-tint="1">Soft</button>
             <button type="button" class="nv-opt-chip" role="radio" data-tint="2">Strong</button>
+          </div>
+          <div class="nv-opt-row">
+            <button type="button" class="nv-opt-chip" id="nv-tint-videos" role="switch" aria-checked="true">Videos too</button>
           </div>
         </section>
       </div>
@@ -395,6 +403,9 @@
       if (!fingerOnly()) input.focus();
       if (panel.classList.contains("nv-booking")) startMusic(); // back to an open booking card
       requestAnimationFrame(measurePeaks);
+      // (again once it has settled: it grows into place as it opens)
+      setTimeout(measurePeaks, 350);
+      setTimeout(measurePeaks, 900);
       fitToScreen();
       lockPage();
       setTimeout(checkFrameRate, 700); // once it has finished opening
@@ -1354,9 +1365,13 @@
   function measurePeaks() {
     // (the deepest valley between the peaks is 42% up from the header's bottom: novabot.css)
     if (header.offsetHeight) widget.style.setProperty("--nv-peaks", Math.ceil(header.offsetHeight * 0.42) + "px");
+    if (header.offsetHeight) widget.style.setProperty("--nv-header-h", header.offsetHeight + "px");
   }
   window.addEventListener("resize", measurePeaks, { passive: true });
   requestAnimationFrame(measurePeaks);
+  // (and whenever the header changes size: opening, a phone's layout, the window shrinking)
+  if (typeof ResizeObserver === "function") new ResizeObserver(() => measurePeaks()).observe(header);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(measurePeaks).catch(() => {});
 
   // Move the window to a spot, full size or small
   function place(where, shrunk) {
@@ -2869,21 +2884,78 @@
   // The theme: the chat in other colours (a turn of its hue, the same way for every part of it), and,
   // if wanted, a tint over the whole website in that colour (never over its videos)
   const THEMES = [
-    { id: "novacane", name: "Novacane", filter: "", undo: "", tint: "" },
-    { id: "violet", name: "Violet", filter: "hue-rotate(-40deg)", undo: "hue-rotate(40deg)", tint: "#6c3cff" },
-    { id: "ember", name: "Ember", filter: "hue-rotate(55deg) saturate(1.15)", undo: "saturate(.87) hue-rotate(-55deg)", tint: "#ff5a2a" },
-    { id: "gold", name: "Gold", filter: "hue-rotate(85deg) saturate(.9) brightness(1.05)", undo: "brightness(.95) saturate(1.11) hue-rotate(-85deg)", tint: "#e8b84a" },
-    { id: "aurora", name: "Aurora", filter: "hue-rotate(170deg)", undo: "hue-rotate(-170deg)", tint: "#2fe0a8" },
-    { id: "ocean", name: "Ocean", filter: "hue-rotate(-100deg)", undo: "hue-rotate(100deg)", tint: "#2f8cff" },
-    { id: "mono", name: "Mono", filter: "grayscale(1) brightness(1.1)", undo: "", tint: "#9a9aa8" },
+    { id: "novacane", name: "Novacane", filter: "", undo: "", tint: "", turn: 0 },
+    { id: "violet", name: "Violet", filter: "hue-rotate(-40deg)", undo: "hue-rotate(40deg)", tint: "#6c3cff", turn: -40 },
+    { id: "ember", name: "Ember", filter: "hue-rotate(55deg) saturate(1.15)", undo: "saturate(.87) hue-rotate(-55deg)", tint: "#ff5a2a", turn: 55 },
+    { id: "gold", name: "Gold", filter: "hue-rotate(85deg) saturate(.9) brightness(1.05)", undo: "brightness(.95) saturate(1.11) hue-rotate(-85deg)", tint: "#e8b84a", turn: 85 },
+    { id: "aurora", name: "Aurora", filter: "hue-rotate(170deg)", undo: "hue-rotate(-170deg)", tint: "#2fe0a8", turn: 170 },
+    { id: "ocean", name: "Ocean", filter: "hue-rotate(-100deg)", undo: "hue-rotate(100deg)", tint: "#2f8cff", turn: -100 },
+    { id: "mono", name: "Mono", filter: "grayscale(1) brightness(1.1)", undo: "", tint: "#9a9aa8", grey: true },
   ];
-  const readTheme = () => { try { return { id: localStorage.getItem("nv-theme") || "novacane", tint: Number(localStorage.getItem("nv-tint") || 1) }; } catch (err) { return { id: "novacane", tint: 1 }; } };
+  const readTheme = () => { try { return { id: localStorage.getItem("nv-theme") || "novacane", tint: Number(localStorage.getItem("nv-tint") || 1), videos: localStorage.getItem("nv-tint-videos") !== "0" }; } catch (err) { return { id: "novacane", tint: 1, videos: true }; } };
+  // A colour turned the theme's way (the cursors' colours: CSS can't filter a cursor picture)
+  function turnColour(hex, t) {
+    let [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+    let h = 0, sat = 0;
+    if (max !== min) {
+      const d = max - min;
+      sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      h *= 60;
+    }
+    h = (h + (t.turn || 0) + 360) % 360;
+    if (t.grey) sat = 0;
+    const f = (n) => { const k = (n + h / 30) % 12, a = sat * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, "0"); };
+    return `#${f(0)}${f(8)}${f(4)}`;
+  }
+  // The website's cursors (novabot.css html.nv-site-cursor), redrawn in the theme's colours
+  const CURSORS = (A, B, C) => `html.nv-site-cursor,
+html.nv-site-cursor * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='${A}'/%3E%3Cstop offset='1' stop-color='${B}'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M3 2l19 9.5-8 2.3-4 7.7z' fill='url(%23g)' stroke='%23fff' stroke-width='1.6' stroke-linejoin='round'/%3E%3Ccircle cx='22' cy='4' r='1.3' fill='${C}'/%3E%3C/svg%3E") 3 2, auto;
+}
+html.nv-site-cursor a,
+html.nv-site-cursor button,
+html.nv-site-cursor [role="button"],
+html.nv-site-cursor label,
+html.nv-site-cursor select,
+html.nv-site-cursor summary,
+html.nv-site-cursor input[type="submit"],
+html.nv-site-cursor input[type="button"],
+html.nv-site-cursor input[type="checkbox"],
+html.nv-site-cursor input[type="radio"],
+html.nv-site-cursor #nv-chat-panel.nv-small,
+html.nv-site-cursor #nv-chat-panel.nv-small * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='${A}'/%3E%3Cstop offset='1' stop-color='${B}'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='4' cy='3' r='3.6' fill='none' stroke='${A}' stroke-width='1.4' stroke-opacity='0.85'/%3E%3Cpath d='M4 3l19 9.5-8 2.3-4 7.7z' fill='url(%23g)' stroke='%23fff' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") 4 3, pointer;
+}
+html.nv-site-cursor input:not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html.nv-site-cursor textarea,
+html.nv-site-cursor [contenteditable="true"] {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='28' viewBox='0 0 20 28'%3E%3Cpath d='M5.5 3h9M10 3v22M5.5 25h9' fill='none' stroke='${A}' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M5.5 3h9M10 3v22M5.5 25h9' fill='none' stroke='%23fff' stroke-width='1' stroke-linecap='round'/%3E%3C/svg%3E") 10 14, text;
+}
+html.nv-site-cursor.nv-acted,
+html.nv-site-cursor.nv-acted * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10.5' fill='${A}' fill-opacity='0.18'/%3E%3Cpath d='M20.19 6.26A10 10 0 0 1 6.26 20.19M3.81 17.74A10 10 0 0 1 17.74 3.81' fill='none' stroke='${A}' stroke-width='2.4'/%3E%3Cpath d='M3.9 20.1 11.3 7.5M12.5 8.3 13.5 16M14.7 16.5 20.1 3.9' fill='none' stroke='%23fff' stroke-width='1.9'/%3E%3C/svg%3E") 16 16, pointer;
+}
+`;
+  let cursorStyle = null;
+  function themeCursors(t) {
+    if (!t.turn && !t.grey) return cursorStyle && cursorStyle.remove(), (cursorStyle = null);
+    if (!cursorStyle) { cursorStyle = document.createElement("style"); cursorStyle.id = "nv-theme-cursors"; document.head.appendChild(cursorStyle); }
+    const c = (hex) => "%23" + turnColour(hex, t).slice(1);
+    cursorStyle.textContent = CURSORS(c("#ff5fa8"), c("#8a4fd8"), c("#ffd1ea"));
+  }
   const themesRow = options.querySelector(".nv-themes");
   themesRow.innerHTML = THEMES.map((t) => `<button type="button" class="nv-opt-chip nv-theme" role="radio" data-theme="${t.id}" style="--sw:${t.tint || "#b01d68"}">${t.name}</button>`).join("");
   themesRow.addEventListener("click", (e) => {
     const b = e.target.closest("[data-theme]");
     if (!b) return;
     try { localStorage.setItem("nv-theme", b.dataset.theme); } catch (err) {}
+    applyTheme();
+    drawOptions();
+  });
+  document.getElementById("nv-tint-videos").addEventListener("click", () => {
+    try { localStorage.setItem("nv-tint-videos", readTheme().videos ? "0" : "1"); } catch (err) {}
     applyTheme();
     drawOptions();
   });
@@ -2901,7 +2973,8 @@
     if (!tintLayer) return;
     const w = innerWidth, h = innerHeight;
     let d = `M0 0H${w}V${h}H0Z`;
-    for (const v of document.querySelectorAll("video, iframe")) {
+    // (videos too, unless "Videos too" is off)
+    for (const v of readTheme().videos ? [] : document.querySelectorAll("video, iframe")) {
       if (widget.contains(v)) continue;
       const r = v.getBoundingClientRect();
       if (r.width < 2 || r.height < 2 || r.bottom < 0 || r.top > h) continue;
@@ -2915,6 +2988,10 @@
     const t = THEMES.find((x) => x.id === id) || THEMES[0];
     widget.style.setProperty("--nv-theme-filter", t.filter || "hue-rotate(0deg)");
     widget.style.setProperty("--nv-theme-undo", t.undo || "none");
+    // (the sparkles over the website's text and links are the page's, not the chat's: the theme
+    // goes on the page's root for them, and the cursors are redrawn)
+    document.documentElement.style.setProperty("--nv-theme-filter", t.filter || "hue-rotate(0deg)");
+    themeCursors(t);
     widget.dataset.theme = t.id;
     // (the window's glow is an animation that kept the old colours: start it again with the new)
     panel.style.animation = "none";
@@ -2949,6 +3026,7 @@
     const { id, tint } = readTheme();
     options.querySelectorAll("[data-theme]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.theme === id)));
     options.querySelectorAll("[data-tint]").forEach((b) => b.setAttribute("aria-checked", String(Number(b.dataset.tint) === tint)));
+    document.getElementById("nv-tint-videos").setAttribute("aria-checked", String(readTheme().videos));
   }
   applyTheme();
 

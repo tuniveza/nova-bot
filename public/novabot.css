@@ -2813,3 +2813,38 @@ html.nv-page-locked body {
 /* The options' cogwheel belongs to the chat, not the booking card: away while booking */
 #nv-chat-panel.nv-booking .nv-gear,
 #nv-chat-panel.nv-booking .nv-options { display: none; }
+/* The sparkles over the website's text and links, in the theme's colours too */
+.nv-spark { filter: var(--nv-theme-filter, none); }
+
+/* ----- The peaks: only their edges (16 Oct 2026). The header is solid down to the deepest valley,
+   then fades away inside the triangles, so the chat's very dark purple backdrop runs through them
+   and the words show in the middle of each triangle and all round it; a fine glowing line traces
+   the edges, so the triangles are there as an outline. ----- */
+.nv-header {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 44%, rgba(0, 0, 0, .7) 52%, rgba(0, 0, 0, .38) 60%, rgba(0, 0, 0, .16) 70%, rgba(0, 0, 0, .06) 84%, rgba(0, 0, 0, .03) 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 44%, rgba(0, 0, 0, .7) 52%, rgba(0, 0, 0, .38) 60%, rgba(0, 0, 0, .16) 70%, rgba(0, 0, 0, .06) 84%, rgba(0, 0, 0, .03) 100%);
+}
+.nv-peak-lines {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  width: 100%;
+  height: var(--nv-header-h, 150px);
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 0 4px rgba(255, 95, 168, .65));
+}
+.nv-peak-lines path {
+  fill: none;
+  stroke: rgba(255, 140, 200, .6);
+  stroke-width: 1.3px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+#nv-chat-panel.nv-small .nv-peak-lines { visibility: hidden; }
+/* (lite mode too: a still fade costs nothing, and without it the triangles fill in again) */
+#nv-chat.nv-lite .nv-header {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 44%, rgba(0, 0, 0, .7) 52%, rgba(0, 0, 0, .38) 60%, rgba(0, 0, 0, .16) 70%, rgba(0, 0, 0, .06) 84%, rgba(0, 0, 0, .03) 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 44%, rgba(0, 0, 0, .7) 52%, rgba(0, 0, 0, .38) 60%, rgba(0, 0, 0, .16) 70%, rgba(0, 0, 0, .06) 84%, rgba(0, 0, 0, .03) 100%);
+}

@@ -29,12 +29,21 @@ describe("the sound's seed", () => {
 });
 
 describe("the options (the cogwheel, bottom left)", () => {
+  it("the hover effects over the website (its cursors and sparkles) follow the theme", () => {
+    expect(js).toContain("cursorStyle.textContent = CURSORS(c(\"#ff5fa8\"), c(\"#8a4fd8\"), c(\"#ffd1ea\"));");
+    expect(css).toContain(".nv-spark { filter: var(--nv-theme-filter, none); }");
+  });
+  it("the peaks are only their edges: see-through inside, a glowing line round them", () => {
+    expect(js).toContain('<svg class="nv-peak-lines"');
+    expect(css).toContain(".nv-peak-lines path {");
+  });
   it("has the sound, its volume, the theme and the website's tint", () => {
     for (const id of ['id="nv-options-open"', 'id="nv-keep-sound"', 'id="nv-new-sound"', 'id="nv-volume"', 'class="nv-opt-row nv-themes"', 'data-tint="0"', 'data-tint="2"']) expect(js).toContain(id);
     expect(css).toContain(".nv-gear {");
   });
-  it("the tint covers the page but cuts a hole for every video", () => {
-    expect(js).toContain('for (const v of document.querySelectorAll("video, iframe")) {');
+  it("the tint covers the page and its videos too (or, with Videos too off, cuts a hole for every video)", () => {
+    expect(js).toContain('for (const v of readTheme().videos ? [] : document.querySelectorAll("video, iframe")) {');
+    expect(js).toContain('id="nv-tint-videos"');
     expect(js).toContain('tintPath.setAttribute("fill-rule", "evenodd");');
     expect(css).toMatch(/\.nv-tint \{[^}]*pointer-events: none;[^}]*mix-blend-mode: color;/);
   });
