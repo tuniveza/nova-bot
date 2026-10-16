@@ -13,7 +13,7 @@
 // Each email is HTML with a plain-text twin (multipart/alternative: the mail server sends both), so an
 // email app that can't show HTML shows the whole invoice as text instead.
 
-import { STAGE_LINES, longDay, paperOf, pounds, stageSums, studioCard, themeOf } from "./invoicer.js";
+import { STAGE_LINES, longDay, paperOf, pounds, sentenceLines, stageSums, studioCard, themeOf } from "./invoicer.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // Two colours mixed (email apps can't mix them themselves): a share of a over b
@@ -60,8 +60,8 @@ export function invoiceEmailParts({ invoice, payments = [], stage, settings, tod
   const td = (style, inner, attrs = "") => `<td ${attrs} style="font-family:${FONT};${style}">${inner}</td>`;
   const label = (text) => `<div style="font-family:${FONT};font-size:10px;letter-spacing:2.4px;text-transform:uppercase;color:${heading};margin:0 0 6px;">${esc(text)}</div>`;
 
-  // The message above the invoice
-  const message = [greeting, ...paragraphs].filter(Boolean).map((p) => `<p style="margin:0 0 12px;">${esc(p).replace(/\n/g, "<br>")}</p>`).join("");
+  // The message above the invoice (each sentence on a line of its own, as on the invoice)
+  const message = [greeting, ...paragraphs].filter(Boolean).map((p) => `<p style="margin:0 0 12px;">${sentenceLines(esc(p)).replace(/\n/g, "<br>")}</p>`).join("");
 
   // Who, when, and the amount box
   const billTo = [invoice.billTo?.name ? `<b>${esc(invoice.billTo.name)}</b>` : "", invoice.billTo?.address ? esc(invoice.billTo.address).replace(/\n/g, "<br>") : "", invoice.billTo?.email ? esc(invoice.billTo.email) : ""].filter(Boolean).join("<br>");
@@ -120,7 +120,7 @@ ${td(`background:${tint};padding:14px 16px;text-align:right;`, `<div style="font
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" bgcolor="${P.paper}" style="width:100%;max-width:600px;background:${P.paper};border-collapse:collapse;">
 <tr>${td(`background:${P.band};padding:0;line-height:0;`, `<img src="${esc(bandPicture(base, t.id, dark ? "dark" : "bright", receipt, paper.id))}" width="600" alt="NOVACANE STUDIOS · ${word}" style="display:block;width:100%;max-width:600px;height:auto;border:0;color:#ffffff;font-family:${FONT};font-size:16px;letter-spacing:4px;line-height:1.6;padding:0;">`, `bgcolor="${P.band}"`)}</tr>
 ${message ? `<tr>${td(`padding:26px 32px 6px;font-size:15.5px;line-height:1.6;color:${P.ink};`, message, `class="nv-pad"`)}</tr><tr>${td(`padding:6px 32px 0;`, `<div style="height:1px;line-height:1px;font-size:0;background:${P.hair};">&nbsp;</div>`, `class="nv-pad"`)}</tr>` : ""}
-<tr>${td(`padding:22px 32px 0;font-size:13.5px;color:${lineColour};`, `<span style="color:${lineColour};font-size:16px;">&#9679;</span>&nbsp; ${esc(line.text(s))}`, `class="nv-pad"`)}</tr>
+<tr>${td(`padding:22px 32px 0;font-size:13.5px;color:${lineColour};`, `<span style="color:${lineColour};font-size:16px;">&#9679;</span>&nbsp; ${sentenceLines(esc(line.text(s)), "<br>")}`, `class="nv-pad"`)}</tr>
 <tr>${td(`padding:18px 32px 0;`, `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>
 ${td(`width:38%;vertical-align:top;font-size:14px;line-height:1.6;color:${P.ink};padding-right:12px;`, `${label("Billed to")}${billTo}`, `class="nv-col"`)}
 ${td(`width:30%;vertical-align:top;padding-right:12px;`, `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">${facts}</table>`, `class="nv-col"`)}
@@ -131,7 +131,7 @@ ${td(`width:32%;vertical-align:top;`, amountBox, `class="nv-col"`)}
 ${rows}</table>`, `class="nv-pad"`)}</tr>
 <tr>${td(`padding:12px 32px 0;`, `<table role="presentation" cellpadding="0" cellspacing="0" align="right" style="border-collapse:collapse;min-width:300px;">${sums.join("")}</table>`, `class="nv-pad"`)}</tr>
 <tr>${td(`padding:26px 32px 0;`, `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>
-${note ? td(`width:52%;vertical-align:top;padding-right:16px;`, `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>${td(`width:3px;background:${accent2};`, "", `bgcolor="${accent2}"`)}${td(`background:${tint2};padding:12px 14px;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${label("Notes")}${esc(note).replace(/\n/g, "<br>")}`, `bgcolor="${tint2}"`)}</tr></table>`, `class="nv-col"`) : ""}
+${note ? td(`width:52%;vertical-align:top;padding-right:16px;`, `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>${td(`width:3px;background:${accent2};`, "", `bgcolor="${accent2}"`)}${td(`background:${tint2};padding:12px 14px;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${label("Notes")}${sentenceLines(esc(note)).replace(/\n/g, "<br>")}`, `bgcolor="${tint2}"`)}</tr></table>`, `class="nv-col"`) : ""}
 ${td(`vertical-align:top;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${label(receipt ? "Payment" : "How to pay")}${button}${payText}`, `class="nv-col"`)}
 </tr></table>`, `class="nv-pad"`)}</tr>
 <tr>${td(`padding:22px 32px 26px;`, `<div style="border-top:1px solid ${P.hair};padding-top:14px;font-size:12.5px;color:${heading};">Thank you for recording with ${esc(card.name)}.</div>
@@ -141,7 +141,7 @@ ${td(`vertical-align:top;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${l
   // The same, as text (for email apps that don't show HTML)
   const pad = (k, v, w = 34) => `  ${k}${" ".repeat(Math.max(2, w - k.length))}${v}`;
   const text = [
-    ...[greeting, ...paragraphs].filter(Boolean),
+    ...[greeting, ...paragraphs].filter(Boolean).map((p) => sentenceLines(p)),
     "",
     `${word} ${invoice.number} · ${card.name}`,
     line.text(s),
@@ -157,7 +157,7 @@ ${td(`vertical-align:top;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${l
     ...(stage === "deposit"
       ? [pad(`Deposit due now (${s.depositPercent}%)`, pounds(s.dueNowPence)), pad(`Balance due by ${longDay(s.laterBy)}`, pounds(s.laterPence))]
       : [pad(receipt ? "Amount due" : "Remaining balance", receipt ? "£0.00 (paid in full)" : pounds(s.dueNowPence))]),
-    ...(note ? ["", `Notes: ${note}`] : []),
+    ...(note ? ["", `Notes: ${sentenceLines(note)}`] : []),
     "",
     receipt ? "Payment: received with thanks. Nothing more to pay." : "How to pay:",
     ...(receipt ? [] : [...(link ? [`  Pay or see the invoice online: ${link}`] : []), ...(bank ? [`  Bank transfer: ${bank.accountName}, sort code ${bank.sortCode}, account ${bank.accountNumber}`] : []), `  Reference: ${invoice.number}`]),

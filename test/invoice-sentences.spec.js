@@ -15,3 +15,15 @@ describe("each sentence on a line of its own", () => {
 		expect(sentenceLines("Paid. Thank you.", "<br>")).toBe("Paid.<br>Thank you.");
 	});
 });
+
+describe("the emailed invoice too", () => {
+	it("its message, its notes and its plain-text twin: a sentence to a line", async () => {
+		const { invoiceEmailParts } = await import("../src/invoice-email.js");
+		const invoice = { number: "NS-0001", issueDate: "2026-10-16", dueDate: "2026-10-30", lines: [{ description: "Session", qty: 1, unitPence: 10000, totalPence: 10000 }], subtotalPence: 10000, vatPence: 0, totalPence: 10000, depositPercent: 50, billTo: { name: "Tina" }, notes: "Bring your stems. Parking is free after 6pm.", look: {} };
+		const e = invoiceEmailParts({ invoice, stage: "deposit", settings: {}, today: "2026-10-16", base: "https://novacane.test", link: "https://novacane.test/invoice/x", greeting: "Hi Tina,", paragraphs: ["Thank you for booking with Novacane Studios. Your invoice is below."] });
+		expect(e.html).toContain("Thank you for booking with Novacane Studios.<br>Your invoice is below.");
+		expect(e.html).toContain("Bring your stems.<br>Parking is free after 6pm.");
+		expect(e.text).toContain("Thank you for booking with Novacane Studios.\nYour invoice is below.");
+		expect(e.text).toContain("Notes: Bring your stems.\nParking is free after 6pm.");
+	});
+});
