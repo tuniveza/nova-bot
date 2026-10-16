@@ -447,7 +447,7 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
 /* Behind the invoice: a soft surface under Novacane's sky (screen only: printed, it's just the paper):
    faint nebulae of the theme's colours in two corners, the edges a shade darker, grain and stardust */
 html{min-height:100%;background:${tex.backdrop},${t.mono ? "" : `radial-gradient(70% 55% at 0% 0%,color-mix(in srgb,${accent2} ${dark ? 22 : 16}%,transparent),transparent 70%),radial-gradient(65% 50% at 100% 100%,color-mix(in srgb,${accent} ${dark ? 20 : 14}%,transparent),transparent 70%),`}radial-gradient(120% 90% at 50% 40%,transparent 55%,${dark ? "rgb(0 0 0 / .45)" : "rgb(60 40 70 / .10)"}),${page.outside};background-attachment:fixed}
-body{margin:0;padding:28px 12px;font:300 15px/1.6 "Saira",Futura,"Century Gothic","Avenir Next",system-ui,sans-serif;color:var(--ink);letter-spacing:.015em;text-align:center;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;padding:28px 12px;font:300 15px/1.6 "Saira",Futura,"Century Gothic","Avenir Next",system-ui,sans-serif;color:var(--ink);letter-spacing:.015em;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 b,strong,.to b{font-weight:500}
 /* The sky behind it moves (16 October 2026): Novacane's night, in the invoice's own colours, drifting
    very slowly (a nebula breathing, two layers of stars passing and twinkling); still for anyone who
@@ -461,54 +461,54 @@ body::after{background:${skyNear};background-size:560px 560px;animation:nv-pass 
 @media (prefers-reduced-motion:reduce){body::before,body::after{animation:none}}
 .sheet{position:relative}
 .sheet{max-width:820px;margin:0 auto;background:${sheetLayers},var(--paper);box-shadow:0 0 0 1px ${dark ? "rgb(255 255 255 / .05)" : "rgb(40 20 50 / .06)"},0 2px 4px rgb(0 0 0 / ${dark ? ".35" : ".06"}),0 18px 50px ${dark ? "rgb(0 0 0 / .55)" : "rgb(60 30 80 / .16)"}}
-.band{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:22px 40px 18px;color:var(--band-ink);background:${bandGlow ? `${bandGlow},` : ""}${tex.band},var(--band)}
+.band{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:${bandGlow ? `${bandGlow},` : ""}${tex.band},var(--band)}
 .band .sky{position:absolute;inset:0;width:100%;height:100%;display:block}
 .band>:not(.sky){position:relative}
 .band::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--blend)}
-.brand{display:flex;align-items:center;justify-content:center;gap:14px;text-align:left}
+.brand{display:flex;align-items:center;gap:16px}
 .brand .mark{width:86px;height:86px;display:block;flex:none;margin:-18px -2px -18px -16px;overflow:visible}
 .brand b{display:block;font-weight:400;font-stretch:125%;font-size:21px;letter-spacing:.3em}
 .brand small{display:block;margin-top:3px;font-size:10.5px;letter-spacing:.42em;${t.mono ? "opacity:.75" : lightBand ? "color:var(--accent)" : "color:color-mix(in srgb,var(--accent) 45%,#fff)"}}
-.doc{font-weight:400;font-stretch:125%;font-size:12px;letter-spacing:.5em;text-transform:uppercase;opacity:.9;margin-right:-.5em}
+.doc{font-weight:400;font-stretch:125%;font-size:12px;letter-spacing:.5em;text-transform:uppercase;opacity:.9}
 .in{padding:30px 40px 34px}
-.stage{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 0 26px;font-size:13.5px;color:var(--line)}
+.stage{display:flex;align-items:center;gap:10px;margin:0 0 26px;font-size:13.5px;color:var(--line)}
 .stage::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
-.top{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;align-items:start;justify-items:center}
+.top{display:grid;grid-template-columns:1.1fr 1fr auto;gap:28px;align-items:start}
 .k,.top h2,.notes h2,.pay h2{display:block;margin:0 0 6px;font-size:10.5px;font-weight:500;font-stretch:115%;letter-spacing:.24em;text-transform:uppercase;color:${t.mono ? "var(--soft)" : "var(--accent)"}}
 .to{font-size:14px;line-height:1.6}.to b{font-weight:600}
-dl{margin:0;display:grid;grid-template-columns:auto auto;justify-content:center;gap:3px 14px;font-size:13.5px}
-dt{color:var(--soft);text-align:right}dd{margin:0;text-align:left;font-variant-numeric:tabular-nums}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:13.5px}
+dt{color:var(--soft)}dd{margin:0;font-variant-numeric:tabular-nums}
 .late{color:var(--red);font-weight:500}
-.amount{position:relative;min-width:200px;padding:16px 18px;background:${tex.amount},var(--tint);border-top:3px solid var(--accent);border-image:var(--blend) 1;text-align:center}
+.amount{position:relative;min-width:200px;padding:16px 18px;background:${tex.amount},var(--tint);border-left:3px solid var(--accent);border-image:linear-gradient(180deg,var(--accent),var(--accent2)) 1;text-align:right}
 .amount .lbl{display:block;font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--soft)}
 .amount b{display:block;margin:4px 0 2px;font-size:28px;font-weight:500;letter-spacing:.01em;font-variant-numeric:tabular-nums;color:var(--accent)}
 .amount .when{font-size:13px;color:var(--soft)}
-.amount.late{border-image:none;border-top-color:var(--red)}.amount.late .when,.amount.late b{color:var(--red);font-weight:500}
-.amount.done{border-image:none;border-top-color:var(--green);padding-top:24px}.amount.done .when,.amount.done b{color:var(--green);font-weight:500}
-.stamp{position:absolute;right:50%;margin-right:-44px;top:-13px;transform:rotate(-6deg);padding:1px 10px;background:var(--paper);border:2px solid var(--green);border-radius:6px;color:var(--green);font-size:14px;font-weight:600;letter-spacing:.3em;text-transform:uppercase;opacity:.75}
+.amount.late{border-image:none;border-left-color:var(--red)}.amount.late .when,.amount.late b{color:var(--red);font-weight:500}
+.amount.done{border-image:none;border-left-color:var(--green);padding-top:24px}.amount.done .when,.amount.done b{color:var(--green);font-weight:500}
+.stamp{position:absolute;right:12px;top:-13px;transform:rotate(-6deg);padding:1px 10px;background:var(--paper);border:2px solid var(--green);border-radius:6px;color:var(--green);font-size:14px;font-weight:600;letter-spacing:.3em;text-transform:uppercase;opacity:.75}
 table{width:100%;margin-top:30px;border-collapse:collapse;font-size:14px}
-th{padding:0 0 9px;text-align:center;font-size:10.5px;font-weight:500;letter-spacing:.24em;text-transform:uppercase;color:${t.mono ? "var(--soft)" : "var(--accent)"};border-bottom:2px solid var(--rule);border-image:${t.mono ? "none" : "var(--blend) 1"}}
+th{padding:0 0 9px;text-align:left;font-size:10.5px;font-weight:500;letter-spacing:.24em;text-transform:uppercase;color:${t.mono ? "var(--soft)" : "var(--accent)"};border-bottom:2px solid var(--rule);border-image:${t.mono ? "none" : "var(--blend) 1"}}
 td{padding:12px 0;border-bottom:1px solid var(--hair);vertical-align:top}
-th.n,td.n{text-align:center;white-space:nowrap;padding-left:18px;font-variant-numeric:tabular-nums}
+th.n,td.n{text-align:right;white-space:nowrap;padding-left:18px;font-variant-numeric:tabular-nums}
 tr{break-inside:avoid}
-.sums{margin:12px auto 0;max-width:340px;padding:0 10px;border-radius:4px;background:${tex.sums};break-inside:avoid}
+.sums{margin:12px 0 0 auto;max-width:340px;padding:0 10px;border-radius:4px;background:${tex.sums};break-inside:avoid}
 .r{display:flex;justify-content:space-between;gap:18px;padding:6px 0;font-size:14px}
 .r b{font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
 .r.soft{color:var(--soft)}.r small{font-size:12px}
 .r.strong{border-top:1px solid var(--hair);margin-top:4px;padding-top:10px}
 .r.due{margin-top:6px;padding:10px 0 4px;border-top:2px solid var(--rule);border-image:${t.mono ? "none" : "var(--blend) 1"};font-size:16px;font-weight:600}.r.due b{font-weight:600;color:var(--accent)}
 .bottom{display:grid;grid-template-columns:1.2fr 1fr;gap:28px;align-items:start;margin-top:30px;break-inside:avoid}
-.notes{padding:14px 16px;background:${tex.notes},var(--tint2);border-top:3px solid var(--accent2);border-radius:4px;font-size:13.5px;line-height:1.6;white-space:pre-line}
+.notes{padding:14px 16px;background:${tex.notes},var(--tint2);border-left:3px solid var(--accent2);border-radius:4px;font-size:13.5px;line-height:1.6;white-space:pre-line}
 .pay{font-size:13.5px;line-height:1.6}.pay p{margin:0 0 10px}
 .pay a{color:var(--accent);text-decoration:none;border-bottom:1px solid currentColor}
-footer{background:${tex.footer};display:flex;flex-wrap:wrap;justify-content:center;text-align:center;gap:6px 18px;margin-top:30px;padding-top:14px;border-top:1px solid var(--hair);font-size:11.5px;color:var(--soft);letter-spacing:.02em}
+footer{background:${tex.footer};display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 18px;margin-top:30px;padding-top:14px;border-top:1px solid var(--hair);font-size:11.5px;color:var(--soft);letter-spacing:.02em}
 footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 @media (max-width:640px){
   body{padding:0}.band{padding:18px 20px}.brand b{font-size:15px;letter-spacing:.24em}.brand .mark{width:58px;height:58px;margin:-10px -4px -10px -8px}.doc{display:none}.in{padding:22px 20px}
-  .top{grid-template-columns:1fr}.bottom{grid-template-columns:1fr}
+  .top{grid-template-columns:1fr}.amount{text-align:left}.bottom{grid-template-columns:1fr}
   th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){display:none}
 }
-.pagenote{margin:0 0 18px;padding:10px 14px;border-radius:4px;background:var(--tint);border-top:3px solid var(--accent);font-size:14px}
+.pagenote{margin:0 0 18px;padding:10px 14px;border-radius:4px;background:var(--tint);border-left:3px solid var(--accent);font-size:14px}
 .paynow{margin:0 0 14px}.paynow button{font:inherit;font-size:15px;font-weight:600;letter-spacing:.02em;color:#fff;background:var(--blend);border:0;border-radius:6px;padding:12px 22px;cursor:pointer}
 .paynow button:hover{filter:brightness(1.08)}
 .tools{max-width:820px;margin:18px auto 0;display:flex;gap:18px;align-items:center;justify-content:center;font-size:13.5px}
