@@ -137,6 +137,14 @@ describe("what isn't a page stays as it is", () => {
   });
 });
 
+describe("Nova Agent at phone sizes, on a computer", () => {
+  it.each(["/phones", "/phone", "/agent/phones"])("%s opens /agent/phones.html", async (path) => {
+    const res = await get(path, onItsOwn);
+    expect(res.status).toBe(302);
+    expect(new URL(res.headers.get("Location")).pathname).toBe("/agent/phones.html");
+  });
+});
+
 describe("/agent/ is the only address", () => {
   it.each([
     ["/anything-else", ""],

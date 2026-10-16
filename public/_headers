@@ -1,7 +1,9 @@
 # Nova Agent online: its page (/agent/), and its service worker and manifest for the whole app.
-# It isn't shown inside other pages; the panels below are shown inside it (same site only).
+# It isn't shown inside other sites' pages (only this site's own: /agent/phones.html shows it at
+# phone sizes); the panels below are shown inside it (same site only).
 /agent/
-  X-Frame-Options: DENY
+  X-Frame-Options: SAMEORIGIN
+  Content-Security-Policy: frame-ancestors 'self'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
 

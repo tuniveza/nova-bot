@@ -1622,6 +1622,9 @@ function onlyNovaAgent(request, env, pathname) {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
   if (request.headers.get("Sec-Fetch-Dest") !== "document") return null;
   if (pathname === AGENT || CUSTOMER_PAGES.test(pathname) || NOT_PAGES.test(pathname)) return null;
+  // Nova Agent at phone sizes, on a computer (its own page, phones.html, from Nova Agent's repo)
+  if (pathname === "/agent/phones.html") return null;
+  if (pathname === "/phones" || pathname === "/phone" || pathname === "/agent/phones") return Response.redirect(new URL("/agent/phones.html", request.url).toString(), 302);
   // Portal is also its own phone app: its pages decide for themselves (shared/inside.js): from the
   // home-screen icon or the install link (/portal/?app=1) they stay Portal; anywhere else they
   // open inside Nova Agent

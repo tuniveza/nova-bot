@@ -102,6 +102,13 @@ const MAX_BODY = 95 * 1024 * 1024;
 const PIECE = 256 * 1024;
 // Long enough for a chat that uses the Acuity helper
 const ANSWER_WITHIN_MS = 5 * 60_000;
+// An answer nobody reads any more (a live feed whose browser left without the "cancel" getting
+// through) mustn't pile up here: on 2026-10-15 Nova Bot's memory climbed to its ceiling in about
+// 1.5 hours and froze. Stop it when nothing has been read for this long, or when this much is
+// waiting unread (a live feed sends little: anything near this means nobody's listening).
+export const STALL_MS = 90_000;
+export const FEED_BACKLOG = 256 * 1024;
+export const FILE_BACKLOG = 64 * 1024 * 1024;
 const SEND_HEADERS = ["accept", "content-type", "content-length", "x-nova-visualizer", "x-nova-rev", "x-nova-app", "last-event-id", "range"];
 const KEEP_HEADERS = ["content-type", "cache-control", "content-disposition", "content-range", "accept-ranges", "last-modified", "etag", "x-nova-rev", "x-nova-size"];
 
@@ -296,7 +303,7 @@ export class AgentLink extends DurableObject {
     writer.closed.catch(() => {}); // (cut off part-way: the reader hears it, not the logs)
     let answer;
     const head = new Promise((resolve) => (answer = resolve));
-    const entry = { answer, writer, answered: false, timer: 0 };
+    const entry = { answer, writer, answered: false, timer: 0, feed: false, backlog: 0, readAt: Date.now() };
     entry.timer = setTimeout(() => this.finish(id, json({ error: "The studio computer didn't answer in time" }, 504)), ANSWER_WITHIN_MS);
     this.waiting.set(id, entry);
 
@@ -357,6 +364,33 @@ export class AgentLink extends DurableObject {
     entry.writer.close().catch(() => {});
   }
 
+  // While answers are streaming: every half a minute, stop the ones nobody has read for STALL_MS
+  watchStalls() {
+    if (this.stallTimer) return;
+    this.stallTimer = setInterval(() => {
+      const now = Date.now();
+      let streams = 0;
+      let unread = 0;
+      for (const [id, entry] of this.waiting) {
+        if (!entry.answered) continue;
+        if (entry.backlog > 0 && now - entry.readAt > STALL_MS) this.cancel(id);
+        else {
+          streams++;
+          unread += entry.backlog;
+        }
+      }
+      if (!streams) {
+        clearInterval(this.stallTimer);
+        this.stallTimer = 0;
+      }
+      // One line in the log every 10 minutes, to see that it stays small
+      if (now - (this.notedAt || 0) > 600_000) {
+        this.notedAt = now;
+        console.warn(`Link: ${this.waiting.size} waiting, ${streams} streaming, ${(unread / 1048576).toFixed(1)} MB unread`);
+      }
+    }, 30_000);
+  }
+
   cancel(id) {
     if (!this.waiting.has(id)) return;
     try {
@@ -406,7 +440,10 @@ export class AgentLink extends DurableObject {
       clearTimeout(entry.timer);
       const headers = new Headers();
       for (const [k, v] of Object.entries(frame.headers || {})) if (KEEP_HEADERS.includes(k.toLowerCase())) headers.set(k, String(v));
-      if ((headers.get("Content-Type") || "").includes("text/event-stream")) headers.set("Cache-Control", "no-cache, no-transform");
+      if ((headers.get("Content-Type") || "").includes("text/event-stream")) {
+        headers.set("Cache-Control", "no-cache, no-transform");
+        entry.feed = true;
+      }
       headers.set("X-Nova-Agent", "studio-pc");
       const status = Number(frame.status) || 502;
       const noBody = status === 204 || status === 304;
@@ -420,7 +457,19 @@ export class AgentLink extends DurableObject {
       return;
     }
     if (frame.t === "chunk") {
-      entry.writer.write(fromBase64(frame.d)).catch(() => this.cancel(frame.id));
+      const bytes = fromBase64(frame.d);
+      // (A write finishes once the browser's side has taken it: what's still out is unread)
+      if (entry.backlog === 0) entry.readAt = Date.now();
+      entry.backlog += bytes.byteLength;
+      entry.writer.write(bytes).then(
+        () => {
+          entry.backlog -= bytes.byteLength;
+          entry.readAt = Date.now();
+        },
+        () => this.cancel(frame.id),
+      );
+      if (entry.backlog > (entry.feed ? FEED_BACKLOG : FILE_BACKLOG)) this.cancel(frame.id);
+      else this.watchStalls();
       return;
     }
     if (frame.t === "done") {

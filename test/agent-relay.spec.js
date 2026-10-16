@@ -251,6 +251,25 @@ describe("through to the PC and back", () => {
     pc.ws.close();
   });
 
+  it("a live feed nobody reads any more is stopped, not kept (Nova Bot's memory)", async () => {
+    const pc = await connectPc((req, pc) => {
+      pc.send({ t: "res", id: req.id, status: 200, headers: { "content-type": "text/event-stream" } });
+      pc.stream = req.id;
+    });
+    const res = await call("/quests/events", { headers: STAFF_AUTH });
+    expect(res.status).toBe(200);
+    // The browser is gone without a word: nothing reads, nothing cancels. 300 KB of pings later…
+    const ping = btoa("event: ping\ndata: " + "x".repeat(2000) + "\n\n");
+    for (let i = 0; i < 600 && !pc.seen.some((f) => f.t === "cancel"); i++) {
+      pc.send({ t: "chunk", id: pc.stream, d: ping });
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    // (On a busy machine the last of them may still be on its way)
+    for (let i = 0; i < 150 && !pc.seen.some((f) => f.t === "cancel"); i++) await new Promise((r) => setTimeout(r, 20));
+    expect(pc.seen.some((f) => f.t === "cancel" && f.id === pc.stream)).toBe(true);
+    pc.ws.close();
+  });
+
   it("a big file (3 MB, in many pieces) comes through whole, every byte", async () => {
     const size = 3 * 1024 * 1024 + 123;
     const bytes = new Uint8Array(size);
