@@ -154,6 +154,36 @@
         <p class="nv-privacy">Chats are saved for 90 days. <a>Privacy policy</a></p>
       </div>
 
+      <!-- The options (the cogwheel, bottom left): the sound's seed and volume, the theme, the tint -->
+      <button id="nv-options-open" class="nv-gear" type="button" aria-label="Chat options" aria-expanded="false" aria-controls="nv-options" title="Options">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.2"/>
+          <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03z"/>
+        </svg>
+      </button>
+      <div id="nv-options" class="nv-options" role="dialog" aria-label="Chat options" hidden>
+        <p class="nv-opt-title">Options</p>
+        <section>
+          <p class="nv-opt-label">Sound</p>
+          <p class="nv-opt-now">This hour: <b class="nv-mood"></b></p>
+          <div class="nv-opt-row">
+            <button type="button" class="nv-opt-chip" id="nv-keep-sound" role="switch" aria-checked="false">Keep this sound</button>
+            <button type="button" class="nv-opt-chip" id="nv-new-sound">New sound</button>
+          </div>
+          <label class="nv-opt-volume">Volume <input type="range" id="nv-volume" min="0" max="100" step="1" aria-label="Sound volume"></label>
+        </section>
+        <section>
+          <p class="nv-opt-label">Theme</p>
+          <div class="nv-opt-row nv-themes" role="radiogroup" aria-label="Theme"></div>
+          <div class="nv-opt-row" role="radiogroup" aria-label="Tint the website">
+            <span class="nv-opt-small">Tint the website</span>
+            <button type="button" class="nv-opt-chip" role="radio" data-tint="0">Off</button>
+            <button type="button" class="nv-opt-chip" role="radio" data-tint="1">Soft</button>
+            <button type="button" class="nv-opt-chip" role="radio" data-tint="2">Strong</button>
+          </div>
+        </section>
+      </div>
+
       <!-- Shown while the Novacane track plays, just before the booking page opens -->
       <div class="nv-booking-moment" role="status" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" aria-hidden="true">
@@ -530,6 +560,8 @@
   // (remembered in this browser).
 
   let soundsOn = true;
+  // The sounds' volume (the options): 0–1, kept on this device
+  const soundVolume = () => { try { const v = Number(localStorage.getItem("nv-volume")); return localStorage.getItem("nv-volume") === null || !Number.isFinite(v) ? 0.7 : Math.max(0, Math.min(1, v)); } catch (err) { return 0.7; } };
   try {
     soundsOn = localStorage.getItem("nv-sounds") !== "off";
   } catch (err) {}
@@ -538,6 +570,50 @@
   let lastKey = 0;
 
   // Notes (Hz) in G minor, used by every sound
+  // ===== The sound's seed: a new character every hour, or kept =====
+  // Every choice the music and sounds make (the chords, the notes, the tempo, which sounds) comes
+  // from one seed. It changes on the hour, so the chat sounds distinctly different every so often:
+  // each seed is a mood (its key, warmth, shimmer, room and pad). "Keep this sound" in the options
+  // (the cogwheel) keeps one; "New sound" picks another.
+  const SEED_KEY = "nv-sound-seed";
+  const hourSeed = () => Math.floor(Date.now() / 3600000);
+  function keptSeed() {
+    try {
+      const kept = localStorage.getItem(SEED_KEY);
+      if (kept && /^\d+$/.test(kept)) return Number(kept);
+    } catch (err) {}
+    return null;
+  }
+  let seed = keptSeed() ?? hourSeed();
+  const seeded = (a) => () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  let rnd = seeded(Math.imul(seed, 2654435761));
+  // The moods (each keeps to a pentatonic scale, so nothing ever clashes)
+  const MOODS = [
+    { name: "Velvet dusk", transpose: 1, bright: 2600, shimmer: 4.4, room: 0.62, pad: "sawtooth" },
+    { name: "Rain on glass", transpose: 9 / 8, bright: 3400, shimmer: 5.6, room: 0.55, pad: "triangle" },
+    { name: "Low tide", transpose: 8 / 9, bright: 1900, shimmer: 3.4, room: 0.72, pad: "sawtooth" },
+    { name: "Neon hush", transpose: 4 / 3, bright: 3000, shimmer: 5.0, room: 0.5, pad: "triangle" },
+    { name: "Midnight drive", transpose: 3 / 4, bright: 2200, shimmer: 3.8, room: 0.66, pad: "sawtooth" },
+    { name: "Cloud studio", transpose: 6 / 5, bright: 2800, shimmer: 4.8, room: 0.78, pad: "sine" },
+    { name: "Ember glow", transpose: 5 / 6, bright: 2000, shimmer: 3.6, room: 0.6, pad: "triangle" },
+    { name: "Starlight", transpose: 3 / 2, bright: 3600, shimmer: 6.0, room: 0.7, pad: "sine" },
+  ];
+  let MOOD = MOODS[seed % MOODS.length];
+  // A new seed (on the hour, unless kept, or "New sound"): new choices and a new mood from now on
+  function useSeed(next) {
+    seed = next;
+    rnd = seeded(Math.imul(seed, 2654435761));
+    MOOD = MOODS[seed % MOODS.length];
+    if (typeof sfx !== "undefined" && sfx && sfx.wet) sfx.wet.gain.setTargetAtTime(MOOD.room, sfx.currentTime, 0.5);
+    window.dispatchEvent(new CustomEvent("nv-seed"));
+  }
+  setInterval(() => { if (keptSeed() === null && hourSeed() !== seed) useSeed(hourSeed()); }, 60000);
+
   const N = {
     G2: 98, D3: 146.83, G3: 196, Bb3: 233.08, C4: 261.63, D4: 293.66, F4: 349.23, G4: 392, A4: 440,
     Bb4: 466.16, C5: 523.25, D5: 587.33, F5: 698.46, G5: 783.99, A5: 880, Bb5: 932.33, D6: 1174.66,
@@ -569,7 +645,7 @@
     if (kept !== null) typingKit = TYPING_KITS[Number(kept)];
   } catch (err) {}
   if (!typingKit) {
-    const chosen = Math.floor(Math.random() * TYPING_KITS.length);
+    const chosen = Math.floor(rnd() * TYPING_KITS.length);
     typingKit = TYPING_KITS[chosen];
     try {
       sessionStorage.setItem("nv-typing-kit", String(chosen));
@@ -592,7 +668,7 @@
     sfx = new Context();
     // Everything goes through one quiet volume control...
     sfx.out = sfx.createGain();
-    sfx.out.gain.value = 0.6;
+    sfx.out.gain.value = 0.6 * soundVolume();
     // ...softened by a gentle filter, so nothing is ever sharp or bright...
     const warmth = sfx.createBiquadFilter();
     warmth.type = "lowpass";
@@ -608,7 +684,7 @@
     }
     room.buffer = impulse;
     sfx.wet = sfx.createGain();
-    sfx.wet.gain.value = 0.62;
+    sfx.wet.gain.value = MOOD.room;
     const roomTone = sfx.createBiquadFilter();
     roomTone.type = "lowpass";
     roomTone.frequency.value = 2200;
@@ -640,6 +716,7 @@
     bright = Math.min(bright, 1600);
     brightTo = Math.min(brightTo, 2000);
     if (type === "square") type = "sine";
+    freq *= MOOD.transpose;
     const now = sfx.currentTime + at;
     const end = now + attack + release;
     const filter = sfx.createBiquadFilter();
@@ -711,6 +788,7 @@
   // Deep bass: a sub-bass sine, plus the same note an octave up so it can be
   // heard on small speakers too
   function bass(freq, at, length, volume = 0.06, to = null) {
+    freq *= MOOD.transpose;
     [
       [freq, volume, "sine"],
       [freq * 2, volume * 0.35, "triangle"],
@@ -736,7 +814,7 @@
   // The chat's open and close music (and the chat button's hover swell) gets
   // a fresh flavour each time the page loads: a different G minor chord
   // colour, tone, strum speed and direction, sparkle note and bloom
-  const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
+  const pickOne = (list) => list[Math.floor(rnd() * list.length)];
   const TOGGLE = {
     chord: pickOne([
       [N.G2, N.G3, N.Bb3, N.D4, N.F4, N.A4], // Gm9
@@ -748,7 +826,7 @@
     ]),
     type: pickOne(["sawtooth", "triangle", "sine"]),
     strum: pickOne([0.03, 0.045, 0.07, 0.1]),
-    downward: Math.random() < 0.35, // strum from the top note down instead of up
+    downward: rnd() < 0.35, // strum from the top note down instead of up
     sparkle: pickOne([N.D6, N.A5, N.Bb5, N.G5, 1567.98]),
     bloom: pickOne([1800, 2400, 3000]),
   };
@@ -782,7 +860,7 @@
   // left or right, worked out from the link itself. This number is picked
   // fresh each time the page loads, so reloading shuffles which link gets
   // which sound.
-  const PAGE_SEED = Math.floor(Math.random() * 1e9);
+  const PAGE_SEED = Math.floor(rnd() * 1e9);
   const SITE_NOTES = [N.G3, N.Bb3, N.C4, N.D4, N.F4, N.G4, N.A4, N.Bb4, N.C5, N.D5, N.F5, N.G5];
   function siteHover(el) {
     // What makes this link itself: where it goes and what it says
@@ -916,8 +994,8 @@
       } else {
         // Letters: like distant wind chimes, each a little different
         const kit = typingKit;
-        const freq = kit.notes[Math.floor(Math.random() * kit.notes.length)];
-        voice({ freq, release: kit.release * (0.9 + Math.random() * 0.4), volume: 0.0045, type: "sine", detune: 2 + Math.random() * 4, pan: Math.random() * 1.2 - 0.6 });
+        const freq = kit.notes[Math.floor(rnd() * kit.notes.length)];
+        voice({ freq, release: kit.release * (0.9 + rnd() * 0.4), volume: 0.0045, type: "sine", detune: 2 + rnd() * 4, pan: rnd() * 1.2 - 0.6 });
         breath({ length: 0.04, volume: 0.006, from: kit.tap * 0.5, to: kit.tap * 0.6 }); // a whisper of air with each key
       }
     },
@@ -1017,8 +1095,8 @@
     // how long to wait before going to the booking page (seconds).
     bookTrack() {
       if (!canPlay()) return 0;
-      const any = (list) => list[Math.floor(Math.random() * list.length)];
-      const beat = 60 / (78 + Math.random() * 10);
+      const any = (list) => list[Math.floor(rnd() * list.length)];
+      const beat = 60 / (78 + rnd() * 10);
       const step = beat / 2; // a slow, drifting arpeggio
       // The chords it can use: bass note, pad notes, arpeggio notes
       const CHORDS = NOVA_CHORDS;
@@ -1090,19 +1168,20 @@
   const SCROLL_SOUNDS = false;
   const PENTA = [N.G3, N.Bb3, N.C4, N.D4, N.F4, N.G4, N.Bb4, 523.25, N.D5, N.F5, N.G5];
   let lastPick = -1;
-  const fresh = (list) => { let k; do { k = Math.floor(Math.random() * list.length); } while (list.length > 1 && k === lastPick); lastPick = k; return list[k]; };
+  const fresh = (list) => { let k; do { k = Math.floor(rnd() * list.length); } while (list.length > 1 && k === lastPick); lastPick = k; return list[k]; };
   // A soft electric piano note: the body, its bell an octave up fading fast, a tiny tine, a
   // slow shimmer (tremolo), the tone darkening as it fades
   function keys({ freq, at = 0, volume = 0.012, length = 1.8, pan = 0 }) {
     const now = sfx.currentTime + at;
     const tone = sfx.createBiquadFilter();
     tone.type = "lowpass";
-    tone.frequency.setValueAtTime(2600, now);
+    freq *= MOOD.transpose;
+    tone.frequency.setValueAtTime(MOOD.bright, now);
     tone.frequency.exponentialRampToValueAtTime(650, now + length);
     const shimmer = sfx.createGain();
     const lfo = sfx.createOscillator();
     const depth = sfx.createGain();
-    lfo.frequency.value = 4.2 + Math.random() * 0.8;
+    lfo.frequency.value = MOOD.shimmer + rnd() * 0.6;
     depth.gain.value = 0.12;
     shimmer.gain.value = 0.88;
     lfo.connect(depth).connect(shimmer.gain);
@@ -1127,7 +1206,7 @@
   }
   // A velvet pad: a few notes swelling in slowly and fading out slower, warm and dark
   function padSwell(notes, { at = 0, length = 2.4, volume = 0.006, from = 450, to = 1300 } = {}) {
-    notes.forEach((freq, i) => voice({ freq, at: at + i * 0.04, attack: 0.5, release: length, volume, type: "sawtooth", bright: from, brightTo: to, pan: (i % 2 ? 1 : -1) * 0.45, detune: 11 }));
+    notes.forEach((freq, i) => voice({ freq, at: at + i * 0.04, attack: 0.5, release: length, volume, type: MOOD.pad, bright: from, brightTo: to, pan: (i % 2 ? 1 : -1) * 0.45, detune: 11 }));
   }
   const BUTTON_NOTES = { "#nv-chat-send": N.D5, ".nv-book": N.F5, "#nv-mic": N.Bb4, "#nv-voice-toggle": N.G4, "#nv-sounds": 523.25, "#nv-chat-close": N.D4, "#nv-chat-toggle": N.G4 };
   let lastHoverAt = 0;
@@ -1619,7 +1698,7 @@
     if (!canPlay()) return;
     while (music.next < sfx.currentTime + 2) {
       const index = music.step % 4;
-      if (index === 0) music.journey = MUSIC_JOURNEYS[Math.floor(Math.random() * MUSIC_JOURNEYS.length)];
+      if (index === 0) music.journey = MUSIC_JOURNEYS[Math.floor(rnd() * MUSIC_JOURNEYS.length)];
       const [root, pad, arp] = NOVA_CHORDS[music.journey[index]];
       const beat = 60 / MUSIC_BPM;
       const length = beat * 4;
@@ -1632,7 +1711,7 @@
       bass(root, at, length * 0.95, 0.028, music.dry);
       // A gentle bell arpeggio, not on every step, drifting left and right
       for (let k = 0; k < 8; k++) {
-        if (Math.random() < 0.45) continue;
+        if (rnd() < 0.45) continue;
         voice({ freq: arp[(k + index) % arp.length], at: at + k * (beat / 2), attack: 0.01, release: 0.9, volume: 0.0042, type: "sine", bright: 1400, brightTo: 900, pan: k % 2 ? 0.5 : -0.5, detune: 3, to: music.wet });
       }
       // Now and then a high shimmer, and a breath of air
@@ -2748,6 +2827,128 @@
     wasClosed = closedNow;
   }).observe(panel, { attributes: true, attributeFilter: ["class"] });
   wake();
+
+  // ===== The options (the cogwheel at the bottom left) =====
+  const gear = document.getElementById("nv-options-open");
+  const options = document.getElementById("nv-options");
+  function showOptions(on) {
+    options.hidden = !on;
+    gear.setAttribute("aria-expanded", String(on));
+    if (on) drawOptions();
+  }
+  gear.addEventListener("click", (e) => { e.stopPropagation(); showOptions(options.hidden); });
+  document.addEventListener("click", (e) => { if (!options.hidden && !options.contains(e.target) && e.target !== gear) showOptions(false); });
+  options.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); showOptions(false); gear.focus(); } });
+  // The sound
+  const keepSound = document.getElementById("nv-keep-sound");
+  keepSound.addEventListener("click", () => {
+    try { keptSeed() === null ? localStorage.setItem(SEED_KEY, String(seed)) : localStorage.removeItem(SEED_KEY); } catch (err) {}
+    if (keptSeed() === null && hourSeed() !== seed) useSeed(hourSeed());
+    drawOptions();
+  });
+  document.getElementById("nv-new-sound").addEventListener("click", () => {
+    let next = seed;
+    while (next % MOODS.length === seed % MOODS.length) next = Math.floor(Math.random() * 1e6) + 1e6;
+    // (a new sound is kept until "Keep this sound" is switched off; then it's the hour's again)
+    try { localStorage.setItem(SEED_KEY, String(next)); } catch (err) {}
+    useSeed(next);
+    startSounds();
+    sound.open();
+    drawOptions();
+  });
+  const volume = document.getElementById("nv-volume");
+  volume.addEventListener("input", () => {
+    try { localStorage.setItem("nv-volume", String(volume.value / 100)); } catch (err) {}
+    if (sfx && sfx.out) sfx.out.gain.setTargetAtTime(0.6 * soundVolume(), sfx.currentTime, 0.05);
+  });
+  volume.addEventListener("change", () => { startSounds(); sound.reply(); });
+  window.addEventListener("nv-seed", () => { if (!options.hidden) drawOptions(); });
+
+  // The theme: the chat in other colours (a turn of its hue, the same way for every part of it), and,
+  // if wanted, a tint over the whole website in that colour (never over its videos)
+  const THEMES = [
+    { id: "novacane", name: "Novacane", filter: "", undo: "", tint: "" },
+    { id: "violet", name: "Violet", filter: "hue-rotate(-40deg)", undo: "hue-rotate(40deg)", tint: "#6c3cff" },
+    { id: "ember", name: "Ember", filter: "hue-rotate(55deg) saturate(1.15)", undo: "saturate(.87) hue-rotate(-55deg)", tint: "#ff5a2a" },
+    { id: "gold", name: "Gold", filter: "hue-rotate(85deg) saturate(.9) brightness(1.05)", undo: "brightness(.95) saturate(1.11) hue-rotate(-85deg)", tint: "#e8b84a" },
+    { id: "aurora", name: "Aurora", filter: "hue-rotate(170deg)", undo: "hue-rotate(-170deg)", tint: "#2fe0a8" },
+    { id: "ocean", name: "Ocean", filter: "hue-rotate(-100deg)", undo: "hue-rotate(100deg)", tint: "#2f8cff" },
+    { id: "mono", name: "Mono", filter: "grayscale(1) brightness(1.1)", undo: "", tint: "#9a9aa8" },
+  ];
+  const readTheme = () => { try { return { id: localStorage.getItem("nv-theme") || "novacane", tint: Number(localStorage.getItem("nv-tint") || 1) }; } catch (err) { return { id: "novacane", tint: 1 }; } };
+  const themesRow = options.querySelector(".nv-themes");
+  themesRow.innerHTML = THEMES.map((t) => `<button type="button" class="nv-opt-chip nv-theme" role="radio" data-theme="${t.id}" style="--sw:${t.tint || "#b01d68"}">${t.name}</button>`).join("");
+  themesRow.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-theme]");
+    if (!b) return;
+    try { localStorage.setItem("nv-theme", b.dataset.theme); } catch (err) {}
+    applyTheme();
+    drawOptions();
+  });
+  options.querySelectorAll("[data-tint]").forEach((b) => b.addEventListener("click", () => {
+    try { localStorage.setItem("nv-tint", b.dataset.tint); } catch (err) {}
+    applyTheme();
+    drawOptions();
+  }));
+  // The website's tint: one see-through layer over the page, in the theme's colour, with a hole
+  // cut out for every video (kept in place as the page scrolls or changes)
+  const NS = "http://www.w3.org/2000/svg";
+  let tintLayer = null, tintPath = null, tintFrame = 0;
+  function tintHoles() {
+    tintFrame = 0;
+    if (!tintLayer) return;
+    const w = innerWidth, h = innerHeight;
+    let d = `M0 0H${w}V${h}H0Z`;
+    for (const v of document.querySelectorAll("video, iframe")) {
+      if (widget.contains(v)) continue;
+      const r = v.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2 || r.bottom < 0 || r.top > h) continue;
+      d += `M${r.left} ${r.top}H${r.right}V${r.bottom}H${r.left}Z`;
+    }
+    tintPath.setAttribute("d", d);
+  }
+  const holesSoon = () => { if (!tintFrame) tintFrame = requestAnimationFrame(tintHoles); };
+  function applyTheme() {
+    const { id, tint } = readTheme();
+    const t = THEMES.find((x) => x.id === id) || THEMES[0];
+    widget.style.setProperty("--nv-theme-filter", t.filter || "hue-rotate(0deg)");
+    widget.style.setProperty("--nv-theme-undo", t.undo || "none");
+    widget.dataset.theme = t.id;
+    // (the window's glow is an animation that kept the old colours: start it again with the new)
+    panel.style.animation = "none";
+    void panel.offsetWidth;
+    panel.style.animation = "";
+    if (t.tint && tint > 0) {
+      if (!tintLayer) {
+        tintLayer = document.createElementNS(NS, "svg");
+        tintLayer.setAttribute("class", "nv-tint");
+        tintLayer.setAttribute("aria-hidden", "true");
+        tintPath = document.createElementNS(NS, "path");
+        tintPath.setAttribute("fill-rule", "evenodd");
+        tintLayer.appendChild(tintPath);
+        document.body.appendChild(tintLayer);
+        addEventListener("scroll", holesSoon, { passive: true, capture: true });
+        addEventListener("resize", holesSoon, { passive: true });
+        setInterval(holesSoon, 1000);
+      }
+      tintPath.setAttribute("fill", t.tint);
+      tintLayer.style.opacity = tint === 2 ? "0.42" : "0.24";
+      tintLayer.style.display = "";
+      tintHoles();
+    } else if (tintLayer) tintLayer.style.display = "none";
+  }
+  function drawOptions() {
+    const kept = keptSeed() !== null;
+    options.querySelector(".nv-opt-now").innerHTML = `${kept ? "Kept" : "This hour"}: <b class="nv-mood"></b>`;
+    options.querySelector(".nv-mood").textContent = MOOD.name;
+    keepSound.setAttribute("aria-checked", String(kept));
+    keepSound.textContent = kept ? "Keeping this sound" : "Keep this sound";
+    volume.value = Math.round(soundVolume() * 100);
+    const { id, tint } = readTheme();
+    options.querySelectorAll("[data-theme]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.theme === id)));
+    options.querySelectorAll("[data-tint]").forEach((b) => b.setAttribute("aria-checked", String(Number(b.dataset.tint) === tint)));
+  }
+  applyTheme();
 
   // Escape closes it (from inside the chat)
   panel.addEventListener("keydown", (e) => {

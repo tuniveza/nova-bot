@@ -255,7 +255,7 @@
     #150d1f;
 
   box-shadow: 0 20px 60px rgba(113, 4, 57, 0.6);
-  filter: drop-shadow(0px 0px 90px rgba(158, 92, 200, 0.3));
+  filter: var(--nv-theme-filter, hue-rotate(0deg)) drop-shadow(0px 0px 90px rgba(158, 92, 200, 0.3));
   font-family: "Source Code Pro", "Futura", Arial, sans-serif;
   transform-origin: calc(100% - 32px) 100%; /* grows out of the chat button */
   animation:
@@ -341,11 +341,11 @@
 /* Slow, uneven breathing glow that drifts between
    the logo purple and pink */
 @keyframes nv-glow {
-  0%, 100% { filter: drop-shadow(0 0 115px rgba(158, 92, 200, 0.5)); }
-  18%      { filter: drop-shadow(-8px 4px 135px rgba(176, 29, 104, 0.5)); }
-  37%      { filter: drop-shadow(6px -7px 90px rgba(122, 31, 134, 0.5)); }
-  55%      { filter: drop-shadow(0 8px 150px rgba(208, 42, 125, 0.5)); }
-  76%      { filter: drop-shadow(7px 0 100px rgba(90, 28, 134, 0.5)); }
+  0%, 100% { filter: var(--nv-theme-filter, hue-rotate(0deg)) drop-shadow(0 0 115px rgba(158, 92, 200, 0.5)); }
+  18%      { filter: var(--nv-theme-filter, hue-rotate(0deg)) drop-shadow(-8px 4px 135px rgba(176, 29, 104, 0.5)); }
+  37%      { filter: var(--nv-theme-filter, hue-rotate(0deg)) drop-shadow(6px -7px 90px rgba(122, 31, 134, 0.5)); }
+  55%      { filter: var(--nv-theme-filter, hue-rotate(0deg)) drop-shadow(0 8px 150px rgba(208, 42, 125, 0.5)); }
+  76%      { filter: var(--nv-theme-filter, hue-rotate(0deg)) drop-shadow(7px 0 100px rgba(90, 28, 134, 0.5)); }
 }
 
 /* ----- Header with jagged peaks, like the homepage ----- */
@@ -2670,3 +2670,129 @@ html.nv-page-locked body {
 @media (prefers-reduced-motion: reduce) {
   #nv-chat-panel.nv-resting { transition: none; }
 }
+
+
+/* ----- 16 Oct 2026 (later): centred, wider peaks, a bigger ×, the options, themes ----- */
+
+/* Every piece of text centred, across and up and down: the messages sit in the middle of their
+   area until there are enough to fill it, the message box's words in its middle */
+#nv-chat-messages > :first-child { margin-top: auto; }
+#nv-chat-messages > :last-child { margin-bottom: auto; }
+#nv-chat-input { text-align: center; padding-top: 16px; padding-bottom: 16px; }
+#nv-chat-input::placeholder { text-align: center; }
+.nv-input-row { align-items: center; }
+.nv-tool, #nv-chat-send, .nv-opt-chip { display: inline-flex; align-items: center; justify-content: center; text-align: center; }
+
+/* Wider peaks: six broad triangles instead of ten narrow ones */
+.nv-header {
+  clip-path: polygon(
+    0 0, 100% 0, 100% 64%,
+    92% 100%, 84% 62%, 74% 96%, 63% 58%, 52% 100%, 41% 60%, 30% 95%, 19% 58%, 9% 100%, 0 66%
+  );
+}
+
+/* A much bigger close button (and a bigger place to press) */
+#nv-chat-close {
+  left: 8px;
+  top: 4px;
+  font-size: 56px;
+  font-weight: 300;
+  line-height: .9;
+  padding: 4px 12px 10px;
+  border-radius: 18px;
+}
+.nv-header { padding-left: 76px; padding-right: 76px; }
+@media (max-width: 480px), (max-height: 560px) {
+  #nv-chat-close { left: 4px; top: 2px; }
+  .nv-header { padding-left: 68px; padding-right: 68px; }
+}
+
+/* The options: a cogwheel at the bottom left, its panel above it */
+.nv-gear {
+  position: absolute;
+  left: 14px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 4;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 50%;
+  background: rgba(21, 13, 31, .55);
+  color: rgba(255, 255, 255, .8);
+  cursor: pointer;
+  transition: transform .4s cubic-bezier(.2, .8, .2, 1), color .15s, border-color .15s;
+}
+.nv-gear svg { width: 20px; height: 20px; }
+.nv-gear:hover, .nv-gear[aria-expanded="true"] { color: #fff; border-color: rgba(255, 95, 168, .6); transform: rotate(60deg); }
+.nv-options {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(62px + env(safe-area-inset-bottom));
+  z-index: 5;
+  max-height: calc(100% - 140px);
+  overflow-y: auto;
+  padding: 14px 14px 12px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 95, 168, .28);
+  background: rgba(21, 13, 31, .97);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .55);
+  text-align: center;
+  animation: nv-options-in .22s cubic-bezier(.2, .8, .2, 1);
+}
+.nv-options[hidden] { display: none; }
+@keyframes nv-options-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+.nv-options section + section { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .08); }
+.nv-opt-title { margin: 0 0 8px; font-family: "Archivo", "Arial Black", sans-serif; font-stretch: 125%; font-weight: 900; font-size: 15px; text-transform: uppercase; letter-spacing: .06em; }
+.nv-opt-label { margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: rgba(255, 209, 234, .75); }
+.nv-opt-now { margin: 0 0 8px; font-family: saira, sans-serif; font-size: 14px; color: rgba(255, 255, 255, .85); }
+.nv-opt-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; margin-top: 6px; }
+.nv-opt-chip {
+  min-height: 34px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(255, 255, 255, .04);
+  color: #fff;
+  font: 600 12.5px saira, sans-serif;
+  cursor: pointer;
+}
+.nv-opt-chip:hover { border-color: rgba(255, 95, 168, .55); }
+.nv-opt-chip[aria-checked="true"] { border-color: #ff5fa8; background: rgba(255, 95, 168, .18); }
+.nv-theme::before { content: ""; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; background: var(--sw); box-shadow: 0 0 6px var(--sw); }
+.nv-opt-small { font: 600 12px saira, sans-serif; color: rgba(255, 255, 255, .7); margin-right: 2px; }
+.nv-opt-volume { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; font: 600 12.5px saira, sans-serif; color: rgba(255, 255, 255, .8); }
+.nv-opt-volume input { width: 60%; accent-color: #ff5fa8; }
+
+/* The theme: the chat button, its speech bubble and the glow turn with the chat */
+#nv-chat-toggle, #nv-chat-teaser { filter: var(--nv-theme-filter, none); }
+.nv-panel-glow { filter: var(--nv-theme-filter, none); }
+
+/* The website's tint: over the page (never over its videos, or the chat), see-through */
+.nv-tint {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9990;
+  pointer-events: none;
+  mix-blend-mode: color;
+  transition: opacity .6s ease;
+}
+/* (room for the cogwheel beside the footer's words, both sides so they stay centred) */
+/* (the cogwheel sits level with "Keep chat closed", which leaves room beside it; the privacy line
+   below has the whole width) */
+.nv-gear { bottom: calc(40px + env(safe-area-inset-bottom)); }
+.nv-options { bottom: calc(90px + env(safe-area-inset-bottom)); }
+/* (the subtitle and the footer's words on one line beside the bigger × and the cogwheel) */
+.nv-subtitle { font-size: 12px; letter-spacing: .1em; white-space: nowrap; }
+.nv-privacy { font-size: 11px; white-space: nowrap; }
+@media (max-width: 360px) { .nv-subtitle { font-size: 10.5px; letter-spacing: .06em; } .nv-privacy { font-size: 10px; } }
+/* (the chat itself in the theme's colours: only when a theme other than Novacane is chosen, so the
+   usual chat keeps its lighter, filter-free drawing) */
+#nv-chat:not([data-theme="novacane"]) #nv-chat-panel { filter: var(--nv-theme-filter, none); }
+/* (the colour dots in the options show each theme's own colour: the chosen theme's turn undone) */
+.nv-theme::before { filter: var(--nv-theme-undo, none); }
