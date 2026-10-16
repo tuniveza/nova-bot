@@ -4,6 +4,12 @@
 # On 2026-10-15 its runtime froze at about 9pm and nothing noticed until it was restarted by hand.
 set -u
 miss=/run/nova-heal.misses
+# Its memory climbs from ~0.6 GB to its 2.3 GB ceiling (MemoryHigh) in about 1.5 hours; at the ceiling
+# the kernel squeezes it so hard it freezes. So: a quick fresh start (~20 s) before it gets there.
+mem=$(( $(systemctl show nova -p MemoryCurrent --value 2>/dev/null | grep -E '^[0-9]+$' || echo 0) / 1048576 ))
+if [ "$mem" -ge "${NOVA_HEAL_MB:-1950}" ]; then
+  echo "Nova Bot is using ${mem} MB, near its ceiling: a fresh start"; rm -f "$miss"; systemctl restart nova; exit 0
+fi
 if python3 -c 'import urllib.request,urllib.error,sys
 try: urllib.request.urlopen("http://127.0.0.1:8787/status.json", timeout=20)
 except urllib.error.HTTPError: pass

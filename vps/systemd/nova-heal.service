@@ -1,5 +1,5 @@
 [Unit]
-Description=Restart Nova Bot if it stops answering (three silent minutes)
+Description=Restart Nova Bot if it stops answering, or before its memory reaches the ceiling
 
 [Service]
 Type=oneshot
