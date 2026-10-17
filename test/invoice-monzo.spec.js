@@ -47,6 +47,41 @@ describe("on the invoice", () => {
 	});
 });
 
+describe("easy to pay on the client's page (18 Oct 2026)", () => {
+	const bankSettings = { ...settings, bank: { accountName: "Neiman Brown", sortCode: "04-00-03", accountNumber: "12345678", note: "" } };
+	const page = (sets, stage = "deposit", extra = {}) => invoiceDocument(invoice, [], stage, sets, "2026-10-16", { page: { cardForm: "", nonce: "n", ...extra } });
+	it("a big Pay with Monzo button straight under the amount, saying what it does", () => {
+		const html = page(bankSettings);
+		const quick = html.indexOf('class="quickpay"');
+		expect(quick).toBeGreaterThan(html.indexOf('class="amount'));
+		expect(quick).toBeLessThan(html.indexOf("<table>"));
+		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007"');
+		expect(html).toContain('id="quickpay-help">Opens Monzo with £100.00 and NS-0007 filled in. No Monzo? <a href="#bank">Pay by bank transfer</a>.');
+		expect(html).toMatch(/\.quickpay a\.monzo,[^{]*\{[^}]*min-height:52px/);
+		expect(html).toMatch(/a\.monzo:focus-visible[^{]*\{outline:3px solid/);
+		// (still in How to pay too)
+		expect(html.split("Pay £100.00 with Monzo").length).toBe(3);
+	});
+	it("no bank details: no bank line; a Monzo payment link (no amount): just 'Opens Monzo to pay.'", () => {
+		expect(page(settings)).not.toContain("No Monzo?");
+		expect(page({ monzo: { link: "https://monzo.com/pay/r/abc" } })).toContain('id="quickpay-help">Opens Monzo to pay.</p>');
+	});
+	it("Copy buttons by the sort code, account number and reference (shown by the script where it can copy)", () => {
+		const html = page(bankSettings);
+		expect(html).toContain('data-copy="040003" aria-label="Copy sort code" hidden>Copy</button>');
+		expect(html).toContain('data-copy="12345678" aria-label="Copy account number" hidden>Copy</button>');
+		expect(html).toContain('data-copy="NS-0007" aria-label="Copy reference" hidden>Copy</button>');
+		expect(html).toContain('role="status" aria-live="polite"');
+	});
+	it("not on paper, a receipt, or with nothing due", () => {
+		const paper = invoiceDocument(invoice, [], "deposit", bankSettings, "2026-10-16");
+		expect(paper).not.toContain('class="quickpay"');
+		expect(paper).not.toContain('class="copy"');
+		expect(page(bankSettings, "paid")).not.toContain('class="quickpay"');
+		expect(page({})).not.toContain('class="quickpay"');
+	});
+});
+
 describe("in the emails", () => {
 	it("the stage email's words", () => {
 		const e = stageEmail(invoice, stageSums(invoice, [], "deposit", "2026-10-16"), "deposit", settings);

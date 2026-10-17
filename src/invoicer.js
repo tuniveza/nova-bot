@@ -352,8 +352,11 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
     ${receipt ? '<span class="stamp" aria-hidden="true">Paid</span>' : ""}</div>`;
 
   // How to pay (or, paid, how it was paid)
+  // (on the client's page, a Copy button by each thing to type into a banking app: shown by the page's
+  // script only where the browser can copy)
+  const copy = (value, what) => (client ? ` <button type="button" class="copy" data-copy="${esc(value)}" aria-label="Copy ${what}" hidden>Copy</button>` : "");
   const bank = bankReady(settings?.bank) && !receipt
-    ? `<p><span class="k">Bank transfer</span>${esc(settings.bank.accountName)}<br>Sort code ${esc(settings.bank.sortCode)}<br>Account ${esc(settings.bank.accountNumber)}${settings.bank.note ? `<br>${esc(settings.bank.note)}` : ""}</p>`
+    ? `<p id="bank"><span class="k">Bank transfer</span>${esc(settings.bank.accountName)}<br>Sort code ${esc(settings.bank.sortCode)}${copy(settings.bank.sortCode.replace(/\D/g, ""), "sort code")}<br>Account ${esc(settings.bank.accountNumber)}${copy(settings.bank.accountNumber.replace(/\s/g, ""), "account number")}${settings.bank.note ? `<br>${esc(settings.bank.note)}` : ""}</p>`
     : "";
   // Monzo: on the client's page a button (the theme's blend, or its outline under the card button)
   // that opens Monzo with the amount and reference filled in; on paper, the link to type
@@ -363,7 +366,16 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // (on the client's own page: its card button instead of a link to itself)
   const buttons = client && !receipt && !cancelled && (client.cardForm || monzoButton) ? `<div class="paynow">${client.cardForm || ""}${monzoButton}</div>` : "";
   const online = client ? buttons : invoice.pageUrl && !receipt ? `<p><span class="k">Pay online</span><a href="${esc(invoice.pageUrl)}">${esc(invoice.pageUrl.replace(/^https?:\/\//, ""))}</a></p>` : "";
-  const ref = receipt ? "" : `<p><span class="k">Reference</span>${esc(invoice.number)}</p>`;
+  const ref = receipt ? "" : `<p><span class="k">Reference</span>${esc(invoice.number)}${copy(invoice.number, "reference")}</p>`;
+  // Pay now (18 October 2026), on the client's page: the same buttons straight under the amount, so
+  // paying is one tap without scrolling (a phone shows the amount first), with a line saying what the
+  // Monzo button does and where the bank details are
+  const monzoHelp = monzoButton
+    ? `${monzoHref.includes("monzo.me/") ? `Opens Monzo with ${pounds(s.dueNowPence)} and ${esc(invoice.number)} filled in.` : "Opens Monzo to pay."}${bank ? ' No Monzo? <a href="#bank">Pay by bank transfer</a>.' : ""}`
+    : "";
+  const quickpay = buttons
+    ? `<section class="quickpay" aria-label="Pay now"><div class="paynow">${client.cardForm || ""}${monzoButton.replace("<a ", '<a aria-describedby="quickpay-help" ')}</div>${monzoHelp ? `<p id="quickpay-help">${monzoHelp}</p>` : ""}</section>`
+    : "";
   const pay = receipt ? `<p>Received with thanks${s.payments.length ? `, last payment ${esc(longDay(s.payments[s.payments.length - 1].paidOn))}` : ""}.<br>Nothing more to pay.</p>` : cancelled ? "<p>Nothing to pay.</p>" : bank || online || monzo ? `${online}${monzo}${bank}${ref}` : client ? `<p>To pay, get in touch: ${esc(card.email)} or ${esc(card.phone)}.</p>${ref}` : `<p>Payment details are in your email.</p>${ref}`;
 
   const billTo = [invoice.billTo?.name ? `<b>${esc(invoice.billTo.name)}</b>` : "", invoice.billTo?.address ? esc(invoice.billTo.address).replace(/\n/g, "<br>") : "", invoice.billTo?.email ? esc(invoice.billTo.email) : ""].filter(Boolean).join("<br>");
@@ -539,11 +551,23 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 .pay .paynow a.monzo.second{color:var(--accent);background:var(--paper);box-shadow:inset 0 0 0 1.5px var(--accent);padding:12px 20px}
 .pay .paynow a.monzo:hover{filter:brightness(1.08)}.pay .paynow a.monzo.second:hover{background:var(--tint)}
 .paynow~.monzo-line{display:none}.monzo-line small{color:var(--soft);font-size:12px}
+.quickpay{display:flex;flex-direction:column;align-items:flex-end;margin:-8px 0 26px;text-align:right}
+.quickpay .paynow{margin:0;justify-content:flex-end}
+.quickpay a.monzo,.quickpay .paynow button{display:inline-flex;align-items:center;justify-content:center;min-height:52px;font:inherit;font-size:17px;font-weight:600;letter-spacing:.02em;color:var(--on-blend);background:var(--blend);border:2px solid transparent;border-radius:8px;padding:12px 26px;text-decoration:none;cursor:pointer}
+.quickpay a.monzo.second{color:var(--accent);background:var(--paper);border-color:var(--accent)}
+.quickpay a.monzo:hover,.quickpay .paynow button:hover{filter:brightness(1.08)}.quickpay a.monzo.second:hover{background:var(--tint)}
+.quickpay p{margin:10px 0 0;max-width:420px;font-size:14px;line-height:1.5;color:var(--soft)}.quickpay p a{color:var(--accent)}
+.paynow a.monzo:focus-visible,.paynow button:focus-visible,.copy:focus-visible,.quickpay p a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.copy{margin-left:8px;padding:3px 12px;min-height:30px;font:inherit;font-size:12.5px;color:var(--accent);background:var(--paper);border:1px solid var(--accent);border-radius:999px;cursor:pointer;vertical-align:baseline}.copy:hover{background:var(--tint)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (max-width:640px){.quickpay{align-items:stretch;text-align:left;margin-top:-6px}.quickpay .paynow{flex-direction:column;align-items:stretch}.quickpay .paynow form,.quickpay .paynow button{width:100%}.copy{min-height:36px;padding:6px 14px}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+html{scroll-behavior:smooth}
 .tools{max-width:820px;margin:18px auto 0;display:flex;gap:18px;align-items:center;justify-content:center;font-size:13.5px}
 .tools button{font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--hair);border-radius:6px;padding:9px 18px;cursor:pointer}
 .tools a{color:${dark ? "#cfc6c7" : "#5b5256"}}
 @page{size:A4;margin:12mm}
-@media print{.tools,.paynow,.pagenote{display:none!important}.paynow~.monzo-line{display:block}body::before,body::after{display:none}html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
+@media print{.tools,.paynow,.pagenote,.quickpay,.copy{display:none!important}.paynow~.monzo-line{display:block}body::before,body::after{display:none}html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
 </style></head>
 <body><main class="sheet">
 <header class="band">${bandSky(t, lightBand, from, to)}<div class="brand">${logo}<div><b>NOVACANE</b><small>STUDIOS</small></div></div><div class="doc">${receipt ? "Receipt" : "Invoice"}</div></header>
@@ -555,6 +579,7 @@ ${client?.banner ? `<p class="pagenote" role="status">${client.banner}</p>` : ""
   <dl>${facts}</dl>
   ${amount}
 </section>
+${quickpay}
 <table><thead><tr><th>Description</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th></tr></thead><tbody>${rows}</tbody></table>
 <section class="sums" aria-label="Totals">${sums.join("")}</section>
 <div class="bottom">
@@ -562,5 +587,6 @@ ${client?.banner ? `<p class="pagenote" role="status">${client.banner}</p>` : ""
   <section class="pay"><h2>${receipt ? "Payment" : "How to pay"}</h2>${pay}</section>
 </div>
 <footer><span class="thanks">Thank you for recording with ${esc(card.name)}.</span><span>${esc(card.address)}</span><span>${esc(card.phone)} · ${esc(card.email)} · ${esc(card.website)}</span><span>Deposits are non-refundable with less than ${CANCEL_NOTICE_HOURS} hours' notice of cancellation.</span></footer>
-</div></main>${client ? `<p class="tools"><button type="button" id="print">Print or save as PDF</button><a href="/privacy">Privacy</a></p><script nonce="${esc(client.nonce || "")}">document.getElementById("print").addEventListener("click",function(){window.print()})</script>` : ""}</body></html>`;
+</div></main>${client ? `<p class="tools"><button type="button" id="print">Print or save as PDF</button><a href="/privacy">Privacy</a></p><p class="sr" id="copied" role="status" aria-live="polite"></p><script nonce="${esc(client.nonce || "")}">document.getElementById("print").addEventListener("click",function(){window.print()});
+if(navigator.clipboard&&window.isSecureContext)document.querySelectorAll(".copy").forEach(function(b){b.hidden=false;b.addEventListener("click",function(){var label=b.getAttribute("aria-label").replace("Copy ","");navigator.clipboard.writeText(b.dataset.copy).then(function(){b.textContent="Copied ✓";document.getElementById("copied").textContent=label.charAt(0).toUpperCase()+label.slice(1)+" copied";setTimeout(function(){b.textContent="Copy"},2500)})})})</script>` : ""}</body></html>`;
 }
