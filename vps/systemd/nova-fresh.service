@@ -1,0 +1,9 @@
+# A fresh start for Nova Bot every night at 04:30 (nova-fresh.timer), when nobody's using it: the
+# runtime (wrangler dev) keeps a little memory for every request, so each day starts from the bottom
+# instead of nova-heal restarting it in the middle of the day (vps/bin/heal).
+[Unit]
+Description=Nova Bot's nightly fresh start
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart nova.service

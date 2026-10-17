@@ -1,0 +1,9 @@
+[Unit]
+Description=Nova Bot's nightly fresh start (04:30, London time)
+
+[Timer]
+OnCalendar=*-*-* 04:30:00 Europe/London
+Persistent=false
+
+[Install]
+WantedBy=timers.target

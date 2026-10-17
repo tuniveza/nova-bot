@@ -71,7 +71,7 @@ chown -R nova:nova /srv/nova
 mkdir -p /srv/nova-files && rsync -a --delete /srv/nova/app/public/ /srv/nova-files/
 chown -R root:root /srv/nova-files && chmod -R a+rX,go-w /srv/nova-files
 systemctl daemon-reload
-systemctl enable --now nova-heal.timer
+systemctl enable --now nova-heal.timer nova-fresh.timer
 systemctl enable nova-voice.service && systemctl restart nova-voice.service
 REMOTE
 

@@ -4,10 +4,13 @@
 # On 2026-10-15 its runtime froze at about 9pm and nothing noticed until it was restarted by hand.
 set -u
 miss=/run/nova-heal.misses
+# (17 Oct 2026: the panels' files now come from Caddy and wrangler's tracing is off, so it climbs far more
+# slowly and levels off around 2.2 GB; the line moved from 1950 to 2600 MB, MemoryHigh 2900M; the VPS has
+# 4.5 GB free. nova-fresh.timer also gives it a fresh start at 04:30 every night.)
 # Its memory climbs from ~0.6 GB to its 2.3 GB ceiling (MemoryHigh) in about 1.5 hours; at the ceiling
 # the kernel squeezes it so hard it freezes. So: a quick fresh start (~20 s) before it gets there.
 mem=$(( $(systemctl show nova -p MemoryCurrent --value 2>/dev/null | grep -E '^[0-9]+$' || echo 0) / 1048576 ))
-if [ "$mem" -ge "${NOVA_HEAL_MB:-1950}" ]; then
+if [ "$mem" -ge "${NOVA_HEAL_MB:-2600}" ]; then
   echo "Nova Bot is using ${mem} MB, near its ceiling: a fresh start"; rm -f "$miss"; systemctl restart nova; exit 0
 fi
 if python3 -c 'import urllib.request,urllib.error,sys
