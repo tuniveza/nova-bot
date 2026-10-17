@@ -110,10 +110,27 @@ const firstName = (name) => String(name || "").trim().split(/\s+/)[0] || "there"
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const bankReady = (bank) => Boolean(bank && bank.accountName && bank.sortCode && bank.accountNumber);
 
-// How to pay, in plain words (the invoice's own page when it has gone out, then bank transfer)
-function howToPay(invoice, settings) {
+// Monzo (17 October 2026): the studio's Monzo link (Money's settings: a monzo.me name, or a Monzo
+// payment link) -> the address a client taps to pay. A monzo.me name gets the amount due now and the
+// invoice number as the reference (monzo.me/<name>/<pounds>?d=<number>), so it opens in Monzo ready
+// to send; any other Monzo link opens as it is. "" when there's no link.
+export function monzoLink(monzo, pence, reference) {
+  const link = String(monzo?.link || "").trim();
+  if (!link) return "";
+  const me = link.match(/^(?:https?:\/\/)?(?:www\.)?monzo\.me\/([A-Za-z0-9._-]+)\/?$/i);
+  if (!me) return /^https:\/\//i.test(link) ? link : `https://${link}`;
+  const amount = pence > 0 ? `/${(pence / 100).toFixed(2)}` : "";
+  return `https://monzo.me/${me[1]}${amount}${reference ? `?d=${encodeURIComponent(reference)}` : ""}`;
+}
+export const monzoReady = (monzo) => Boolean(String(monzo?.link || "").trim());
+// The link as it reads on paper: "monzo.me/novacane"
+export const monzoShort = (monzo) => String(monzo?.link || "").trim().replace(/^https?:\/\/(www\.)?/i, "").replace(/\/$/, "");
+
+// How to pay, in plain words (the invoice's own page when it has gone out, then Monzo, then bank transfer)
+function howToPay(invoice, settings, pence) {
   const out = [];
   if (invoice.pageUrl) out.push(`See and pay it online: ${invoice.pageUrl}`);
+  if (monzoReady(settings?.monzo)) out.push(`Or pay with Monzo: ${monzoLink(settings.monzo, pence, invoice.number)}`);
   if (bankReady(settings?.bank)) out.push(`Or by bank transfer to ${settings.bank.accountName}, sort code ${settings.bank.sortCode}, account ${settings.bank.accountNumber}, with ${invoice.number} as the reference.`);
   return out;
 }
@@ -122,7 +139,7 @@ function howToPay(invoice, settings) {
 export function stageEmail(invoice, sums, stage, settings) {
   const card = studioCard(settings);
   const hi = `Hi ${firstName(invoice.billTo?.name)},`;
-  const pay = howToPay(invoice, settings);
+  const pay = howToPay(invoice, settings, sums.dueNowPence);
   const sign = `Best wishes,\nThe ${card.name} team`;
   const para = (...p) => p.filter(Boolean).join("\n\n");
   if (stage === "deposit")
@@ -338,10 +355,16 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   const bank = bankReady(settings?.bank) && !receipt
     ? `<p><span class="k">Bank transfer</span>${esc(settings.bank.accountName)}<br>Sort code ${esc(settings.bank.sortCode)}<br>Account ${esc(settings.bank.accountNumber)}${settings.bank.note ? `<br>${esc(settings.bank.note)}` : ""}</p>`
     : "";
+  // Monzo: on the client's page a button (the theme's blend, or its outline under the card button)
+  // that opens Monzo with the amount and reference filled in; on paper, the link to type
+  const monzoHref = monzoReady(settings?.monzo) && !receipt && !cancelled && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
+  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener">Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
+  const monzo = monzoHref ? `<p class="monzo-line"><span class="k">Monzo</span><a href="${esc(monzoHref)}">${esc(monzoShort(settings.monzo))}</a>${monzoHref.includes("monzo.me/") ? `<br><small>Opens Monzo with ${pounds(s.dueNowPence)} and the reference filled in</small>` : ""}</p>` : "";
   // (on the client's own page: its card button instead of a link to itself)
-  const online = client ? (client.cardForm && !receipt && !cancelled ? `<div class="paynow">${client.cardForm}</div>` : "") : invoice.pageUrl && !receipt ? `<p><span class="k">Pay online</span><a href="${esc(invoice.pageUrl)}">${esc(invoice.pageUrl.replace(/^https?:\/\//, ""))}</a></p>` : "";
+  const buttons = client && !receipt && !cancelled && (client.cardForm || monzoButton) ? `<div class="paynow">${client.cardForm || ""}${monzoButton}</div>` : "";
+  const online = client ? buttons : invoice.pageUrl && !receipt ? `<p><span class="k">Pay online</span><a href="${esc(invoice.pageUrl)}">${esc(invoice.pageUrl.replace(/^https?:\/\//, ""))}</a></p>` : "";
   const ref = receipt ? "" : `<p><span class="k">Reference</span>${esc(invoice.number)}</p>`;
-  const pay = receipt ? `<p>Received with thanks${s.payments.length ? `, last payment ${esc(longDay(s.payments[s.payments.length - 1].paidOn))}` : ""}.<br>Nothing more to pay.</p>` : cancelled ? "<p>Nothing to pay.</p>" : bank || online ? `${online}${bank}${ref}` : client ? `<p>To pay, get in touch: ${esc(card.email)} or ${esc(card.phone)}.</p>${ref}` : `<p>Payment details are in your email.</p>${ref}`;
+  const pay = receipt ? `<p>Received with thanks${s.payments.length ? `, last payment ${esc(longDay(s.payments[s.payments.length - 1].paidOn))}` : ""}.<br>Nothing more to pay.</p>` : cancelled ? "<p>Nothing to pay.</p>" : bank || online || monzo ? `${online}${monzo}${bank}${ref}` : client ? `<p>To pay, get in touch: ${esc(card.email)} or ${esc(card.phone)}.</p>${ref}` : `<p>Payment details are in your email.</p>${ref}`;
 
   const billTo = [invoice.billTo?.name ? `<b>${esc(invoice.billTo.name)}</b>` : "", invoice.billTo?.address ? esc(invoice.billTo.address).replace(/\n/g, "<br>") : "", invoice.billTo?.email ? esc(invoice.billTo.email) : ""].filter(Boolean).join("<br>");
   const facts = [
@@ -442,7 +465,7 @@ ${t.mono ? "" : `<linearGradient id="nv-mark" x1="0" y1="0" x2="1" y2="1"><stop 
 <title>${esc(title)} · ${esc(card.name)}</title>
 <style>
 @font-face{font-family:"Saira";src:url(${SAIRA_DATA_URL}) format("woff2");font-weight:300 600;font-stretch:100% 125%;font-display:block}
-:root{--band:${page.band};--accent:${accent};--accent2:${accent2};--blend:linear-gradient(90deg,var(--accent),var(--accent2));--tint:${tint(dark ? 15 : 8)};--tint2:${tint(dark ? 10 : 5)};--paper:${page.paper};--wash:${page.wash};--ink:${page.ink};--soft:${page.soft};--hair:${page.hair};--rule:${page.rule};--red:${red};--green:${green};--line:${lineColour};--band-ink:${lightBand ? "#1C1618" : "#FFFFFF"};color-scheme:${dark ? "dark" : "light"}}
+:root{--band:${page.band};--accent:${accent};--accent2:${accent2};--blend:linear-gradient(90deg,var(--accent),var(--accent2));--tint:${tint(dark ? 15 : 8)};--tint2:${tint(dark ? 10 : 5)};--paper:${page.paper};--wash:${page.wash};--ink:${page.ink};--soft:${page.soft};--hair:${page.hair};--rule:${page.rule};--red:${red};--green:${green};--line:${lineColour};--band-ink:${lightBand ? "#1C1618" : "#FFFFFF"};--on-blend:${dark ? "#120D0C" : "#FFFFFF"};color-scheme:${dark ? "dark" : "light"}}
 *{box-sizing:border-box}
 /* Behind the invoice: a soft surface under Novacane's sky (screen only: printed, it's just the paper):
    faint nebulae of the theme's colours in two corners, the edges a shade darker, grain and stardust */
@@ -509,13 +532,18 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
   th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){display:none}
 }
 .pagenote{margin:0 0 18px;padding:10px 14px;border-radius:4px;background:var(--tint);border-left:3px solid var(--accent);font-size:14px}
-.paynow{margin:0 0 14px}.paynow button{font:inherit;font-size:15px;font-weight:600;letter-spacing:.02em;color:#fff;background:var(--blend);border:0;border-radius:6px;padding:12px 22px;cursor:pointer}
+.paynow{margin:0 0 14px}.paynow button{font:inherit;font-size:15px;font-weight:600;letter-spacing:.02em;color:var(--on-blend);background:var(--blend);border:0;border-radius:6px;padding:12px 22px;cursor:pointer}
 .paynow button:hover{filter:brightness(1.08)}
+.paynow{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.paynow form{margin:0}
+.pay .paynow a.monzo{display:inline-block;font-size:15px;font-weight:600;letter-spacing:.02em;color:var(--on-blend);background:var(--blend);border:0;border-radius:6px;padding:12px 22px;text-decoration:none}
+.pay .paynow a.monzo.second{color:var(--accent);background:var(--paper);box-shadow:inset 0 0 0 1.5px var(--accent);padding:12px 20px}
+.pay .paynow a.monzo:hover{filter:brightness(1.08)}.pay .paynow a.monzo.second:hover{background:var(--tint)}
+.paynow~.monzo-line{display:none}.monzo-line small{color:var(--soft);font-size:12px}
 .tools{max-width:820px;margin:18px auto 0;display:flex;gap:18px;align-items:center;justify-content:center;font-size:13.5px}
 .tools button{font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--hair);border-radius:6px;padding:9px 18px;cursor:pointer}
 .tools a{color:${dark ? "#cfc6c7" : "#5b5256"}}
 @page{size:A4;margin:12mm}
-@media print{.tools,.paynow,.pagenote{display:none!important}body::before,body::after{display:none}html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
+@media print{.tools,.paynow,.pagenote{display:none!important}.paynow~.monzo-line{display:block}body::before,body::after{display:none}html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
 </style></head>
 <body><main class="sheet">
 <header class="band">${bandSky(t, lightBand, from, to)}<div class="brand">${logo}<div><b>NOVACANE</b><small>STUDIOS</small></div></div><div class="doc">${receipt ? "Receipt" : "Invoice"}</div></header>

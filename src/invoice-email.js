@@ -13,7 +13,7 @@
 // Each email is HTML with a plain-text twin (multipart/alternative: the mail server sends both), so an
 // email app that can't show HTML shows the whole invoice as text instead.
 
-import { STAGE_LINES, longDay, paperOf, pounds, sentenceLines, stageSums, studioCard, themeOf } from "./invoicer.js";
+import { STAGE_LINES, longDay, monzoLink, monzoReady, monzoShort, paperOf, pounds, sentenceLines, stageSums, studioCard, themeOf } from "./invoicer.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // Two colours mixed (email apps can't mix them themselves): a share of a over b
@@ -108,9 +108,15 @@ ${td(`background:${tint};padding:14px 16px;text-align:right;`, `<div style="font
   const button = link
     ? `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 14px;"><tr>${td(`background:${accent};border-radius:6px;`, `<a href="${esc(link)}" style="display:inline-block;padding:12px 24px;font-family:${FONT};font-size:15px;font-weight:600;letter-spacing:.3px;color:#ffffff;text-decoration:none;">${receipt ? "See your receipt" : `Pay ${esc(pounds(s.dueNowPence))} or see the invoice`}</a>`, `bgcolor="${accent}"`)}</tr></table>`
     : "";
+  // Monzo: a second button, the theme's accent as an outline (opens Monzo with the amount and the
+  // reference filled in), and the link as words under it
+  const monzoHref = monzoReady(settings?.monzo) && !receipt && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
+  const monzoButton = monzoHref
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 14px;"><tr>${td(`background:${P.paper};border:1.5px solid ${accent};border-radius:6px;`, `<a href="${esc(monzoHref)}" style="display:inline-block;padding:11px 22px;font-family:${FONT};font-size:15px;font-weight:600;letter-spacing:.3px;color:${accent};text-decoration:none;">Pay ${esc(pounds(s.dueNowPence))} with Monzo</a>`, `bgcolor="${P.paper}"`)}</tr></table>`
+    : "";
   const payText = receipt
     ? `<p style="margin:0 0 10px;">Received with thanks. Nothing more to pay.</p>`
-    : `${bank ? `<p style="margin:0 0 10px;"><span style="font-size:10px;letter-spacing:2.4px;text-transform:uppercase;color:${heading};">Bank transfer</span><br>${esc(bank.accountName)}<br>Sort code ${esc(bank.sortCode)} · Account ${esc(bank.accountNumber)}</p>` : ""}<p style="margin:0 0 10px;"><span style="font-size:10px;letter-spacing:2.4px;text-transform:uppercase;color:${heading};">Reference</span><br>${esc(invoice.number)}</p>`;
+    : `${monzoHref ? `<p style="margin:0 0 10px;"><span style="font-size:10px;letter-spacing:2.4px;text-transform:uppercase;color:${heading};">Monzo</span><br><a href="${esc(monzoHref)}" style="color:${accent};">${esc(monzoShort(settings.monzo))}</a></p>` : ""}${bank ? `<p style="margin:0 0 10px;"><span style="font-size:10px;letter-spacing:2.4px;text-transform:uppercase;color:${heading};">Bank transfer</span><br>${esc(bank.accountName)}<br>Sort code ${esc(bank.sortCode)} · Account ${esc(bank.accountNumber)}</p>` : ""}<p style="margin:0 0 10px;"><span style="font-size:10px;letter-spacing:2.4px;text-transform:uppercase;color:${heading};">Reference</span><br>${esc(invoice.number)}</p>`;
   const note = String(invoice.notes || "").trim();
 
   const html = `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="${dark ? "dark" : "light"}"><meta name="supported-color-schemes" content="${dark ? "dark" : "light"}"><title>${esc(word)} ${esc(invoice.number)}</title>
@@ -132,7 +138,7 @@ ${rows}</table>`, `class="nv-pad"`)}</tr>
 <tr>${td(`padding:12px 32px 0;`, `<table role="presentation" cellpadding="0" cellspacing="0" align="right" style="border-collapse:collapse;min-width:300px;">${sums.join("")}</table>`, `class="nv-pad"`)}</tr>
 <tr>${td(`padding:26px 32px 0;`, `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>
 ${note ? td(`width:52%;vertical-align:top;padding-right:16px;`, `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>${td(`width:3px;background:${accent2};`, "", `bgcolor="${accent2}"`)}${td(`background:${tint2};padding:12px 14px;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${label("Notes")}${sentenceLines(esc(note)).replace(/\n/g, "<br>")}`, `bgcolor="${tint2}"`)}</tr></table>`, `class="nv-col"`) : ""}
-${td(`vertical-align:top;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${label(receipt ? "Payment" : "How to pay")}${button}${payText}`, `class="nv-col"`)}
+${td(`vertical-align:top;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${label(receipt ? "Payment" : "How to pay")}${button}${monzoButton}${payText}`, `class="nv-col"`)}
 </tr></table>`, `class="nv-pad"`)}</tr>
 <tr>${td(`padding:22px 32px 26px;`, `<div style="border-top:1px solid ${P.hair};padding-top:14px;font-size:12.5px;color:${heading};">Thank you for recording with ${esc(card.name)}.</div>
 <div style="font-size:11.5px;line-height:1.7;color:${P.soft};margin-top:4px;">${esc(card.address)}<br>${esc(card.phone)} · <a href="mailto:${esc(card.email)}" style="color:${P.soft};">${esc(card.email)}</a> · <a href="https://${esc(card.website.replace(/^https?:\/\//, ""))}" style="color:${P.soft};">${esc(card.website)}</a></div>`, `class="nv-pad"`)}</tr>
@@ -160,7 +166,7 @@ ${td(`vertical-align:top;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${l
     ...(note ? ["", `Notes: ${sentenceLines(note)}`] : []),
     "",
     receipt ? "Payment: received with thanks. Nothing more to pay." : "How to pay:",
-    ...(receipt ? [] : [...(link ? [`  Pay or see the invoice online: ${link}`] : []), ...(bank ? [`  Bank transfer: ${bank.accountName}, sort code ${bank.sortCode}, account ${bank.accountNumber}`] : []), `  Reference: ${invoice.number}`]),
+    ...(receipt ? [] : [...(link ? [`  Pay or see the invoice online: ${link}`] : []), ...(monzoHref ? [`  Pay with Monzo: ${monzoHref}`] : []), ...(bank ? [`  Bank transfer: ${bank.accountName}, sort code ${bank.sortCode}, account ${bank.accountNumber}`] : []), `  Reference: ${invoice.number}`]),
     ...(receipt && link ? [`See your receipt: ${link}`] : []),
     "",
     `Thank you for recording with ${card.name}.`,

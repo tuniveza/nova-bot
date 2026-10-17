@@ -21,8 +21,9 @@
 //
 // The client gets a link to their invoice's own page (/invoice/<token>: a random secret, nothing
 // else in the address) to see it, print it or save it as a PDF, and pay: by card through Stripe's
-// own checkout page when Stripe is set up (its webhook records the payment), else by bank transfer
-// with the studio's bank details from the invoice settings.
+// own checkout page when Stripe is set up (its webhook records the payment), with Monzo (the studio's
+// Monzo link, the amount filled in) or by bank transfer with the studio's bank details from the
+// invoice settings.
 //
 // Clients on the client list (src/clients.js) keep their money fields in step: sending an
 // invoice adds its total to what they've been invoiced and what they owe; a payment takes it off
@@ -139,6 +140,8 @@ export const invoiceNumber = (seq) => (seq < 0 ? "TEST-" + String(-seq).padStart
 const DEFAULT_SETTINGS = {
   business: { name: "Novacane Studios", address: "", email: "", vatNumber: "", phone: "", website: "" },
   bank: { accountName: "", sortCode: "", accountNumber: "", note: "" },
+  // Monzo (17 October 2026): the studio's monzo.me name or Monzo payment link (src/invoicer.js's monzoLink)
+  monzo: { link: "" },
   vatRate: 0,
   dueDays: 14,
   invoiceTheme: "night",
@@ -154,6 +157,7 @@ export async function readSettings(env) {
   return {
     business: { ...DEFAULT_SETTINGS.business, ...(saved.business || {}) },
     bank: { ...DEFAULT_SETTINGS.bank, ...(saved.bank || {}) },
+    monzo: { ...DEFAULT_SETTINGS.monzo, ...(saved.monzo || {}) },
     vatRate: Number.isFinite(saved.vatRate) ? saved.vatRate : DEFAULT_SETTINGS.vatRate,
     dueDays: Number.isInteger(saved.dueDays) ? saved.dueDays : DEFAULT_SETTINGS.dueDays,
     invoiceTheme: themeId(saved.invoiceTheme) || DEFAULT_SETTINGS.invoiceTheme,
@@ -162,11 +166,23 @@ export async function readSettings(env) {
   };
 }
 export const bankReady = (s) => Boolean(s.bank.accountName && s.bank.sortCode && s.bank.accountNumber);
+// A Monzo link as typed ("monzo.me/novacane", "https://monzo.me/novacane/", "@novacane", "novacane")
+// -> "https://monzo.me/novacane"; a Monzo payment link is kept as it is
+const MONZO_LINK = /^https:\/\/((www\.)?monzo\.me\/[A-Za-z0-9._-]+|([a-z0-9-]+\.)*monzo\.com\/\S+)$/i;
+function monzoClean(value) {
+  const v = oneLine(value, 300).replace(/\s/g, "");
+  if (!v) return "";
+  const name = v.match(/^@?([A-Za-z0-9._-]+)$/);
+  if (name && !/\./.test(name[1])) return `https://monzo.me/${name[1]}`;
+  const link = /^https?:\/\//i.test(v) ? v.replace(/^http:/i, "https:") : `https://${v}`;
+  return link.replace(/^(https:\/\/(?:www\.)?monzo\.me\/[A-Za-z0-9._-]+)\/?$/i, "$1");
+}
 
 export async function saveSettings(env, me, input) {
   const s = await readSettings(env);
   const b = input?.business || {};
   const k = input?.bank || {};
+  const mz = input?.monzo || {};
   const next = {
     business: {
       name: b.name !== undefined ? oneLine(b.name, 120) || DEFAULT_SETTINGS.business.name : s.business.name,
@@ -182,6 +198,7 @@ export async function saveSettings(env, me, input) {
       accountNumber: k.accountNumber !== undefined ? oneLine(k.accountNumber, 34) : s.bank.accountNumber,
       note: k.note !== undefined ? oneLine(k.note, 200) : s.bank.note,
     },
+    monzo: { link: mz.link !== undefined ? monzoClean(mz.link) : s.monzo.link },
     vatRate: s.vatRate,
     dueDays: s.dueDays,
     invoiceTheme: s.invoiceTheme,
@@ -203,6 +220,7 @@ export async function saveSettings(env, me, input) {
   if (next.business.email && !EMAIL_PATTERN.test(next.business.email)) return fail(400, "The studio's email address doesn't look right.");
   if (next.bank.sortCode && !/^\d{2}-?\d{2}-?\d{2}$/.test(next.bank.sortCode.replace(/\s/g, ""))) return fail(400, "A sort code is six numbers, like 12-34-56.");
   if (next.bank.accountNumber && !/^(\d{8}|[A-Z]{2}\d{2}[A-Z0-9]{10,30})$/.test(next.bank.accountNumber.replace(/\s/g, "").toUpperCase())) return fail(400, "An account number is eight numbers (or an IBAN).");
+  if (next.monzo.link && !MONZO_LINK.test(next.monzo.link)) return fail(400, "A Monzo link is your monzo.me name (like monzo.me/novacane) or a Monzo payment link.");
   if (input?.vatRate !== undefined) {
     const v = Number(input.vatRate);
     if (!Number.isFinite(v) || v < 0 || v > 100) return fail(400, "VAT is a percent from 0 to 100 (0 if the studio isn't VAT registered).");
@@ -1383,7 +1401,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
       invoices,
       expenses,
       reminders: reminders.results.map(reminderShape),
-      settings: { business: settings.business, bank: settings.bank, vatRate: settings.vatRate, dueDays: settings.dueDays, bankReady: bankReady(settings) },
+      settings: { business: settings.business, bank: settings.bank, monzo: settings.monzo, vatRate: settings.vatRate, dueDays: settings.dueDays, bankReady: bankReady(settings), monzoReady: Boolean(settings.monzo.link) },
       categories: CATEGORIES,
       methods: METHODS.filter((m) => m !== "stripe").map((m) => ({ id: m, name: METHOD_NAMES[m] })),
       canDecide: canDecide(me),

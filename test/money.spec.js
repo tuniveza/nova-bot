@@ -331,6 +331,18 @@ describe("the invoice page", () => {
 		expect(noCard.text).not.toContain("by card");
 	});
 
+	it("keeps a Monzo link (a name or a monzo.me link, tidied) and shows Pay with Monzo on the page", async () => {
+		expect((await portal("money/settings", { body: { monzo: { link: "https://example.com/pay" } } })).status).toBe(400);
+		expect((await portal("money/settings", { body: { monzo: { link: "@novacane" } } })).status).toBe(200);
+		expect((await portal("money/settings", { body: { monzo: { link: "monzo.me/novacane/" } } })).status).toBe(200);
+		const inv = await writeAndSend();
+		const page = await call(new Request(`${BASE}/invoice/${(await row(inv.id)).token}`));
+		expect(page.text).toContain("https://monzo.me/novacane/175.00?d=NS-0001");
+		expect(page.text).toContain("Pay £175.00 with Monzo");
+		expect((await portal("money/settings", { body: { monzo: { link: "" } } })).status).toBe(200);
+		expect((await call(new Request(`${BASE}/invoice/${(await row(inv.id)).token}`))).text).not.toContain("monzo.me");
+	});
+
 	it("Pay by card opens Stripe's checkout for what's due now (the deposit, then the rest); the webhook records each once", async () => {
 		const inv = await writeAndSend();
 		const token = (await row(inv.id)).token;
