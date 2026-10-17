@@ -15,6 +15,12 @@ Environment=HOME=/srv/nova
 Environment=WRANGLER_SEND_METRICS=false
 Environment=CI=1
 Environment=NODE_ENV=production
+# (17 Oct 2026) wrangler dev's local "observability" (on by default) traced every request into
+# state/observability: 6.3 GB on disk, and the reason Nova Bot's memory climbed to its ceiling and it
+# was restarted every 25 minutes to 2 hours. Nobody reads it on the VPS, and its data browser
+# (local explorer) isn't used either: both off.
+Environment=X_LOCAL_OBSERVABILITY=false
+Environment=X_LOCAL_EXPLORER=false
 EnvironmentFile=/srv/nova/desk.env
 ExecStart=/usr/bin/npx --no-install wrangler dev -c wrangler.vps.jsonc --local --ip 127.0.0.1 --port 8787 --persist-to /srv/nova/state --test-scheduled --local-upstream ${DESK_ADDRESS} --show-interactive-dev-session=false --log-level warn
 Restart=always
