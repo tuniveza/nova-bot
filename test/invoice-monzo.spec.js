@@ -56,7 +56,7 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		expect(quick).toBeGreaterThan(html.indexOf('class="amount'));
 		expect(quick).toBeLessThan(html.indexOf("<table>"));
 		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007"');
-		expect(html).toContain('id="quickpay-help">Opens Monzo with £100.00 and NS-0007 filled in. No Monzo? <a href="#bank">Pay by bank transfer</a>.');
+		expect(html).toContain('id="quickpay-help">Opens Monzo with £100.00 and NS-0007 filled in.<br>No Monzo? <a href="#bank">Pay by bank transfer</a>.');
 		expect(html).toMatch(/\.quickpay a\.monzo,[^{]*\{[^}]*min-height:52px/);
 		expect(html).toMatch(/a\.monzo:focus-visible[^{]*\{outline:3px solid/);
 		// (still in How to pay too)
