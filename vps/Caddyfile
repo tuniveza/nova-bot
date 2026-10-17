@@ -30,6 +30,26 @@
 	handle /desk-status/* {
 		reverse_proxy 127.0.0.1:8788
 	}
+	# Files (17 Oct 2026): the panels' scripts, styles, pictures and sounds straight from disk, never
+	# through the runtime: wrangler dev kept memory for every file it handed out, three requests in four
+	# were these, and Nova Bot was restarted every 25 minutes to 2 hours for it. Only files that exist (a
+	# copy of public/ Caddy may read, made by vps/deploy.sh), never a page, a service worker or the
+	# manifest (their headers come from public/_headers), and never what the Worker answers first
+	# (wrangler.jsonc's run_worker_first). Anything else goes on to Nova Bot as before.
+	@file {
+		path_regexp \.(js|mjs|css|svg|png|jpe?g|webp|gif|ico|woff2?|ttf|otf|mp3|wav|ogg|m4a|webm|mp4|json|txt|map)$
+		not path */sw.js */manifest.webmanifest /observatory/data/* /observatory/media/* /agent/apps/* /agent/plans/* /agent/tools/* /agent/helpers/*
+		file {
+			root /srv/nova-files
+		}
+	}
+	handle @file {
+		root * /srv/nova-files
+		# (as Nova Bot answered them: always asked again, a quick 304 when nothing changed)
+		header Cache-Control "public, max-age=0, must-revalidate"
+		header X-Content-Type-Options nosniff
+		file_server
+	}
 	handle {
 		reverse_proxy 127.0.0.1:8787 {
 			# Who's asking (the Worker reads it as Cloudflare's header for its rate limits)

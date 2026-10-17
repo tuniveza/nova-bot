@@ -66,6 +66,10 @@ touch /srv/nova/secrets.env && chmod 600 /srv/nova/secrets.env
 ln -sf /srv/nova/secrets.env /srv/nova/app/.dev.vars
 mkdir -p /var/log/caddy && chown caddy:caddy /var/log/caddy
 chown -R nova:nova /srv/nova
+# The public files Caddy hands out itself (vps/Caddyfile, "Files"): a copy it may read, since /srv/nova
+# is Nova Bot's own (its secrets and data)
+mkdir -p /srv/nova-files && rsync -a --delete /srv/nova/app/public/ /srv/nova-files/
+chown -R root:root /srv/nova-files && chmod -R a+rX,go-w /srv/nova-files
 systemctl daemon-reload
 systemctl enable --now nova-heal.timer
 systemctl enable nova-voice.service && systemctl restart nova-voice.service
