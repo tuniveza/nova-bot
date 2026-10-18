@@ -74,6 +74,8 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		for (const turn of [-18, 12, 24, -8, 6, -24, 16, -12]) expect(html).toContain(encodeURIComponent(`rotate(${turn}) scale(.4)`));
 		expect(html).toMatch(/\.monzo\.second\{background-image:[^}]*url\("data:image\/svg\+xml,/);
 		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:linear-gradient\(180deg,rgba\(255,255,255,\.2\)/);
+		// (a faint inner border with shaved corners)
+		expect(html).toMatch(/\.paynow a\.monzo::before\{[^}]*inset:6px;[^}]*clip-path:polygon\(evenodd,7px 0,/);
 		// (its thick border fades from the M's ink on the left)
 		expect(html).toMatch(/\.paynow a\.monzo::after\{[^}]*padding:3px;background:linear-gradient\(90deg,currentColor 0%/);
 	});

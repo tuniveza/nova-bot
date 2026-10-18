@@ -571,11 +571,15 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 .paynow a.monzo::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:3px;background:linear-gradient(90deg,currentColor 0%,color-mix(in srgb,currentColor 70%,transparent) 30%,color-mix(in srgb,currentColor 12%,transparent) 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);pointer-events:none}
 .paynow a.monzo{box-shadow:inset 10px 0 14px -6px color-mix(in srgb,currentColor 35%,transparent),inset 0 0 10px color-mix(in srgb,currentColor 14%,transparent)}
 .quickpay .paynow a.monzo::after{inset:-2px}
+/* A second, inner border: a fine line all the way round with its corners shaved off at an angle, like
+   the cut ends of Monzo's M; faint, a whisper of the white border outside it */
+.paynow a.monzo::before{content:"";position:absolute;inset:6px;background:linear-gradient(90deg,color-mix(in srgb,currentColor 38%,transparent),color-mix(in srgb,currentColor 18%,transparent));clip-path:polygon(evenodd,7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px,7px 0,7px 1.5px,calc(100% - 7px) 1.5px,calc(100% - 1.5px) 7px,calc(100% - 1.5px) calc(100% - 7px),calc(100% - 7px) calc(100% - 1.5px),7px calc(100% - 1.5px),1.5px calc(100% - 7px),1.5px 7px,7px 1.5px);pointer-events:none}
+.monzo.second::before{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 35%,transparent),color-mix(in srgb,var(--accent2) 15%,transparent))}
 /* A subtle highlight: soft light across the top of the button, like light on glass */
 .paynow a.monzo:not(.second){background:linear-gradient(180deg,rgba(255,255,255,.2) 0%,rgba(255,255,255,.06) 45%,rgba(255,255,255,0) 55%),${mTile(mShades(true), 0.24)} 0 0/56px 48px space,var(--blend)}
 .monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%),${mTile(mShades(false), 0.1)};background-size:auto,56px 48px;background-repeat:no-repeat,space}
 .monzo.second::after{background:linear-gradient(90deg,var(--accent) 0%,color-mix(in srgb,var(--accent2) 60%,transparent) 35%,color-mix(in srgb,var(--accent2) 15%,transparent) 100%)}
-@media (forced-colors:active){.paynow a.monzo::after{display:none}}
+@media (forced-colors:active){.paynow a.monzo::after,.paynow a.monzo::before{display:none}}
 .quickpay{display:flex;flex-direction:column;align-items:flex-end;margin:16px 0 26px;text-align:right}
 .quickpay .paynow{margin:0;justify-content:flex-end}
 .quickpay a.monzo,.quickpay .paynow button{display:inline-flex;align-items:center;justify-content:center;min-height:52px;font:inherit;font-size:17px;font-weight:600;letter-spacing:.02em;color:var(--on-blend);background:var(--blend);border:2px solid transparent;border-radius:8px;padding:12px 26px;text-decoration:none;cursor:pointer}
