@@ -364,7 +364,7 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // Monzo: on the client's page a button (the theme's blend, or its outline under the card button)
   // that opens Monzo with the amount and reference filled in; on paper, the link to type
   const monzoHref = monzoReady(settings?.monzo) && !receipt && !cancelled && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
-  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener">Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
+  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><span class="mzring" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
   // The pattern: Monzo's M, small, in staggered rows, in a lighter shade of the theme's own colours (on the
   // outline button, a whisper of its accent on the paper)
   // (each tile whole inside the button: "space" lays only whole tiles, spread evenly, none cut at an edge,
@@ -575,6 +575,11 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
    the cut ends of Monzo's M; faint, a whisper of the white border outside it */
 .paynow a.monzo::before{content:"";position:absolute;inset:6px;background:linear-gradient(90deg,color-mix(in srgb,currentColor 38%,transparent),color-mix(in srgb,currentColor 18%,transparent));clip-path:polygon(evenodd,7px 0,calc(100% - 7px) 0,100% 7px,100% calc(100% - 7px),calc(100% - 7px) 100%,7px 100%,0 calc(100% - 7px),0 7px,7px 0,7px 1.5px,calc(100% - 7px) 1.5px,calc(100% - 1.5px) 7px,calc(100% - 1.5px) calc(100% - 7px),calc(100% - 7px) calc(100% - 1.5px),7px calc(100% - 1.5px),1.5px calc(100% - 7px),1.5px 7px,7px 1.5px);pointer-events:none}
 .monzo.second::before{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 35%,transparent),color-mix(in srgb,var(--accent2) 15%,transparent))}
+/* Between the two borders: fine slanted stripes (the slant of the M's cut ends) in Monzo's own colours,
+   coral, amber, mint and blue, faint and blended into the button's colour */
+.mzring{position:absolute;inset:0;z-index:-1;background:repeating-linear-gradient(135deg,#FF6E5A 0 1.5px,transparent 1.5px 4px,#FFC453 4px 5.5px,transparent 5.5px 8px,#5BD0B8 8px 9.5px,transparent 9.5px 12px,#4AA3DF 12px 13.5px,transparent 13.5px 16px);opacity:.42;mix-blend-mode:soft-light;clip-path:polygon(evenodd,0 0,100% 0,100% 100%,0 100%,0 0,7px 6px,calc(100% - 7px) 6px,calc(100% - 6px) 7px,calc(100% - 6px) calc(100% - 7px),calc(100% - 7px) calc(100% - 6px),7px calc(100% - 6px),6px calc(100% - 7px),6px 7px,7px 6px);pointer-events:none}
+.monzo.second .mzring{opacity:.3;mix-blend-mode:multiply}
+@media (forced-colors:active){.mzring{display:none}}
 /* A subtle highlight: soft light across the top of the button, like light on glass */
 .paynow a.monzo:not(.second){background:linear-gradient(180deg,rgba(255,255,255,.2) 0%,rgba(255,255,255,.06) 45%,rgba(255,255,255,0) 55%),${mTile(mShades(true), 0.24)} 0 0/56px 48px space,var(--blend)}
 .monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%),${mTile(mShades(false), 0.1)};background-size:auto,56px 48px;background-repeat:no-repeat,space}
