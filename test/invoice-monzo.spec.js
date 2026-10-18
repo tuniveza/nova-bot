@@ -64,15 +64,11 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 	});
 	it("Monzo's M as a quiet pattern behind the words (no big M), a lighter shade of the theme's colours", () => {
 		const html = page(bankSettings);
-		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="mzring" aria-hidden="true"></span><span class="mzglass" aria-hidden="true"></span><span class="nvsky" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
+		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="nvsky" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
 		// (Novacane's sky merged over it: stars, sparkles, nebula glow, blended in)
 		expect(html).toMatch(/\.nvsky\{[^}]*url\("data:image\/svg\+xml,[^"]*circle[^}]*radial-gradient[^}]*mix-blend-mode:screen/);
-		// (and a glassy sheen over them, its glints drifting only on hover or focus, still for less motion)
-		expect(html).toMatch(/\.mzring,\.mzglass\{[^}]*clip-path:polygon\(evenodd,/);
-		expect(html).toMatch(/\.mzglass\{background:linear-gradient\(180deg,rgba\(255,255,255,\.62\)/);
-		expect(html).toContain("@media (prefers-reduced-motion:reduce){.mzglass{transition:none}}");
-		// (between the borders: Monzo's coral, amber, mint and blue in fine slanted stripes)
-		expect(html).toMatch(/\.mzring\{background:repeating-linear-gradient\(135deg,#FF6E5A[^}]*#FFC453[^}]*#5BD0B8[^}]*#4AA3DF/);
+		// (no inner border or anything between the borders: taken off 18 Oct 2026)
+		expect(html).not.toMatch(/mzring|mzglass|a\.monzo::before/);
 		expect(html).not.toContain('class="mz"');
 		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:[^}]*url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*84px 48px space,var\(--blend\)\}/);
 		// (each M its own shade: eight different colours in the button's pattern)
@@ -85,8 +81,6 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		expect(pattern.split("M4.244").length).toBe(7);
 		expect(html).toMatch(/\.monzo\.second\{background-image:[^}]*url\("data:image\/svg\+xml,/);
 		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:linear-gradient\(180deg,rgba\(255,255,255,\.2\)/);
-		// (a faint inner border with shaved corners)
-		expect(html).toMatch(/\.paynow a\.monzo::before\{[^}]*inset:6px;[^}]*clip-path:polygon\(evenodd,7px 0,/);
 		// (its thick border fades from the M's ink on the left)
 		expect(html).toMatch(/\.paynow a\.monzo::after\{[^}]*padding:3px;background:linear-gradient\(90deg,currentColor 0%/);
 	});
