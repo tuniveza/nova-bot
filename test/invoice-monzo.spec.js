@@ -74,12 +74,15 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		// (between the borders: Monzo's coral, amber, mint and blue in fine slanted stripes)
 		expect(html).toMatch(/\.mzring\{background:repeating-linear-gradient\(135deg,#FF6E5A[^}]*#FFC453[^}]*#5BD0B8[^}]*#4AA3DF/);
 		expect(html).not.toContain('class="mz"');
-		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:[^}]*url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*56px 48px space,var\(--blend\)\}/);
+		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:[^}]*url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*84px 48px space,var\(--blend\)\}/);
 		// (each M its own shade: eight different colours in the button's pattern)
 		const pattern = decodeURIComponent(html.match(/\.paynow a\.monzo:not\(\.second\)\{background:[^}]*?url\("data:image\/svg\+xml,([^"]+)"/)[1]);
 		expect(new Set([...pattern.matchAll(/fill="(#[0-9A-F]{6})"/g)].map((m) => m[1])).size).toBe(8);
 		// (each M turned its own way)
-		for (const turn of [-18, 12, 24, -8, 6, -24, 16, -12]) expect(html).toContain(encodeURIComponent(`rotate(${turn}) scale(.4)`));
+		for (const turn of [-18, 12, 24, -8, 6, -24, 16, -12, 10, -20, -6, 18]) expect(html).toContain(encodeURIComponent(`rotate(${turn}) scale(.4)`));
+		// (money among the M's: a note, a coin and a stack, twice each)
+		for (const piece of ["M3 6h18a2 2", "M12 2a10 10", "M3 6a9 3.5"]) expect(pattern.split(piece).length).toBe(3);
+		expect(pattern.split("M4.244").length).toBe(7);
 		expect(html).toMatch(/\.monzo\.second\{background-image:[^}]*url\("data:image\/svg\+xml,/);
 		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:linear-gradient\(180deg,rgba\(255,255,255,\.2\)/);
 		// (a faint inner border with shaved corners)
