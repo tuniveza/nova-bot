@@ -64,7 +64,9 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 	});
 	it("Monzo's M as a quiet pattern behind the words (no big M), a lighter shade of the theme's colours", () => {
 		const html = page(bankSettings);
-		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="mzring" aria-hidden="true"></span><span class="mzglass" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
+		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="mzring" aria-hidden="true"></span><span class="mzglass" aria-hidden="true"></span><span class="nvsky" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
+		// (Novacane's sky merged over it: stars, sparkles, nebula glow, blended in)
+		expect(html).toMatch(/\.nvsky\{[^}]*url\("data:image\/svg\+xml,[^"]*circle[^}]*radial-gradient[^}]*mix-blend-mode:screen/);
 		// (and a glassy sheen over them, its glints drifting only on hover or focus, still for less motion)
 		expect(html).toMatch(/\.mzring,\.mzglass\{[^}]*clip-path:polygon\(evenodd,/);
 		expect(html).toMatch(/\.mzglass\{background:linear-gradient\(180deg,rgba\(255,255,255,\.62\)/);

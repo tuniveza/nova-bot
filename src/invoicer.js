@@ -364,7 +364,7 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // Monzo: on the client's page a button (the theme's blend, or its outline under the card button)
   // that opens Monzo with the amount and reference filled in; on paper, the link to type
   const monzoHref = monzoReady(settings?.monzo) && !receipt && !cancelled && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
-  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><span class="mzring" aria-hidden="true"></span><span class="mzglass" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
+  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><span class="mzring" aria-hidden="true"></span><span class="mzglass" aria-hidden="true"></span><span class="nvsky" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
   // The pattern: Monzo's M, small, in staggered rows, in a lighter shade of the theme's own colours (on the
   // outline button, a whisper of its accent on the paper)
   // (each tile whole inside the button: "space" lays only whole tiles, spread evenly, none cut at an edge,
@@ -374,6 +374,15 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // (and each its own shade: along the theme's two colours, at different lightnesses, so they're told
   // apart yet stay quiet; light on the button, deeper on the outline button's paper)
   const mShades = (light) => [[0, 0.1], [0.66, 0.2], [1, 0.12], [0.33, 0.26], [0, 0.24], [1, 0.02], [0.5, 0.16], [0.85, 0.3]].map(([towards2, lift]) => vivid(mixHex(accent2, accent, towards2), light ? 0.66 + lift : 0.5 - lift));
+  // Novacane's night sky over it all (the band's): a scatter of small stars and two of Nova's sparkles, in
+  // white and the sky's own colours, laid over the button's height; drawn when the styles are (from, to)
+  const nvSky = () => {
+    let x = 20261018;
+    const rnd = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
+    let stars = "";
+    for (let i = 0; i < 16; i++) stars += `<circle cx="${(4 + rnd() * 152).toFixed(1)}" cy="${(4 + rnd() * 48).toFixed(1)}" r="${(0.35 + rnd() * 0.6).toFixed(2)}" fill="#FFFFFF" fill-opacity="${(0.35 + rnd() * 0.5).toFixed(2)}"/>`;
+    return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="56">${stars}${sparkle(34, 15, 3.4, "#FFFFFF", 0.75)}${sparkle(118, 40, 2.6, to, 0.9)}${sparkle(82, 9, 1.8, from, 0.8)}</svg>`);
+  };
   const mTile = (shades, opacity) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="56" height="48"><g fill-opacity="${opacity}">${M_SPOTS.map(([x, y, turn], i) => `<path fill="${shades[i]}" transform="translate(${x} ${y}) rotate(${turn}) scale(.4) translate(-12 -12)" d="${MONZO_MARK}"/>`).join("")}</g></svg>`);
   const monzo = monzoHref ? `<p class="monzo-line"><span class="k">Monzo</span><a href="${esc(monzoHref)}">${esc(monzoShort(settings.monzo))}</a>${monzoHref.includes("monzo.me/") ? `<br><small>Opens Monzo with ${pounds(s.dueNowPence)} and the reference filled in</small>` : ""}</p>` : "";
   // (on the client's own page: its card button instead of a link to itself)
@@ -586,7 +595,11 @@ a.monzo:hover .mzglass,a.monzo:focus-visible .mzglass{background-position:0 0,15
 .monzo.second .mzglass{opacity:.7}
 @media (prefers-reduced-motion:reduce){.mzglass{transition:none}}
 .monzo.second .mzring{opacity:.4;mix-blend-mode:multiply}
-@media (forced-colors:active){.mzring,.mzglass{display:none}}
+/* Novacane over it all, merged in: its night sky's nebula glow in the theme's colours, stars and Nova's
+   sparkles, lightening what's under them (screen) so the stripes, glass and M's show through; still */
+.nvsky{position:absolute;inset:0;z-index:-1;background:${nvSky()} 0 50%/auto 100% repeat-x,radial-gradient(ellipse 45% 90% at 16% 20%,color-mix(in srgb,${to} 45%,transparent),transparent 70%),radial-gradient(ellipse 40% 80% at 86% 85%,color-mix(in srgb,${from} 40%,transparent),transparent 70%);mix-blend-mode:screen;opacity:.75;pointer-events:none}
+.monzo.second .nvsky{mix-blend-mode:multiply;opacity:.35}
+@media (forced-colors:active){.mzring,.mzglass,.nvsky{display:none}}
 /* A subtle highlight: soft light across the top of the button, like light on glass */
 .paynow a.monzo:not(.second){background:linear-gradient(180deg,rgba(255,255,255,.2) 0%,rgba(255,255,255,.06) 45%,rgba(255,255,255,0) 55%),${mTile(mShades(true), 0.24)} 0 0/56px 48px space,var(--blend)}
 .monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%),${mTile(mShades(false), 0.1)};background-size:auto,56px 48px;background-repeat:no-repeat,space}
