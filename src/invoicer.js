@@ -633,7 +633,7 @@ a.monzo:hover .mzshine,a.monzo:focus-visible .mzshine{background-position:0 0,15
 .monzo.second .mzshine{opacity:.6}
 @media (prefers-reduced-motion:reduce){.mzshine{transition:none}}
 @media (forced-colors:active){.nvsky,.mzshine,.mzcorners,.mzgap,.mzgapglass,.mzinner,.mzwash,.mzstripes,.mzgrain{display:none}}
-.paynow a.monzo:not(.second){background:var(--blend)}
+.paynow a.monzo:not(.second){background:var(--blend);text-shadow:0 1px 2px color-mix(in srgb,var(--accent) 70%,#000),0 0 8px color-mix(in srgb,var(--accent) 55%,transparent)}
 .monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%)}
 .monzo.second::after{background:linear-gradient(90deg,var(--accent) 0%,color-mix(in srgb,var(--accent2) 60%,transparent) 35%,color-mix(in srgb,var(--accent2) 15%,transparent) 100%)}
 @media (forced-colors:active){.paynow a.monzo::after{display:none}}

@@ -74,6 +74,8 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		expect(html).not.toMatch(/clip-path:polygon\(evenodd/);
 		// (Monzo's stripes across the whole button, and its colours washed over it lightly)
 		expect(html).toMatch(/\.mzstripes\{position:absolute;inset:0;[^}]*repeating-linear-gradient\(135deg,#FF6E5A 0 1px,transparent 1px 2px,[^}]*mix-blend-mode:overlay;[^}]*mask:linear-gradient\(#000 0 0\) exclude,url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*42px 35px round/);
+		// (the words kept crisp over the busy texture: a soft shadow in the theme's own colour)
+		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:var\(--blend\);text-shadow:0 1px 2px/);
 		// (the M's over the stripes, so they come through)
 		expect(html.indexOf('class="mzgrain"')).toBeGreaterThan(html.indexOf('class="mzstripes"'));
 		expect(html).toMatch(/\.mzwash\{[^}]*linear-gradient\(100deg,#FF6E5A 0%,#FFC453 32%,#5BD0B8 66%,#4AA3DF 100%\)[^}]*mix-blend-mode:soft-light/);
