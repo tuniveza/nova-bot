@@ -577,8 +577,8 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 .monzo.second::before{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 35%,transparent),color-mix(in srgb,var(--accent2) 15%,transparent))}
 /* Between the two borders: fine slanted stripes (the slant of the M's cut ends) in Monzo's own colours,
    coral, amber, mint and blue, faint and blended into the button's colour */
-.mzring{position:absolute;inset:0;z-index:-1;background:repeating-linear-gradient(135deg,#FF6E5A 0 1.5px,transparent 1.5px 4px,#FFC453 4px 5.5px,transparent 5.5px 8px,#5BD0B8 8px 9.5px,transparent 9.5px 12px,#4AA3DF 12px 13.5px,transparent 13.5px 16px);opacity:.42;mix-blend-mode:soft-light;clip-path:polygon(evenodd,0 0,100% 0,100% 100%,0 100%,0 0,7px 6px,calc(100% - 7px) 6px,calc(100% - 6px) 7px,calc(100% - 6px) calc(100% - 7px),calc(100% - 7px) calc(100% - 6px),7px calc(100% - 6px),6px calc(100% - 7px),6px 7px,7px 6px);pointer-events:none}
-.monzo.second .mzring{opacity:.3;mix-blend-mode:multiply}
+.mzring{position:absolute;inset:0;z-index:-1;background:repeating-linear-gradient(135deg,#FF6E5A 0 1.5px,transparent 1.5px 4px,#FFC453 4px 5.5px,transparent 5.5px 8px,#5BD0B8 8px 9.5px,transparent 9.5px 12px,#4AA3DF 12px 13.5px,transparent 13.5px 16px);opacity:.7;mix-blend-mode:overlay;clip-path:polygon(evenodd,0 0,100% 0,100% 100%,0 100%,0 0,7px 6px,calc(100% - 7px) 6px,calc(100% - 6px) 7px,calc(100% - 6px) calc(100% - 7px),calc(100% - 7px) calc(100% - 6px),7px calc(100% - 6px),6px calc(100% - 7px),6px 7px,7px 6px);pointer-events:none}
+.monzo.second .mzring{opacity:.4;mix-blend-mode:multiply}
 @media (forced-colors:active){.mzring{display:none}}
 /* A subtle highlight: soft light across the top of the button, like light on glass */
 .paynow a.monzo:not(.second){background:linear-gradient(180deg,rgba(255,255,255,.2) 0%,rgba(255,255,255,.06) 45%,rgba(255,255,255,0) 55%),${mTile(mShades(true), 0.24)} 0 0/56px 48px space,var(--blend)}
