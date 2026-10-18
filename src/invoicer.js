@@ -564,6 +564,13 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 .monzo .mz path{vector-effect:non-scaling-stroke}
 .monzo.second .mz{stroke:url(#nv-mz);filter:drop-shadow(0 0 3px color-mix(in srgb,var(--accent2) 45%,transparent))}
 .monzo:hover .mz{opacity:1;filter:drop-shadow(0 0 6px color-mix(in srgb,currentColor 75%,transparent))}
+/* Its border: thick and white (the M's ink), solid where it meets the M on the left and fading towards
+   the right, with a soft glow inside, so the M and the border are one drawing */
+.paynow a.monzo::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:3px;background:linear-gradient(90deg,currentColor 0%,color-mix(in srgb,currentColor 70%,transparent) 30%,color-mix(in srgb,currentColor 12%,transparent) 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);pointer-events:none}
+.paynow a.monzo{box-shadow:inset 10px 0 14px -6px color-mix(in srgb,currentColor 35%,transparent),inset 0 0 10px color-mix(in srgb,currentColor 14%,transparent)}
+.quickpay .paynow a.monzo::after{inset:-2px}
+.monzo.second::after{background:linear-gradient(90deg,var(--accent) 0%,color-mix(in srgb,var(--accent2) 60%,transparent) 35%,color-mix(in srgb,var(--accent2) 15%,transparent) 100%)}
+@media (forced-colors:active){.paynow a.monzo::after{display:none}}
 @media (forced-colors:active){.monzo .mz,.monzo.second .mz{stroke:currentColor;filter:none}}
 @media (prefers-reduced-motion:reduce){.monzo .mz{transition:none}}
 .quickpay{display:flex;flex-direction:column;align-items:flex-end;margin:16px 0 26px;text-align:right}
