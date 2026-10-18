@@ -122,6 +122,9 @@ export function monzoLink(monzo, pence, reference) {
   const amount = pence > 0 ? `/${(pence / 100).toFixed(2)}` : "";
   return `https://monzo.me/${me[1]}${amount}${reference ? `?d=${encodeURIComponent(reference)}` : ""}`;
 }
+// Monzo's M (its own mark, one colour: Simple Icons, CC0), drawn in the Pay with Monzo button the way
+// Novacane's logo is drawn: in the button's ink with a soft glow, or in the theme's two colours
+const MONZO_MARK = "M4.244 1.174a.443.443 0 00-.271.13l-3.97 3.97-.001.001c3.884 3.882 8.093 8.092 11.748 11.748v-8.57L4.602 1.305a.443.443 0 00-.358-.131zm15.483 0a.443.443 0 00-.329.13L12.25 8.456v8.568L24 5.275c-1.316-1.322-2.647-2.648-3.97-3.97a.443.443 0 00-.301-.131zM0 5.979l.002 10.955c0 .294.118.577.326.785l4.973 4.976c.28.282.76.083.758-.314V12.037zm23.998.003l-6.06 6.061v10.338c-.004.399.48.6.76.314l4.974-4.976c.208-.208.326-.49.326-.785z";
 export const monzoReady = (monzo) => Boolean(String(monzo?.link || "").trim());
 // The link as it reads on paper: "monzo.me/novacane"
 export const monzoShort = (monzo) => String(monzo?.link || "").trim().replace(/^https?:\/\/(www\.)?/i, "").replace(/\/$/, "");
@@ -361,7 +364,9 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // Monzo: on the client's page a button (the theme's blend, or its outline under the card button)
   // that opens Monzo with the amount and reference filled in; on paper, the link to type
   const monzoHref = monzoReady(settings?.monzo) && !receipt && !cancelled && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
-  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener">Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
+  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><svg class="mz" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${MONZO_MARK}"/></svg>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
+  // (the theme's two colours for the M on the outline button, once on the page)
+  const monzoBlend = monzoButton ? `<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><linearGradient id="nv-mz" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${accent}"/><stop offset="1" stop-color="${accent2}"/></linearGradient></svg>` : "";
   const monzo = monzoHref ? `<p class="monzo-line"><span class="k">Monzo</span><a href="${esc(monzoHref)}">${esc(monzoShort(settings.monzo))}</a>${monzoHref.includes("monzo.me/") ? `<br><small>Opens Monzo with ${pounds(s.dueNowPence)} and the reference filled in</small>` : ""}</p>` : "";
   // (on the client's own page: its card button instead of a link to itself)
   const buttons = client && !receipt && !cancelled && (client.cardForm || monzoButton) ? `<div class="paynow">${client.cardForm || ""}${monzoButton}</div>` : "";
@@ -551,6 +556,13 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 .pay .paynow a.monzo.second{color:var(--accent);background:var(--paper);box-shadow:inset 0 0 0 1.5px var(--accent);padding:12px 20px}
 .pay .paynow a.monzo:hover{filter:brightness(1.08)}.pay .paynow a.monzo.second:hover{background:var(--tint)}
 .paynow~.monzo-line{display:none}.monzo-line small{color:var(--soft);font-size:12px}
+.paynow a.monzo{align-items:center;gap:10px}.pay .paynow a.monzo{display:inline-flex}
+.monzo .mz{flex:none;width:18px;height:18px;fill:currentColor;filter:drop-shadow(0 0 4px color-mix(in srgb,currentColor 55%,transparent));transition:filter .3s ease}
+.quickpay .monzo .mz{width:21px;height:21px}
+.monzo.second .mz{fill:url(#nv-mz);filter:drop-shadow(0 0 4px color-mix(in srgb,var(--accent2) 40%,transparent))}
+.monzo:hover .mz{filter:drop-shadow(0 0 7px color-mix(in srgb,currentColor 70%,transparent))}
+@media (forced-colors:active){.monzo .mz,.monzo.second .mz{fill:currentColor;filter:none}}
+@media (prefers-reduced-motion:reduce){.monzo .mz{transition:none}}
 .quickpay{display:flex;flex-direction:column;align-items:flex-end;margin:16px 0 26px;text-align:right}
 .quickpay .paynow{margin:0;justify-content:flex-end}
 .quickpay a.monzo,.quickpay .paynow button{display:inline-flex;align-items:center;justify-content:center;min-height:52px;font:inherit;font-size:17px;font-weight:600;letter-spacing:.02em;color:var(--on-blend);background:var(--blend);border:2px solid transparent;border-radius:8px;padding:12px 26px;text-decoration:none;cursor:pointer}
@@ -572,7 +584,7 @@ html{scroll-behavior:smooth}
 <body><main class="sheet">
 <header class="band">${bandSky(t, lightBand, from, to)}<div class="brand">${logo}<div><b>NOVACANE</b><small>STUDIOS</small></div></div><div class="doc">${receipt ? "Receipt" : "Invoice"}</div></header>
 <div class="in">
-${client?.banner ? `<p class="pagenote" role="status">${client.banner}</p>` : ""}
+${monzoBlend}${client?.banner ? `<p class="pagenote" role="status">${client.banner}</p>` : ""}
 <p class="stage" role="note">${sentenceLines(esc(line.text(s)), "<br>")}</p>
 <section class="top">
   <div class="to"><h2>Billed to</h2>${billTo}</div>

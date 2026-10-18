@@ -62,6 +62,14 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		// (still in How to pay too)
 		expect(html.split("Pay £100.00 with Monzo").length).toBe(3);
 	});
+	it("Monzo's M in the button, hidden from screen readers (the words say it), in the theme's two colours on the outline", () => {
+		const html = page(bankSettings);
+		expect(html).toMatch(/<a aria-describedby="quickpay-help" class="monzo" href="[^"]+" rel="noopener"><svg class="mz" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4\.244/);
+		expect(html.split('class="mz"').length).toBe(3);
+		expect(html).toContain('<linearGradient id="nv-mz"');
+		expect(html).toMatch(/\.monzo\.second \.mz\{fill:url\(#nv-mz\)/);
+		expect(invoiceDocument(invoice, [], "deposit", bankSettings, "2026-10-16")).not.toContain('id="nv-mz"');
+	});
 	it("no bank details: no bank line; a Monzo payment link (no amount): just 'Opens Monzo to pay.'", () => {
 		expect(page(settings)).not.toContain("No Monzo?");
 		expect(page({ monzo: { link: "https://monzo.com/pay/r/abc" } })).toContain('id="quickpay-help">Opens Monzo to pay.</p>');
