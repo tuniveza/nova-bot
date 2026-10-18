@@ -67,6 +67,9 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener">Pay £100.00 with Monzo</a>');
 		expect(html).not.toContain('class="mz"');
 		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:[^}]*url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*56px 48px space,var\(--blend\)\}/);
+		// (each M its own shade: eight different colours in the button's pattern)
+		const pattern = decodeURIComponent(html.match(/\.paynow a\.monzo:not\(\.second\)\{background:[^}]*?url\("data:image\/svg\+xml,([^"]+)"/)[1]);
+		expect(new Set([...pattern.matchAll(/fill="(#[0-9A-F]{6})"/g)].map((m) => m[1])).size).toBe(8);
 		// (each M turned its own way)
 		for (const turn of [-18, 12, 24, -8, 6, -24, 16, -12]) expect(html).toContain(encodeURIComponent(`rotate(${turn}) scale(.4)`));
 		expect(html).toMatch(/\.monzo\.second\{background-image:[^}]*url\("data:image\/svg\+xml,/);
