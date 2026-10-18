@@ -67,7 +67,8 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		expect(html).toMatch(/<a aria-describedby="quickpay-help" class="monzo" href="[^"]+" rel="noopener"><svg class="mz" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4\.244/);
 		expect(html.split('class="mz"').length).toBe(3);
 		expect(html).toContain('<linearGradient id="nv-mz"');
-		expect(html).toMatch(/\.monzo\.second \.mz\{fill:url\(#nv-mz\)/);
+		expect(html).toMatch(/\.monzo\.second \.mz\{stroke:url\(#nv-mz\)/);
+		expect(html).toMatch(/\.monzo \.mz\{position:absolute;[^}]*height:calc\(100% - 12px\);[^}]*fill:none;stroke:currentColor/);
 		expect(invoiceDocument(invoice, [], "deposit", bankSettings, "2026-10-16")).not.toContain('id="nv-mz"');
 	});
 	it("no bank details: no bank line; a Monzo payment link (no amount): just 'Opens Monzo to pay.'", () => {

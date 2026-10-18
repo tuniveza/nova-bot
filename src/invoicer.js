@@ -557,22 +557,27 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 .pay .paynow a.monzo:hover{filter:brightness(1.08)}.pay .paynow a.monzo.second:hover{background:var(--tint)}
 .paynow~.monzo-line{display:none}.monzo-line small{color:var(--soft);font-size:12px}
 .paynow a.monzo{align-items:center;gap:10px}.pay .paynow a.monzo{display:inline-flex}
-.monzo .mz{flex:none;width:18px;height:18px;fill:currentColor;filter:drop-shadow(0 0 4px color-mix(in srgb,currentColor 55%,transparent));transition:filter .3s ease}
-.quickpay .monzo .mz{width:21px;height:21px}
-.monzo.second .mz{fill:url(#nv-mz);filter:drop-shadow(0 0 4px color-mix(in srgb,var(--accent2) 40%,transparent))}
-.monzo:hover .mz{filter:drop-shadow(0 0 7px color-mix(in srgb,currentColor 70%,transparent))}
-@media (forced-colors:active){.monzo .mz,.monzo.second .mz{fill:currentColor;filter:none}}
+/* Monzo's M (18 Oct 2026): big and drawn in lines, across the left of the button (as tall as the button,
+   a hairline between it and the words), glowing softly like Novacane's logo */
+.paynow a.monzo{position:relative;overflow:hidden}
+.monzo .mz{position:absolute;left:14px;top:50%;height:calc(100% - 12px);width:auto;aspect-ratio:1/1;transform:translateY(-50%);fill:none;stroke:currentColor;stroke-width:1.5;stroke-linejoin:round;vector-effect:non-scaling-stroke;filter:drop-shadow(0 0 3px color-mix(in srgb,currentColor 60%,transparent));transition:filter .3s ease}
+.monzo .mz path{vector-effect:non-scaling-stroke}
+.paynow a.monzo::before{content:"";position:absolute;top:9px;bottom:9px;left:var(--mz-rule,56px);width:1px;background:currentColor;opacity:.3}
+.monzo.second .mz{stroke:url(#nv-mz);filter:drop-shadow(0 0 3px color-mix(in srgb,var(--accent2) 45%,transparent))}
+.monzo:hover .mz{filter:drop-shadow(0 0 6px color-mix(in srgb,currentColor 75%,transparent))}
+@media (forced-colors:active){.monzo .mz,.monzo.second .mz{stroke:currentColor;filter:none}}
 @media (prefers-reduced-motion:reduce){.monzo .mz{transition:none}}
 .quickpay{display:flex;flex-direction:column;align-items:flex-end;margin:16px 0 26px;text-align:right}
 .quickpay .paynow{margin:0;justify-content:flex-end}
 .quickpay a.monzo,.quickpay .paynow button{display:inline-flex;align-items:center;justify-content:center;min-height:52px;font:inherit;font-size:17px;font-weight:600;letter-spacing:.02em;color:var(--on-blend);background:var(--blend);border:2px solid transparent;border-radius:8px;padding:12px 26px;text-decoration:none;cursor:pointer}
 .quickpay a.monzo.second{color:var(--accent);background:var(--paper);border-color:var(--accent)}
 .quickpay a.monzo:hover,.quickpay .paynow button:hover{filter:brightness(1.08)}.quickpay a.monzo.second:hover{background:var(--tint)}
+.pay .paynow a.monzo,.pay .paynow a.monzo.second{padding-left:72px}.quickpay .paynow a.monzo{padding-left:84px;--mz-rule:66px}
 .quickpay p{margin:10px 0 0;max-width:420px;font-size:14px;line-height:1.5;color:var(--soft)}.quickpay p a{color:var(--accent)}
 .paynow a.monzo:focus-visible,.paynow button:focus-visible,.copy:focus-visible,.quickpay p a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
 .copy{margin-left:8px;padding:3px 12px;min-height:30px;font:inherit;font-size:12.5px;color:var(--accent);background:var(--paper);border:1px solid var(--accent);border-radius:999px;cursor:pointer;vertical-align:baseline}.copy:hover{background:var(--tint)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-@media (max-width:640px){.quickpay{align-items:stretch;text-align:left;margin-top:14px}.quickpay .paynow{flex-direction:column;align-items:stretch}.quickpay .paynow form,.quickpay .paynow button{width:100%}.copy{min-height:36px;padding:6px 14px}}
+@media (max-width:640px){.quickpay{align-items:stretch;text-align:left;margin-top:14px}.quickpay .paynow{flex-direction:column;align-items:stretch}.quickpay .paynow form,.quickpay .paynow button{width:100%}.quickpay .paynow a.monzo{padding-right:84px}.copy{min-height:36px;padding:6px 14px}}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 html{scroll-behavior:smooth}
 .tools{max-width:820px;margin:18px auto 0;display:flex;gap:18px;align-items:center;justify-content:center;font-size:13.5px}
