@@ -572,7 +572,7 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 .quickpay a.monzo,.quickpay .paynow button{display:inline-flex;align-items:center;justify-content:center;min-height:52px;font:inherit;font-size:17px;font-weight:600;letter-spacing:.02em;color:var(--on-blend);background:var(--blend);border:2px solid transparent;border-radius:8px;padding:12px 26px;text-decoration:none;cursor:pointer}
 .quickpay a.monzo.second{color:var(--accent);background:var(--paper);border-color:var(--accent)}
 .quickpay a.monzo:hover,.quickpay .paynow button:hover{filter:brightness(1.08)}.quickpay a.monzo.second:hover{background:var(--tint)}
-.pay .paynow a.monzo,.pay .paynow a.monzo.second{padding-left:66px;--mz-rule:52px}.quickpay .paynow a.monzo{padding-left:76px;--mz-rule:62px}
+.pay .paynow a.monzo,.pay .paynow a.monzo.second{padding-left:72px;--mz-rule:58px}.quickpay .paynow a.monzo{padding-left:76px;--mz-rule:62px}
 .quickpay p{margin:10px 0 0;max-width:420px;font-size:14px;line-height:1.5;color:var(--soft)}.quickpay p a{color:var(--accent)}
 .paynow a.monzo:focus-visible,.paynow button:focus-visible,.copy:focus-visible,.quickpay p a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
 .copy{margin-left:8px;padding:3px 12px;min-height:30px;font:inherit;font-size:12.5px;color:var(--accent);background:var(--paper);border:1px solid var(--accent);border-radius:999px;cursor:pointer;vertical-align:baseline}.copy:hover{background:var(--tint)}
