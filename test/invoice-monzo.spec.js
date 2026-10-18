@@ -64,12 +64,17 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 	});
 	it("Monzo's M as a quiet pattern behind the words (no big M), a lighter shade of the theme's colours", () => {
 		const html = page(bankSettings);
-		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
+		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzwash" aria-hidden="true"></span><span class="mzstripes" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzinner" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
 		// (Novacane's sky merged over it: stars, sparkles, nebula glow, blended in)
 		expect(html).toMatch(/\.nvsky\{[^}]*url\("data:image\/svg\+xml,[^"]*circle[^}]*radial-gradient[^}]*mix-blend-mode:screen/);
 		// (an inner border in Monzo's colours with shaved corners, and the gap filled: stripes under glass)
-		expect(html).toMatch(/\.paynow a\.monzo::before\{[^}]*inset:7px;background:linear-gradient\(90deg,#FF6E5A,#FFC453 34%,#5BD0B8 67%,#4AA3DF\)[^}]*clip-path:polygon\(evenodd,8px 0,/);
-		expect(html).toMatch(/\.mzgap,\.mzgapglass\{[^}]*clip-path:polygon\(evenodd,0 0,100% 0,100% 100%,0 100%,0 0,8px 7px,/);
+		// (rounded, no sharp corners: the inner border and the gap's inside edge follow the button's curve)
+		expect(html).toMatch(/\.mzinner\{[^}]*inset:7px;[^}]*border-radius:6px;padding:1\.5px;background:linear-gradient\(90deg,#FF6E5A,#FFC453 34%,#5BD0B8 67%,#4AA3DF\)[^}]*content-box exclude/);
+		expect(html).toMatch(/\.mzgap,\.mzgapglass\{[^}]*border-radius:13px;padding:7px;[^}]*content-box exclude/);
+		expect(html).not.toMatch(/clip-path:polygon\(evenodd/);
+		// (Monzo's stripes across the whole button, and its colours washed over it lightly)
+		expect(html).toMatch(/\.mzstripes\{position:absolute;inset:0;[^}]*repeating-linear-gradient\(135deg,#FF6E5A[^}]*mix-blend-mode:overlay/);
+		expect(html).toMatch(/\.mzwash\{[^}]*linear-gradient\(100deg,#FF6E5A 0%,#FFC453 32%,#5BD0B8 66%,#4AA3DF 100%\)[^}]*mix-blend-mode:soft-light/);
 		expect(html).toMatch(/\.mzgap\{background:repeating-linear-gradient\(135deg,#FF6E5A[^}]*#4AA3DF/);
 		expect(html).toContain("@media (prefers-reduced-motion:reduce){.mzgapglass{transition:none}}");
 		expect(html).not.toMatch(/mzring|mzglass\b/);
