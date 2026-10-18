@@ -560,7 +560,7 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 /* Monzo's M (18 Oct 2026): big, drawn in lines, part of the button: taller than it, running off its
    left edge and fading into its colour towards the words, glowing softly like Novacane's logo */
 .paynow a.monzo{position:relative;overflow:hidden;isolation:isolate;white-space:nowrap}
-.monzo .mz{position:absolute;z-index:-1;left:0;top:50%;height:128%;width:auto;aspect-ratio:1/1;transform:translateY(-50%);fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;opacity:.9;filter:drop-shadow(0 0 3px color-mix(in srgb,currentColor 60%,transparent));-webkit-mask-image:linear-gradient(90deg,#000 55%,transparent 108%);mask-image:linear-gradient(90deg,#000 55%,transparent 108%);transition:filter .3s ease,opacity .3s ease}
+.monzo .mz{position:absolute;z-index:-1;left:3px;top:50%;height:106%;width:auto;aspect-ratio:1/1;transform:translateY(-50%);fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;opacity:.95;filter:drop-shadow(0 0 3px color-mix(in srgb,currentColor 60%,transparent));-webkit-mask-image:linear-gradient(90deg,#000 72%,transparent 125%);mask-image:linear-gradient(90deg,#000 72%,transparent 125%);transition:filter .3s ease,opacity .3s ease}
 .monzo .mz path{vector-effect:non-scaling-stroke}
 .monzo.second .mz{stroke:url(#nv-mz);filter:drop-shadow(0 0 3px color-mix(in srgb,var(--accent2) 45%,transparent))}
 .monzo:hover .mz{opacity:1;filter:drop-shadow(0 0 6px color-mix(in srgb,currentColor 75%,transparent))}
@@ -569,6 +569,9 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 .paynow a.monzo::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:3px;background:linear-gradient(90deg,currentColor 0%,color-mix(in srgb,currentColor 70%,transparent) 30%,color-mix(in srgb,currentColor 12%,transparent) 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);pointer-events:none}
 .paynow a.monzo{box-shadow:inset 10px 0 14px -6px color-mix(in srgb,currentColor 35%,transparent),inset 0 0 10px color-mix(in srgb,currentColor 14%,transparent)}
 .quickpay .paynow a.monzo::after{inset:-2px}
+/* A subtle highlight: soft light across the top of the button, like light on glass */
+.paynow a.monzo:not(.second){background:linear-gradient(180deg,rgba(255,255,255,.2) 0%,rgba(255,255,255,.06) 45%,rgba(255,255,255,0) 55%),var(--blend)}
+.monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%)}
 .monzo.second::after{background:linear-gradient(90deg,var(--accent) 0%,color-mix(in srgb,var(--accent2) 60%,transparent) 35%,color-mix(in srgb,var(--accent2) 15%,transparent) 100%)}
 @media (forced-colors:active){.paynow a.monzo::after{display:none}}
 @media (forced-colors:active){.monzo .mz,.monzo.second .mz{stroke:currentColor;filter:none}}

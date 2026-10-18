@@ -68,8 +68,9 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		expect(html.split('class="mz"').length).toBe(3);
 		expect(html).toContain('<linearGradient id="nv-mz"');
 		expect(html).toMatch(/\.monzo\.second \.mz\{stroke:url\(#nv-mz\)/);
-		expect(html).toMatch(/\.monzo \.mz\{position:absolute;[^}]*height:128%;[^}]*fill:none;stroke:currentColor[^}]*mask-image:linear-gradient/);
+		expect(html).toMatch(/\.monzo \.mz\{position:absolute;[^}]*height:106%;[^}]*fill:none;stroke:currentColor[^}]*mask-image:linear-gradient/);
 		expect(invoiceDocument(invoice, [], "deposit", bankSettings, "2026-10-16")).not.toContain('id="nv-mz"');
+		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:linear-gradient\(180deg,rgba\(255,255,255,\.2\)/);
 		// (its thick border fades from the M's ink on the left)
 		expect(html).toMatch(/\.paynow a\.monzo::after\{[^}]*padding:3px;background:linear-gradient\(90deg,currentColor 0%/);
 	});
