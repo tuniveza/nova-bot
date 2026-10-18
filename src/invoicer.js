@@ -125,13 +125,6 @@ export function monzoLink(monzo, pence, reference) {
 // Monzo's M (its own mark, one colour: Simple Icons, CC0): small and repeated, a quiet pattern behind
 // the words of the Pay with Monzo button
 const MONZO_MARK = "M4.244 1.174a.443.443 0 00-.271.13l-3.97 3.97-.001.001c3.884 3.882 8.093 8.092 11.748 11.748v-8.57L4.602 1.305a.443.443 0 00-.358-.131zm15.483 0a.443.443 0 00-.329.13L12.25 8.456v8.568L24 5.275c-1.316-1.322-2.647-2.648-3.97-3.97a.443.443 0 00-.301-.131zM0 5.979l.002 10.955c0 .294.118.577.326.785l4.973 4.976c.28.282.76.083.758-.314V12.037zm23.998.003l-6.06 6.061v10.338c-.004.399.48.6.76.314l4.974-4.976c.208-.208.326-.49.326-.785z";
-// Money, drawn small for the same pattern (each in a 24 box, holes cut with evenodd): a banknote, a coin
-// and a stack of coins
-const MONEY_MARKS = {
-  note: "M3 6h18a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z M12 8.8a3.2 3.2 0 1 0 0 6.4a3.2 3.2 0 1 0 0-6.4z M4.5 10.5h2v3h-2z M17.5 10.5h2v3h-2z",
-  coin: "M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z M12 4.5a7.5 7.5 0 1 1 0 15a7.5 7.5 0 1 1 0-15z M12 6.5a5.5 5.5 0 1 0 0 11a5.5 5.5 0 1 0 0-11z",
-  stack: "M3 6a9 3.5 0 1 0 18 0a9 3.5 0 1 0 -18 0z M3 7.5a9 3.5 0 0 0 18 0v2.5a9 3.5 0 0 1 -18 0z M3 11.5a9 3.5 0 0 0 18 0v2.5a9 3.5 0 0 1 -18 0z M3 15.5a9 3.5 0 0 0 18 0v2.5a9 3.5 0 0 1 -18 0z",
-};
 export const monzoReady = (monzo) => Boolean(String(monzo?.link || "").trim());
 // The link as it reads on paper: "monzo.me/novacane"
 export const monzoShort = (monzo) => String(monzo?.link || "").trim().replace(/^https?:\/\/(www\.)?/i, "").replace(/\/$/, "");
@@ -371,15 +364,22 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // Monzo: on the client's page a button (the theme's blend, or its outline under the card button)
   // that opens Monzo with the amount and reference filled in; on paper, the link to type
   const monzoHref = monzoReady(settings?.monzo) && !receipt && !cancelled && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
-  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><span class="nvsky" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
+  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
   // The pattern: Monzo's M, small, in staggered rows, in a lighter shade of the theme's own colours (on the
   // outline button, a whisper of its accent on the paper)
   // (each tile whole inside the button: "space" lays only whole tiles, spread evenly, none cut at an edge,
   // and each M sits a little in from its tile's edges, clear of the border)
-  // (eight M's a tile, each turned its own way, up to 25 degrees, so the pattern looks scattered, not stamped)
-  // (with money among them: notes, coins and stacks, each turned and shaded its own way too; twelve a tile)
-  const M_SPOTS = [[8, 7.5, -18], [21, 17.5, 12, "note"], [36, 7.5, 24], [49, 17.5, -8, "coin"], [64, 7.5, 10], [77, 17.5, -20, "stack"],
-    [8, 31.5, 6, "coin"], [21, 41.5, -24], [36, 31.5, 16, "stack"], [49, 41.5, -12], [64, 31.5, -6, "note"], [77, 41.5, 18]];
+  // A fine grain of tiny M's over the whole button: thirty a tile, each in its own 8px cell (a little off
+  // its centre), turned its own way (up to 30 degrees) and a little lighter or fainter than the next, so it
+  // reads as a texture, not a grid; each one whole inside its tile
+  const M_GRAIN = (() => {
+    let x = 18102026;
+    const rnd = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const out = [];
+    for (let row = 0; row < 5; row++)
+      for (let col = 0; col < 6; col++) out.push([4 + col * 8 + (rnd() - 0.5) * 1.6, 4 + row * 8 + (rnd() - 0.5) * 1.6, Math.round((rnd() - 0.5) * 60), (0.55 + rnd() * 0.45).toFixed(2)]);
+    return out.map(([gx, gy, turn, o]) => [gx.toFixed(1), gy.toFixed(1), turn, o]);
+  })();
   // (and each its own shade: along the theme's two colours, at different lightnesses, so they're told
   // apart yet stay quiet; light on the button, deeper on the outline button's paper)
   const mShades = (light) => [[0, 0.1], [0.66, 0.2], [1, 0.12], [0.33, 0.26], [0, 0.24], [1, 0.02], [0.5, 0.16], [0.85, 0.3]].map(([towards2, lift]) => vivid(mixHex(accent2, accent, towards2), light ? 0.66 + lift : 0.5 - lift));
@@ -392,7 +392,7 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
     for (let i = 0; i < 16; i++) stars += `<circle cx="${(4 + rnd() * 152).toFixed(1)}" cy="${(4 + rnd() * 48).toFixed(1)}" r="${(0.35 + rnd() * 0.6).toFixed(2)}" fill="#FFFFFF" fill-opacity="${(0.35 + rnd() * 0.5).toFixed(2)}"/>`;
     return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="56">${stars}${sparkle(34, 15, 3.4, "#FFFFFF", 0.75)}${sparkle(118, 40, 2.6, to, 0.9)}${sparkle(82, 9, 1.8, from, 0.8)}</svg>`);
   };
-  const mTile = (shades, opacity) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="84" height="48"><g fill-opacity="${opacity}" fill-rule="evenodd">${M_SPOTS.map(([x, y, turn, kind], i) => `<path fill="${shades[i % shades.length]}" transform="translate(${x} ${y}) rotate(${turn}) scale(.4) translate(-12 -12)" d="${kind ? MONEY_MARKS[kind] : MONZO_MARK}"/>`).join("")}</g></svg>`);
+  const mTile = (shades, opacity) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="48" height="40"><g fill-opacity="${opacity}">${M_GRAIN.map(([x, y, turn, o], i) => `<path fill="${shades[i % shades.length]}" opacity="${o}" transform="translate(${x} ${y}) rotate(${turn}) scale(.2) translate(-12 -12)" d="${MONZO_MARK}"/>`).join("")}</g></svg>`);
   const monzo = monzoHref ? `<p class="monzo-line"><span class="k">Monzo</span><a href="${esc(monzoHref)}">${esc(monzoShort(settings.monzo))}</a>${monzoHref.includes("monzo.me/") ? `<br><small>Opens Monzo with ${pounds(s.dueNowPence)} and the reference filled in</small>` : ""}</p>` : "";
   // (on the client's own page: its card button instead of a link to itself)
   const buttons = client && !receipt && !cancelled && (client.cardForm || monzoButton) ? `<div class="paynow">${client.cardForm || ""}${monzoButton}</div>` : "";
@@ -593,10 +593,16 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
    sparkles, lightening what's under them (screen) so the pattern shows through; still */
 .nvsky{position:absolute;inset:0;z-index:-1;background:${nvSky()} 0 50%/auto 100% repeat-x,radial-gradient(ellipse 45% 90% at 16% 20%,color-mix(in srgb,${to} 45%,transparent),transparent 70%),radial-gradient(ellipse 40% 80% at 86% 85%,color-mix(in srgb,${from} 40%,transparent),transparent 70%);mix-blend-mode:screen;opacity:.75;pointer-events:none}
 .monzo.second .nvsky{mix-blend-mode:multiply;opacity:.35}
-@media (forced-colors:active){.nvsky{display:none}}
-/* A subtle highlight: soft light across the top of the button, like light on glass */
-.paynow a.monzo:not(.second){background:linear-gradient(180deg,rgba(255,255,255,.2) 0%,rgba(255,255,255,.06) 45%,rgba(255,255,255,0) 55%),${mTile(mShades(true), 0.24)} 0 0/84px 48px space,var(--blend)}
-.monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%),${mTile(mShades(false), 0.1)};background-size:auto,84px 48px;background-repeat:no-repeat,space}
+/* A reflective sheen and shine over the whole button, like light on glass: a gloss across the top, a faint
+   reflection along the bottom, two soft diagonal glints and a fine bright edge; on hover or focus the
+   glints drift slowly across once (still for anyone who asks for less motion) */
+.mzshine{position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.34) 0,rgba(255,255,255,.12) 22%,rgba(255,255,255,0) 46%,rgba(255,255,255,0) 80%,rgba(255,255,255,.12) 100%),linear-gradient(110deg,transparent 0 28%,rgba(255,255,255,.26) 34%,transparent 40% 56%,rgba(255,255,255,.18) 59%,transparent 63%);background-size:100% 100%,250% 100%;background-position:0 0,85% 0;background-repeat:no-repeat;box-shadow:inset 0 1px 0 rgba(255,255,255,.45),inset 0 -1px 0 rgba(0,0,0,.12);transition:background-position 1.6s ease}
+a.monzo:hover .mzshine,a.monzo:focus-visible .mzshine{background-position:0 0,15% 0}
+.monzo.second .mzshine{opacity:.6}
+@media (prefers-reduced-motion:reduce){.mzshine{transition:none}}
+@media (forced-colors:active){.nvsky,.mzshine{display:none}}
+.paynow a.monzo:not(.second){background:${mTile(mShades(true), 0.3)} 0 0/48px 40px space,var(--blend)}
+.monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%),${mTile(mShades(false), 0.1)};background-size:auto,48px 40px;background-repeat:no-repeat,space}
 .monzo.second::after{background:linear-gradient(90deg,var(--accent) 0%,color-mix(in srgb,var(--accent2) 60%,transparent) 35%,color-mix(in srgb,var(--accent2) 15%,transparent) 100%)}
 @media (forced-colors:active){.paynow a.monzo::after{display:none}}
 .quickpay{display:flex;flex-direction:column;align-items:flex-end;margin:16px 0 26px;text-align:right}

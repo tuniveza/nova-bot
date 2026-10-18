@@ -64,23 +64,25 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 	});
 	it("Monzo's M as a quiet pattern behind the words (no big M), a lighter shade of the theme's colours", () => {
 		const html = page(bankSettings);
-		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="nvsky" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
+		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
 		// (Novacane's sky merged over it: stars, sparkles, nebula glow, blended in)
 		expect(html).toMatch(/\.nvsky\{[^}]*url\("data:image\/svg\+xml,[^"]*circle[^}]*radial-gradient[^}]*mix-blend-mode:screen/);
 		// (no inner border or anything between the borders: taken off 18 Oct 2026)
 		expect(html).not.toMatch(/mzring|mzglass|a\.monzo::before/);
 		expect(html).not.toContain('class="mz"');
-		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:[^}]*url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*84px 48px space,var\(--blend\)\}/);
-		// (each M its own shade: eight different colours in the button's pattern)
-		const pattern = decodeURIComponent(html.match(/\.paynow a\.monzo:not\(\.second\)\{background:[^}]*?url\("data:image\/svg\+xml,([^"]+)"/)[1]);
+		// (a fine grain of tiny M's over the whole button: thirty a tile, each turned its own way, eight shades)
+		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*48px 40px space,var\(--blend\)\}/);
+		const pattern = decodeURIComponent(html.match(/\.paynow a\.monzo:not\(\.second\)\{background:url\("data:image\/svg\+xml,([^"]+)"/)[1]);
+		expect(pattern.split("M4.244").length).toBe(31);
+		expect(pattern.split("scale(.2)").length).toBe(31);
 		expect(new Set([...pattern.matchAll(/fill="(#[0-9A-F]{6})"/g)].map((m) => m[1])).size).toBe(8);
-		// (each M turned its own way)
-		for (const turn of [-18, 12, 24, -8, 6, -24, 16, -12, 10, -20, -6, 18]) expect(html).toContain(encodeURIComponent(`rotate(${turn}) scale(.4)`));
-		// (money among the M's: a note, a coin and a stack, twice each)
-		for (const piece of ["M3 6h18a2 2", "M12 2a10 10", "M3 6a9 3.5"]) expect(pattern.split(piece).length).toBe(3);
-		expect(pattern.split("M4.244").length).toBe(7);
+		expect(new Set([...pattern.matchAll(/rotate\((-?\d+)\)/g)].map((m) => m[1])).size).toBeGreaterThan(15);
+		// (no money in it any more)
+		for (const piece of ["M3 6h18a2 2", "M12 2a10 10", "M3 6a9 3.5"]) expect(pattern).not.toContain(piece);
 		expect(html).toMatch(/\.monzo\.second\{background-image:[^}]*url\("data:image\/svg\+xml,/);
-		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:linear-gradient\(180deg,rgba\(255,255,255,\.2\)/);
+		// (a reflective sheen and shine over it all, its glints drifting only on hover or focus)
+		expect(html).toMatch(/\.mzshine\{[^}]*linear-gradient\(180deg,rgba\(255,255,255,\.34\)[^}]*linear-gradient\(110deg/);
+		expect(html).toContain("@media (prefers-reduced-motion:reduce){.mzshine{transition:none}}");
 		// (its thick border fades from the M's ink on the left)
 		expect(html).toMatch(/\.paynow a\.monzo::after\{[^}]*padding:3px;background:linear-gradient\(90deg,currentColor 0%/);
 	});
