@@ -560,7 +560,7 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 /* Monzo's M (18 Oct 2026): big, drawn in lines, part of the button: taller than it, running off its
    left edge and fading into its colour towards the words, glowing softly like Novacane's logo */
 .paynow a.monzo{position:relative;overflow:hidden;isolation:isolate;white-space:nowrap}
-.monzo .mz{position:absolute;z-index:-1;left:-8px;top:50%;height:145%;width:auto;aspect-ratio:1/1;transform:translateY(-50%);fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;opacity:.9;filter:drop-shadow(0 0 3px color-mix(in srgb,currentColor 60%,transparent));-webkit-mask-image:linear-gradient(90deg,#000 35%,transparent 100%);mask-image:linear-gradient(90deg,#000 35%,transparent 100%);transition:filter .3s ease,opacity .3s ease}
+.monzo .mz{position:absolute;z-index:-1;left:0;top:50%;height:128%;width:auto;aspect-ratio:1/1;transform:translateY(-50%);fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;opacity:.9;filter:drop-shadow(0 0 3px color-mix(in srgb,currentColor 60%,transparent));-webkit-mask-image:linear-gradient(90deg,#000 55%,transparent 108%);mask-image:linear-gradient(90deg,#000 55%,transparent 108%);transition:filter .3s ease,opacity .3s ease}
 .monzo .mz path{vector-effect:non-scaling-stroke}
 .monzo.second .mz{stroke:url(#nv-mz);filter:drop-shadow(0 0 3px color-mix(in srgb,var(--accent2) 45%,transparent))}
 .monzo:hover .mz{opacity:1;filter:drop-shadow(0 0 6px color-mix(in srgb,currentColor 75%,transparent))}
