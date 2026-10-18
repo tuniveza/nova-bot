@@ -64,9 +64,13 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 	});
 	it("Monzo's M as a quiet pattern behind the words (no big M), a lighter shade of the theme's colours", () => {
 		const html = page(bankSettings);
-		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="mzring" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
+		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="mzring" aria-hidden="true"></span><span class="mzglass" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
+		// (and a glassy sheen over them, its glints drifting only on hover or focus, still for less motion)
+		expect(html).toMatch(/\.mzring,\.mzglass\{[^}]*clip-path:polygon\(evenodd,/);
+		expect(html).toMatch(/\.mzglass\{background:linear-gradient\(180deg,rgba\(255,255,255,\.62\)/);
+		expect(html).toContain("@media (prefers-reduced-motion:reduce){.mzglass{transition:none}}");
 		// (between the borders: Monzo's coral, amber, mint and blue in fine slanted stripes)
-		expect(html).toMatch(/\.mzring\{[^}]*repeating-linear-gradient\(135deg,#FF6E5A[^}]*#FFC453[^}]*#5BD0B8[^}]*#4AA3DF[^}]*clip-path:polygon\(evenodd,/);
+		expect(html).toMatch(/\.mzring\{background:repeating-linear-gradient\(135deg,#FF6E5A[^}]*#FFC453[^}]*#5BD0B8[^}]*#4AA3DF/);
 		expect(html).not.toContain('class="mz"');
 		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:[^}]*url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*56px 48px space,var\(--blend\)\}/);
 		// (each M its own shade: eight different colours in the button's pattern)
