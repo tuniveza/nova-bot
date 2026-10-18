@@ -64,7 +64,7 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 	});
 	it("Monzo's M as a quiet pattern behind the words (no big M), a lighter shade of the theme's colours", () => {
 		const html = page(bankSettings);
-		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzwash" aria-hidden="true"></span><span class="mzstripes" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzinner" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
+		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzwash" aria-hidden="true"></span><span class="mzstripes" aria-hidden="true"></span><span class="mzgrain" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzinner" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
 		// (Novacane's sky merged over it: stars, sparkles, nebula glow, blended in)
 		expect(html).toMatch(/\.nvsky\{[^}]*url\("data:image\/svg\+xml,[^"]*circle[^}]*radial-gradient[^}]*mix-blend-mode:screen/);
 		// (an inner border in Monzo's colours with shaved corners, and the gap filled: stripes under glass)
@@ -73,22 +73,24 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		expect(html).toMatch(/\.mzgap,\.mzgapglass\{[^}]*border-radius:13px;padding:7px;[^}]*content-box exclude/);
 		expect(html).not.toMatch(/clip-path:polygon\(evenodd/);
 		// (Monzo's stripes across the whole button, and its colours washed over it lightly)
-		expect(html).toMatch(/\.mzstripes\{position:absolute;inset:0;[^}]*repeating-linear-gradient\(135deg,#FF6E5A[^}]*mix-blend-mode:overlay/);
+		expect(html).toMatch(/\.mzstripes\{position:absolute;inset:0;[^}]*repeating-linear-gradient\(135deg,#FF6E5A 0 1px,transparent 1px 2px,[^}]*mix-blend-mode:overlay;[^}]*mask:linear-gradient\(#000 0 0\) exclude,url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*42px 35px round/);
+		// (the M's over the stripes, so they come through)
+		expect(html.indexOf('class="mzgrain"')).toBeGreaterThan(html.indexOf('class="mzstripes"'));
 		expect(html).toMatch(/\.mzwash\{[^}]*linear-gradient\(100deg,#FF6E5A 0%,#FFC453 32%,#5BD0B8 66%,#4AA3DF 100%\)[^}]*mix-blend-mode:soft-light/);
 		expect(html).toMatch(/\.mzgap\{background:repeating-linear-gradient\(135deg,#FF6E5A[^}]*#4AA3DF/);
 		expect(html).toContain("@media (prefers-reduced-motion:reduce){.mzgapglass{transition:none}}");
 		expect(html).not.toMatch(/mzring|mzglass\b/);
 		expect(html).not.toContain('class="mz"');
 		// (a fine grain of tiny M's over the whole button: thirty a tile, each turned its own way, eight shades)
-		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*42px 35px round,var\(--blend\)\}/);
-		const pattern = decodeURIComponent(html.match(/\.paynow a\.monzo:not\(\.second\)\{background:url\("data:image\/svg\+xml,([^"]+)"/)[1]);
+		expect(html).toMatch(/\.mzgrain\{[^}]*background:url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*42px 35px round;/);
+		const pattern = decodeURIComponent(html.match(/\.mzgrain\{[^}]*?background:url\("data:image\/svg\+xml,([^"]+)"/)[1]);
 		expect(pattern.split("M4.244").length).toBe(31);
 		expect(pattern.split("scale(.19)").length).toBe(31);
 		expect(new Set([...pattern.matchAll(/fill="(#[0-9A-F]{6})"/g)].map((m) => m[1])).size).toBe(8);
 		expect(new Set([...pattern.matchAll(/rotate\((-?\d+)\)/g)].map((m) => m[1])).size).toBeGreaterThan(15);
 		// (no money in it any more)
 		for (const piece of ["M3 6h18a2 2", "M12 2a10 10", "M3 6a9 3.5"]) expect(pattern).not.toContain(piece);
-		expect(html).toMatch(/\.monzo\.second\{background-image:[^}]*url\("data:image\/svg\+xml,/);
+		expect(html).toMatch(/\.monzo\.second \.mzgrain\{background-image:url\("data:image\/svg\+xml,/);
 		// (Monzo's line stripes in the four corners, two ways)
 		expect(html).toMatch(/\.mzcorners::before\{background:repeating-linear-gradient\(45deg,#FF6E5A[^}]*#4AA3DF[^}]*circle at 0 0[^}]*circle at 100% 100%/);
 		expect(html).toMatch(/\.mzcorners::after\{background:repeating-linear-gradient\(135deg,[^}]*circle at 100% 0[^}]*circle at 0 100%/);

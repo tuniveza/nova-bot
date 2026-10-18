@@ -364,7 +364,7 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // Monzo: on the client's page a button (the theme's blend, or its outline under the card button)
   // that opens Monzo with the amount and reference filled in; on paper, the link to type
   const monzoHref = monzoReady(settings?.monzo) && !receipt && !cancelled && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
-  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzwash" aria-hidden="true"></span><span class="mzstripes" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzinner" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
+  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzwash" aria-hidden="true"></span><span class="mzstripes" aria-hidden="true"></span><span class="mzgrain" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzinner" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
   // The pattern: Monzo's M, small, in staggered rows, in a lighter shade of the theme's own colours (on the
   // outline button, a whisper of its accent on the paper)
   // (each tile whole inside the button: "space" lays only whole tiles, spread evenly, none cut at an edge,
@@ -596,8 +596,13 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 /* Monzo's colours washed over the whole button, lightly (soft light), so Novacane's pinks and purples still
    lead and coral, amber, mint and blue warm and cool them from left to right */
 .mzwash{position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,#FF6E5A 0%,#FFC453 32%,#5BD0B8 66%,#4AA3DF 100%);opacity:.38;mix-blend-mode:soft-light;pointer-events:none}
-/* Monzo's stripes across the whole button: the same fine slanted lines in its four colours, faint, blended in */
-.mzstripes{position:absolute;inset:0;z-index:-1;background:repeating-linear-gradient(135deg,#FF6E5A 0 1px,transparent 1px 5px,#FFC453 5px 6px,transparent 6px 10px,#5BD0B8 10px 11px,transparent 11px 15px,#4AA3DF 15px 16px,transparent 16px 20px);opacity:.35;mix-blend-mode:overlay;pointer-events:none}
+/* Monzo's stripes across the whole button: fine slanted lines in its four colours, packed close so they fill
+   its texture, blended in, and cut away wherever an M sits so the M's come through them */
+.mzstripes{position:absolute;inset:0;z-index:-1;background:repeating-linear-gradient(135deg,#FF6E5A 0 1px,transparent 1px 2px,#FFC453 2px 3px,transparent 3px 4px,#5BD0B8 4px 5px,transparent 5px 6px,#4AA3DF 6px 7px,transparent 7px 8px);opacity:.5;mix-blend-mode:overlay;-webkit-mask:linear-gradient(#000 0 0),${mTile(Array(8).fill("#000"), 1)} 0 0/42px 35px round;-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) exclude,${mTile(Array(8).fill("#000"), 1)} 0 0/42px 35px round;pointer-events:none}
+/* The grain of tiny M's over the stripes, in the holes cut for them (round: whole tiles, stretched a hair to
+   fit the button exactly, so it fills it edge to edge with no empty rows and no M cut in half) */
+.mzgrain{position:absolute;inset:0;z-index:-1;background:${mTile(mShades(true), 0.4)} 0 0/42px 35px round;pointer-events:none}
+.monzo.second .mzgrain{background-image:${mTile(mShades(false), 0.12)}}
 .monzo.second .mzwash{opacity:.2;mix-blend-mode:multiply}.monzo.second .mzstripes{opacity:.2;mix-blend-mode:multiply}
 /* Monzo's line stripes in the corners: fine slanted lines in its coral, amber, mint and blue, cutting across
    each corner and fading towards the middle (one way at top left and bottom right, the other at the two others) */
@@ -627,11 +632,9 @@ a.monzo:hover .mzgapglass,a.monzo:focus-visible .mzgapglass{background-position:
 a.monzo:hover .mzshine,a.monzo:focus-visible .mzshine{background-position:0 0,15% 0}
 .monzo.second .mzshine{opacity:.6}
 @media (prefers-reduced-motion:reduce){.mzshine{transition:none}}
-@media (forced-colors:active){.nvsky,.mzshine,.mzcorners,.mzgap,.mzgapglass,.mzinner,.mzwash,.mzstripes{display:none}}
-/* (round: whole tiles, stretched a hair to fit the button exactly, so the grain fills it edge to edge with no
-   empty rows and no M cut in half) */
-.paynow a.monzo:not(.second){background:${mTile(mShades(true), 0.3)} 0 0/42px 35px round,var(--blend)}
-.monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%),${mTile(mShades(false), 0.1)};background-size:auto,42px 35px;background-repeat:no-repeat,round}
+@media (forced-colors:active){.nvsky,.mzshine,.mzcorners,.mzgap,.mzgapglass,.mzinner,.mzwash,.mzstripes,.mzgrain{display:none}}
+.paynow a.monzo:not(.second){background:var(--blend)}
+.monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%)}
 .monzo.second::after{background:linear-gradient(90deg,var(--accent) 0%,color-mix(in srgb,var(--accent2) 60%,transparent) 35%,color-mix(in srgb,var(--accent2) 15%,transparent) 100%)}
 @media (forced-colors:active){.paynow a.monzo::after{display:none}}
 .quickpay{display:flex;flex-direction:column;align-items:flex-end;margin:16px 0 26px;text-align:right}
