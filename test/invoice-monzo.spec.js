@@ -66,7 +66,7 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		const html = page(bankSettings);
 		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener">Pay £100.00 with Monzo</a>');
 		expect(html).not.toContain('class="mz"');
-		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:[^}]*url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*44px 38px,var\(--blend\)\}/);
+		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:[^}]*url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*28px 24px space,var\(--blend\)\}/);
 		expect(html).toMatch(/\.monzo\.second\{background-image:[^}]*url\("data:image\/svg\+xml,/);
 		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:linear-gradient\(180deg,rgba\(255,255,255,\.2\)/);
 		// (its thick border fades from the M's ink on the left)
