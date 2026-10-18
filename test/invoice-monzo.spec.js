@@ -64,11 +64,15 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 	});
 	it("Monzo's M as a quiet pattern behind the words (no big M), a lighter shade of the theme's colours", () => {
 		const html = page(bankSettings);
-		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
+		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
 		// (Novacane's sky merged over it: stars, sparkles, nebula glow, blended in)
 		expect(html).toMatch(/\.nvsky\{[^}]*url\("data:image\/svg\+xml,[^"]*circle[^}]*radial-gradient[^}]*mix-blend-mode:screen/);
-		// (no inner border or anything between the borders: taken off 18 Oct 2026)
-		expect(html).not.toMatch(/mzring|mzglass|a\.monzo::before/);
+		// (an inner border in Monzo's colours with shaved corners, and the gap filled: stripes under glass)
+		expect(html).toMatch(/\.paynow a\.monzo::before\{[^}]*inset:7px;background:linear-gradient\(90deg,#FF6E5A,#FFC453 34%,#5BD0B8 67%,#4AA3DF\)[^}]*clip-path:polygon\(evenodd,8px 0,/);
+		expect(html).toMatch(/\.mzgap,\.mzgapglass\{[^}]*clip-path:polygon\(evenodd,0 0,100% 0,100% 100%,0 100%,0 0,8px 7px,/);
+		expect(html).toMatch(/\.mzgap\{background:repeating-linear-gradient\(135deg,#FF6E5A[^}]*#4AA3DF/);
+		expect(html).toContain("@media (prefers-reduced-motion:reduce){.mzgapglass{transition:none}}");
+		expect(html).not.toMatch(/mzring|mzglass\b/);
 		expect(html).not.toContain('class="mz"');
 		// (a fine grain of tiny M's over the whole button: thirty a tile, each turned its own way, eight shades)
 		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*42px 35px round,var\(--blend\)\}/);

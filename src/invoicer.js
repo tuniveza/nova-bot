@@ -364,7 +364,7 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // Monzo: on the client's page a button (the theme's blend, or its outline under the card button)
   // that opens Monzo with the amount and reference filled in; on paper, the link to type
   const monzoHref = monzoReady(settings?.monzo) && !receipt && !cancelled && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
-  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
+  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
   // The pattern: Monzo's M, small, in staggered rows, in a lighter shade of the theme's own colours (on the
   // outline button, a whisper of its accent on the paper)
   // (each tile whole inside the button: "space" lays only whole tiles, spread evenly, none cut at an edge,
@@ -601,6 +601,18 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 .mzcorners::before{background:repeating-linear-gradient(45deg,#FF6E5A 0 1.2px,transparent 1.2px 3.5px,#FFC453 3.5px 4.7px,transparent 4.7px 7px,#5BD0B8 7px 8.2px,transparent 8.2px 10.5px,#4AA3DF 10.5px 11.7px,transparent 11.7px 14px);-webkit-mask:radial-gradient(circle at 0 0,#000 0,#000 9px,transparent 30px),radial-gradient(circle at 100% 100%,#000 0,#000 9px,transparent 30px);mask:radial-gradient(circle at 0 0,#000 0,#000 9px,transparent 30px),radial-gradient(circle at 100% 100%,#000 0,#000 9px,transparent 30px)}
 .mzcorners::after{background:repeating-linear-gradient(135deg,#FF6E5A 0 1.2px,transparent 1.2px 3.5px,#FFC453 3.5px 4.7px,transparent 4.7px 7px,#5BD0B8 7px 8.2px,transparent 8.2px 10.5px,#4AA3DF 10.5px 11.7px,transparent 11.7px 14px);-webkit-mask:radial-gradient(circle at 100% 0,#000 0,#000 9px,transparent 30px),radial-gradient(circle at 0 100%,#000 0,#000 9px,transparent 30px);mask:radial-gradient(circle at 100% 0,#000 0,#000 9px,transparent 30px),radial-gradient(circle at 0 100%,#000 0,#000 9px,transparent 30px)}
 .monzo.second .mzcorners{opacity:.6}
+/* A second, inner border, in Monzo's colours: a fine line all the way round with its corners shaved off at
+   an angle (the cut ends of Monzo's M), running coral, amber, mint and blue from left to right */
+.paynow a.monzo::before{content:"";position:absolute;inset:7px;background:linear-gradient(90deg,#FF6E5A,#FFC453 34%,#5BD0B8 67%,#4AA3DF);opacity:.8;clip-path:polygon(evenodd,8px 0,calc(100% - 8px) 0,100% 8px,100% calc(100% - 8px),calc(100% - 8px) 100%,8px 100%,0 calc(100% - 8px),0 8px,8px 0,8px 1.5px,calc(100% - 8px) 1.5px,calc(100% - 1.5px) 8px,calc(100% - 1.5px) calc(100% - 8px),calc(100% - 8px) calc(100% - 1.5px),8px calc(100% - 1.5px),1.5px calc(100% - 8px),1.5px 8px,8px 1.5px);pointer-events:none}
+.monzo.second::before{opacity:.6}
+/* ...and the gap between the two borders filled: Monzo's slanted coloured stripes blended into the button,
+   under a glass sheen (a gloss along the top, a faint reflection below, two glints that drift on hover) */
+.mzgap,.mzgapglass{position:absolute;inset:0;z-index:-1;clip-path:polygon(evenodd,0 0,100% 0,100% 100%,0 100%,0 0,8px 7px,calc(100% - 8px) 7px,calc(100% - 7px) 8px,calc(100% - 7px) calc(100% - 8px),calc(100% - 8px) calc(100% - 7px),8px calc(100% - 7px),7px calc(100% - 8px),7px 8px,8px 7px);pointer-events:none}
+.mzgap{background:repeating-linear-gradient(135deg,#FF6E5A 0 1.5px,transparent 1.5px 4px,#FFC453 4px 5.5px,transparent 5.5px 8px,#5BD0B8 8px 9.5px,transparent 9.5px 12px,#4AA3DF 12px 13.5px,transparent 13.5px 16px);opacity:.75;mix-blend-mode:overlay}
+.mzgapglass{background:linear-gradient(180deg,rgba(255,255,255,.55) 0,rgba(255,255,255,.2) 16%,rgba(255,255,255,0) 42%,rgba(255,255,255,0) 78%,rgba(255,255,255,.18) 100%),linear-gradient(105deg,transparent 0 30%,rgba(255,255,255,.4) 36%,transparent 41% 58%,rgba(255,255,255,.28) 61%,transparent 65%);background-size:100% 100%,250% 100%;background-position:0 0,85% 0;background-repeat:no-repeat;transition:background-position 1.6s ease}
+a.monzo:hover .mzgapglass,a.monzo:focus-visible .mzgapglass{background-position:0 0,15% 0}
+.monzo.second .mzgap{opacity:.4;mix-blend-mode:multiply}.monzo.second .mzgapglass{opacity:.6}
+@media (prefers-reduced-motion:reduce){.mzgapglass{transition:none}}
 /* A reflective sheen and shine over the whole button, like light on glass: a gloss across the top, a faint
    reflection along the bottom, two soft diagonal glints and a fine bright edge; on hover or focus the
    glints drift slowly across once (still for anyone who asks for less motion) */
@@ -608,7 +620,7 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 a.monzo:hover .mzshine,a.monzo:focus-visible .mzshine{background-position:0 0,15% 0}
 .monzo.second .mzshine{opacity:.6}
 @media (prefers-reduced-motion:reduce){.mzshine{transition:none}}
-@media (forced-colors:active){.nvsky,.mzshine,.mzcorners{display:none}}
+@media (forced-colors:active){.nvsky,.mzshine,.mzcorners,.mzgap,.mzgapglass,.paynow a.monzo::before{display:none}}
 /* (round: whole tiles, stretched a hair to fit the button exactly, so the grain fills it edge to edge with no
    empty rows and no M cut in half) */
 .paynow a.monzo:not(.second){background:${mTile(mShades(true), 0.3)} 0 0/42px 35px round,var(--blend)}
