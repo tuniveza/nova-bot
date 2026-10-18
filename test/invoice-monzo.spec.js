@@ -64,20 +64,19 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 	});
 	it("Monzo's M as a quiet pattern behind the words (no big M), a lighter shade of the theme's colours", () => {
 		const html = page(bankSettings);
-		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzwash" aria-hidden="true"></span><span class="mzstripes" aria-hidden="true"></span><span class="mzgrain" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzinner" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
+		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzwash" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgrain" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
 		// (Novacane's sky merged over it: stars, sparkles, nebula glow, blended in)
 		expect(html).toMatch(/\.nvsky\{[^}]*url\("data:image\/svg\+xml,[^"]*circle[^}]*radial-gradient[^}]*mix-blend-mode:screen/);
-		// (an inner border in Monzo's colours with shaved corners, and the gap filled: stripes under glass)
-		// (rounded, no sharp corners: the inner border and the gap's inside edge follow the button's curve)
-		expect(html).toMatch(/\.mzinner\{[^}]*inset:7px;[^}]*border-radius:6px;padding:1\.5px;background:linear-gradient\(90deg,#FF6E5A,#FFC453 34%,#5BD0B8 67%,#4AA3DF\)[^}]*content-box exclude/);
-		expect(html).toMatch(/\.mzgap,\.mzgapglass\{[^}]*border-radius:13px;padding:7px;[^}]*content-box exclude/);
+		// (no inner border: what filled the gap, stripes under glass, now fills the whole button)
+		expect(html).not.toMatch(/mzinner|mzstripes/);
+		expect(html).toMatch(/\.mzgap,\.mzgapglass\{position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none\}/);
 		expect(html).not.toMatch(/clip-path:polygon\(evenodd/);
-		// (Monzo's stripes across the whole button, and its colours washed over it lightly)
-		expect(html).toMatch(/\.mzstripes\{position:absolute;inset:0;[^}]*repeating-linear-gradient\(135deg,#FF6E5A 0 1px,transparent 1px 2px,[^}]*mix-blend-mode:overlay;[^}]*mask:linear-gradient\(#000 0 0\) exclude,url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*42px 35px round/);
+		// (Monzo's stripes across the whole button, cut away where the M's sit, and its colours washed over it lightly)
+		expect(html).toMatch(/\.mzgap\{background:repeating-linear-gradient\(135deg,#FF6E5A 0 1\.5px,transparent 1\.5px 4px,[^}]*mix-blend-mode:overlay;[^}]*mask:linear-gradient\(#000 0 0\) exclude,url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*42px 35px round/);
 		// (the words kept crisp over the busy texture: a soft shadow in the theme's own colour)
 		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:var\(--blend\);text-shadow:0 1px 2px/);
 		// (the M's over the stripes, so they come through)
-		expect(html.indexOf('class="mzgrain"')).toBeGreaterThan(html.indexOf('class="mzstripes"'));
+		expect(html.indexOf('class="mzgrain"')).toBeGreaterThan(html.indexOf('class="mzgap"'));
 		expect(html).toMatch(/\.mzwash\{[^}]*linear-gradient\(100deg,#FF6E5A 0%,#FFC453 32%,#5BD0B8 66%,#4AA3DF 100%\)[^}]*mix-blend-mode:soft-light/);
 		expect(html).toMatch(/\.mzgap\{background:repeating-linear-gradient\(135deg,#FF6E5A[^}]*#4AA3DF/);
 		expect(html).toContain("@media (prefers-reduced-motion:reduce){.mzgapglass{transition:none}}");
