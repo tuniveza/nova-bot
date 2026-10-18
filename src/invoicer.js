@@ -122,8 +122,8 @@ export function monzoLink(monzo, pence, reference) {
   const amount = pence > 0 ? `/${(pence / 100).toFixed(2)}` : "";
   return `https://monzo.me/${me[1]}${amount}${reference ? `?d=${encodeURIComponent(reference)}` : ""}`;
 }
-// Monzo's M (its own mark, one colour: Simple Icons, CC0), drawn in the Pay with Monzo button the way
-// Novacane's logo is drawn: in the button's ink with a soft glow, or in the theme's two colours
+// Monzo's M (its own mark, one colour: Simple Icons, CC0): small and repeated, a quiet pattern behind
+// the words of the Pay with Monzo button
 const MONZO_MARK = "M4.244 1.174a.443.443 0 00-.271.13l-3.97 3.97-.001.001c3.884 3.882 8.093 8.092 11.748 11.748v-8.57L4.602 1.305a.443.443 0 00-.358-.131zm15.483 0a.443.443 0 00-.329.13L12.25 8.456v8.568L24 5.275c-1.316-1.322-2.647-2.648-3.97-3.97a.443.443 0 00-.301-.131zM0 5.979l.002 10.955c0 .294.118.577.326.785l4.973 4.976c.28.282.76.083.758-.314V12.037zm23.998.003l-6.06 6.061v10.338c-.004.399.48.6.76.314l4.974-4.976c.208-.208.326-.49.326-.785z";
 export const monzoReady = (monzo) => Boolean(String(monzo?.link || "").trim());
 // The link as it reads on paper: "monzo.me/novacane"
@@ -364,9 +364,10 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // Monzo: on the client's page a button (the theme's blend, or its outline under the card button)
   // that opens Monzo with the amount and reference filled in; on paper, the link to type
   const monzoHref = monzoReady(settings?.monzo) && !receipt && !cancelled && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
-  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><svg class="mz" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${MONZO_MARK}"/></svg>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
-  // (the theme's two colours for the M on the outline button, once on the page)
-  const monzoBlend = monzoButton ? `<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><linearGradient id="nv-mz" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${accent}"/><stop offset="1" stop-color="${accent2}"/></linearGradient></svg>` : "";
+  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener">Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
+  // The pattern: Monzo's M, small, in staggered rows, in a lighter shade of the theme's own colours (on the
+  // outline button, a whisper of its accent on the paper)
+  const mTile = (fill, opacity) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="44" height="38"><g fill="${fill}" fill-opacity="${opacity}"><path transform="translate(6 6) scale(.5)" d="${MONZO_MARK}"/><path transform="translate(28 25) scale(.5)" d="${MONZO_MARK}"/></g></svg>`);
   const monzo = monzoHref ? `<p class="monzo-line"><span class="k">Monzo</span><a href="${esc(monzoHref)}">${esc(monzoShort(settings.monzo))}</a>${monzoHref.includes("monzo.me/") ? `<br><small>Opens Monzo with ${pounds(s.dueNowPence)} and the reference filled in</small>` : ""}</p>` : "";
   // (on the client's own page: its card button instead of a link to itself)
   const buttons = client && !receipt && !cancelled && (client.cardForm || monzoButton) ? `<div class="paynow">${client.cardForm || ""}${monzoButton}</div>` : "";
@@ -557,31 +558,22 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 .pay .paynow a.monzo:hover{filter:brightness(1.08)}.pay .paynow a.monzo.second:hover{background:var(--tint)}
 .paynow~.monzo-line{display:none}.monzo-line small{color:var(--soft);font-size:12px}
 .paynow a.monzo{align-items:center;gap:10px}.pay .paynow a.monzo{display:inline-flex}
-/* Monzo's M (18 Oct 2026): big, drawn in lines, part of the button: taller than it, running off its
-   left edge and fading into its colour towards the words, glowing softly like Novacane's logo */
+/* Monzo's M (18 Oct 2026): small and repeated across the button, a quiet pattern a shade lighter than it */
 .paynow a.monzo{position:relative;overflow:hidden;isolation:isolate;white-space:nowrap}
-.monzo .mz{position:absolute;z-index:-1;left:3px;top:50%;height:106%;width:auto;aspect-ratio:1/1;transform:translateY(-50%);fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;opacity:.95;filter:drop-shadow(0 0 3px color-mix(in srgb,currentColor 60%,transparent));-webkit-mask-image:linear-gradient(90deg,#000 72%,transparent 125%);mask-image:linear-gradient(90deg,#000 72%,transparent 125%);transition:filter .3s ease,opacity .3s ease}
-.monzo .mz path{vector-effect:non-scaling-stroke}
-.monzo.second .mz{stroke:url(#nv-mz);filter:drop-shadow(0 0 3px color-mix(in srgb,var(--accent2) 45%,transparent))}
-.monzo:hover .mz{opacity:1;filter:drop-shadow(0 0 6px color-mix(in srgb,currentColor 75%,transparent))}
-/* Its border: thick and white (the M's ink), solid where it meets the M on the left and fading towards
-   the right, with a soft glow inside, so the M and the border are one drawing */
+/* Its border: thick and white, solid on the left and fading towards the right, with a soft glow inside */
 .paynow a.monzo::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:3px;background:linear-gradient(90deg,currentColor 0%,color-mix(in srgb,currentColor 70%,transparent) 30%,color-mix(in srgb,currentColor 12%,transparent) 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);pointer-events:none}
 .paynow a.monzo{box-shadow:inset 10px 0 14px -6px color-mix(in srgb,currentColor 35%,transparent),inset 0 0 10px color-mix(in srgb,currentColor 14%,transparent)}
 .quickpay .paynow a.monzo::after{inset:-2px}
 /* A subtle highlight: soft light across the top of the button, like light on glass */
-.paynow a.monzo:not(.second){background:linear-gradient(180deg,rgba(255,255,255,.2) 0%,rgba(255,255,255,.06) 45%,rgba(255,255,255,0) 55%),var(--blend)}
-.monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%)}
+.paynow a.monzo:not(.second){background:linear-gradient(180deg,rgba(255,255,255,.2) 0%,rgba(255,255,255,.06) 45%,rgba(255,255,255,0) 55%),${mTile(mixHex(accent2, "#FFFFFF", 0.45), 0.2)} 0 0/44px 38px,var(--blend)}
+.monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%),${mTile(accent, 0.08)};background-size:auto,44px 38px}
 .monzo.second::after{background:linear-gradient(90deg,var(--accent) 0%,color-mix(in srgb,var(--accent2) 60%,transparent) 35%,color-mix(in srgb,var(--accent2) 15%,transparent) 100%)}
 @media (forced-colors:active){.paynow a.monzo::after{display:none}}
-@media (forced-colors:active){.monzo .mz,.monzo.second .mz{stroke:currentColor;filter:none}}
-@media (prefers-reduced-motion:reduce){.monzo .mz{transition:none}}
 .quickpay{display:flex;flex-direction:column;align-items:flex-end;margin:16px 0 26px;text-align:right}
 .quickpay .paynow{margin:0;justify-content:flex-end}
 .quickpay a.monzo,.quickpay .paynow button{display:inline-flex;align-items:center;justify-content:center;min-height:52px;font:inherit;font-size:17px;font-weight:600;letter-spacing:.02em;color:var(--on-blend);background:var(--blend);border:2px solid transparent;border-radius:8px;padding:12px 26px;text-decoration:none;cursor:pointer}
 .quickpay a.monzo.second{color:var(--accent);background:var(--paper);border-color:var(--accent)}
 .quickpay a.monzo:hover,.quickpay .paynow button:hover{filter:brightness(1.08)}.quickpay a.monzo.second:hover{background:var(--tint)}
-.pay .paynow a.monzo,.pay .paynow a.monzo.second{padding-left:76px}.quickpay .paynow a.monzo{padding-left:90px}
 .quickpay p{margin:10px 0 0;max-width:420px;font-size:14px;line-height:1.5;color:var(--soft)}.quickpay p a{color:var(--accent)}
 .paynow a.monzo:focus-visible,.paynow button:focus-visible,.copy:focus-visible,.quickpay p a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
 .copy{margin-left:8px;padding:3px 12px;min-height:30px;font:inherit;font-size:12.5px;color:var(--accent);background:var(--paper);border:1px solid var(--accent);border-radius:999px;cursor:pointer;vertical-align:baseline}.copy:hover{background:var(--tint)}
@@ -598,7 +590,7 @@ html{scroll-behavior:smooth}
 <body><main class="sheet">
 <header class="band">${bandSky(t, lightBand, from, to)}<div class="brand">${logo}<div><b>NOVACANE</b><small>STUDIOS</small></div></div><div class="doc">${receipt ? "Receipt" : "Invoice"}</div></header>
 <div class="in">
-${monzoBlend}${client?.banner ? `<p class="pagenote" role="status">${client.banner}</p>` : ""}
+${client?.banner ? `<p class="pagenote" role="status">${client.banner}</p>` : ""}
 <p class="stage" role="note">${sentenceLines(esc(line.text(s)), "<br>")}</p>
 <section class="top">
   <div class="to"><h2>Billed to</h2>${billTo}</div>
