@@ -364,12 +364,12 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // Monzo: on the client's page a button (the theme's blend, or its outline under the card button)
   // that opens Monzo with the amount and reference filled in; on paper, the link to type
   const monzoHref = monzoReady(settings?.monzo) && !receipt && !cancelled && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
-  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
+  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
   // The pattern: Monzo's M, small, in staggered rows, in a lighter shade of the theme's own colours (on the
   // outline button, a whisper of its accent on the paper)
   // (each tile whole inside the button: "space" lays only whole tiles, spread evenly, none cut at an edge,
   // and each M sits a little in from its tile's edges, clear of the border)
-  // A fine grain of tiny M's over the whole button: thirty a tile, each in its own 8px cell (a little off
+  // A fine grain of tiny M's over the whole button: thirty a tile, each in its own 7px cell (a little off
   // its centre), turned its own way (up to 30 degrees) and a little lighter or fainter than the next, so it
   // reads as a texture, not a grid; each one whole inside its tile
   const M_GRAIN = (() => {
@@ -377,7 +377,7 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
     const rnd = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
     const out = [];
     for (let row = 0; row < 5; row++)
-      for (let col = 0; col < 6; col++) out.push([4 + col * 8 + (rnd() - 0.5) * 1.6, 4 + row * 8 + (rnd() - 0.5) * 1.6, Math.round((rnd() - 0.5) * 60), (0.55 + rnd() * 0.45).toFixed(2)]);
+      for (let col = 0; col < 6; col++) out.push([3.5 + col * 7 + (rnd() - 0.5) * 1.2, 3.5 + row * 7 + (rnd() - 0.5) * 1.2, Math.round((rnd() - 0.5) * 60), (0.55 + rnd() * 0.45).toFixed(2)]);
     return out.map(([gx, gy, turn, o]) => [gx.toFixed(1), gy.toFixed(1), turn, o]);
   })();
   // (and each its own shade: along the theme's two colours, at different lightnesses, so they're told
@@ -392,7 +392,7 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
     for (let i = 0; i < 16; i++) stars += `<circle cx="${(4 + rnd() * 152).toFixed(1)}" cy="${(4 + rnd() * 48).toFixed(1)}" r="${(0.35 + rnd() * 0.6).toFixed(2)}" fill="#FFFFFF" fill-opacity="${(0.35 + rnd() * 0.5).toFixed(2)}"/>`;
     return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="56">${stars}${sparkle(34, 15, 3.4, "#FFFFFF", 0.75)}${sparkle(118, 40, 2.6, to, 0.9)}${sparkle(82, 9, 1.8, from, 0.8)}</svg>`);
   };
-  const mTile = (shades, opacity) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="48" height="40"><g fill-opacity="${opacity}">${M_GRAIN.map(([x, y, turn, o], i) => `<path fill="${shades[i % shades.length]}" opacity="${o}" transform="translate(${x} ${y}) rotate(${turn}) scale(.2) translate(-12 -12)" d="${MONZO_MARK}"/>`).join("")}</g></svg>`);
+  const mTile = (shades, opacity) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="42" height="35"><g fill-opacity="${opacity}">${M_GRAIN.map(([x, y, turn, o], i) => `<path fill="${shades[i % shades.length]}" opacity="${o}" transform="translate(${x} ${y}) rotate(${turn}) scale(.19) translate(-12 -12)" d="${MONZO_MARK}"/>`).join("")}</g></svg>`);
   const monzo = monzoHref ? `<p class="monzo-line"><span class="k">Monzo</span><a href="${esc(monzoHref)}">${esc(monzoShort(settings.monzo))}</a>${monzoHref.includes("monzo.me/") ? `<br><small>Opens Monzo with ${pounds(s.dueNowPence)} and the reference filled in</small>` : ""}</p>` : "";
   // (on the client's own page: its card button instead of a link to itself)
   const buttons = client && !receipt && !cancelled && (client.cardForm || monzoButton) ? `<div class="paynow">${client.cardForm || ""}${monzoButton}</div>` : "";
@@ -593,6 +593,14 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
    sparkles, lightening what's under them (screen) so the pattern shows through; still */
 .nvsky{position:absolute;inset:0;z-index:-1;background:${nvSky()} 0 50%/auto 100% repeat-x,radial-gradient(ellipse 45% 90% at 16% 20%,color-mix(in srgb,${to} 45%,transparent),transparent 70%),radial-gradient(ellipse 40% 80% at 86% 85%,color-mix(in srgb,${from} 40%,transparent),transparent 70%);mix-blend-mode:screen;opacity:.75;pointer-events:none}
 .monzo.second .nvsky{mix-blend-mode:multiply;opacity:.35}
+/* Monzo's line stripes in the corners: fine slanted lines in its coral, amber, mint and blue, cutting across
+   each corner and fading towards the middle (one way at top left and bottom right, the other at the two others) */
+.mzcorners,.mzcorners::before,.mzcorners::after{position:absolute;inset:0;pointer-events:none}
+.mzcorners{z-index:-1}
+.mzcorners::before,.mzcorners::after{content:"";opacity:.55}
+.mzcorners::before{background:repeating-linear-gradient(45deg,#FF6E5A 0 1.2px,transparent 1.2px 3.5px,#FFC453 3.5px 4.7px,transparent 4.7px 7px,#5BD0B8 7px 8.2px,transparent 8.2px 10.5px,#4AA3DF 10.5px 11.7px,transparent 11.7px 14px);-webkit-mask:radial-gradient(circle at 0 0,#000 0,#000 9px,transparent 30px),radial-gradient(circle at 100% 100%,#000 0,#000 9px,transparent 30px);mask:radial-gradient(circle at 0 0,#000 0,#000 9px,transparent 30px),radial-gradient(circle at 100% 100%,#000 0,#000 9px,transparent 30px)}
+.mzcorners::after{background:repeating-linear-gradient(135deg,#FF6E5A 0 1.2px,transparent 1.2px 3.5px,#FFC453 3.5px 4.7px,transparent 4.7px 7px,#5BD0B8 7px 8.2px,transparent 8.2px 10.5px,#4AA3DF 10.5px 11.7px,transparent 11.7px 14px);-webkit-mask:radial-gradient(circle at 100% 0,#000 0,#000 9px,transparent 30px),radial-gradient(circle at 0 100%,#000 0,#000 9px,transparent 30px);mask:radial-gradient(circle at 100% 0,#000 0,#000 9px,transparent 30px),radial-gradient(circle at 0 100%,#000 0,#000 9px,transparent 30px)}
+.monzo.second .mzcorners{opacity:.6}
 /* A reflective sheen and shine over the whole button, like light on glass: a gloss across the top, a faint
    reflection along the bottom, two soft diagonal glints and a fine bright edge; on hover or focus the
    glints drift slowly across once (still for anyone who asks for less motion) */
@@ -600,9 +608,11 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 a.monzo:hover .mzshine,a.monzo:focus-visible .mzshine{background-position:0 0,15% 0}
 .monzo.second .mzshine{opacity:.6}
 @media (prefers-reduced-motion:reduce){.mzshine{transition:none}}
-@media (forced-colors:active){.nvsky,.mzshine{display:none}}
-.paynow a.monzo:not(.second){background:${mTile(mShades(true), 0.3)} 0 0/48px 40px space,var(--blend)}
-.monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%),${mTile(mShades(false), 0.1)};background-size:auto,48px 40px;background-repeat:no-repeat,space}
+@media (forced-colors:active){.nvsky,.mzshine,.mzcorners{display:none}}
+/* (round: whole tiles, stretched a hair to fit the button exactly, so the grain fills it edge to edge with no
+   empty rows and no M cut in half) */
+.paynow a.monzo:not(.second){background:${mTile(mShades(true), 0.3)} 0 0/42px 35px round,var(--blend)}
+.monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%),${mTile(mShades(false), 0.1)};background-size:auto,42px 35px;background-repeat:no-repeat,round}
 .monzo.second::after{background:linear-gradient(90deg,var(--accent) 0%,color-mix(in srgb,var(--accent2) 60%,transparent) 35%,color-mix(in srgb,var(--accent2) 15%,transparent) 100%)}
 @media (forced-colors:active){.paynow a.monzo::after{display:none}}
 .quickpay{display:flex;flex-direction:column;align-items:flex-end;margin:16px 0 26px;text-align:right}
