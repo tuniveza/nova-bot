@@ -541,7 +541,13 @@ describe("the invoice page", () => {
 		const res = await call(new Request(`${BASE}/invoice/${token}/pay?stage=balance`, { method: "POST" }));
 		expect(res.status).toBe(303);
 		expect(stripe.sessions.at(-1).form["line_items[0][price_data][unit_amount]"]).toBe("34999");
-		const mail = (await portal(`money/invoices/${inv.id}/email?stage=balance`)).text;
+		// A second tap straight after (back from Stripe): the very same request, so Stripe hands back the
+		// same checkout under its key instead of turning it down
+		await call(new Request(`${BASE}/invoice/${token}/pay?stage=balance`, { method: "POST" }));
+		const [a, b] = stripe.sessions.slice(-2).map((x) => x.form);
+		if (Math.floor(Number(a.expires_at) / 60) === Math.floor(Number(b.expires_at) / 60)) expect(b).toEqual(a);
+		expect(Number(b.expires_at) % 60).toBe(0);
+		const mail =(await portal(`money/invoices/${inv.id}/email?stage=balance`)).text;
 		expect(mail).toContain(`href="${BASE}/invoice/${token}/pay?stage=balance"`);
 		// (at the stage it's really at: no ?stage=)
 		expect((await portal(`money/invoices/${inv.id}/document`)).text).toContain(`action="/invoice/${token}/pay" target="_blank">`);

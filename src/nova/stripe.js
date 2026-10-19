@@ -104,6 +104,9 @@ export async function createCheckout(env, { booking, amountPence, purpose, succe
 // A checkout page for what's left to pay on an invoice (src/money.js). Returns { id, url }.
 // The webhook knows it by metadata.invoice_id (and records it once, by the payment's id).
 export async function createInvoiceCheckout(env, { invoice, amountPence, successUrl, cancelUrl }) {
+  // (a second tap in the same minute, back from Stripe: the very same request, so Stripe gives the same
+  // checkout again instead of turning it down for a changed expiry time under the same key)
+  const minute = Math.floor(Date.now() / 60_000);
   const session = await stripe(
     env,
     "POST",
@@ -122,9 +125,9 @@ export async function createInvoiceCheckout(env, { invoice, amountPence, success
       payment_intent_data: { metadata: { invoice_id: invoice.id }, description: `Novacane invoice ${invoice.number}` },
       success_url: successUrl,
       cancel_url: cancelUrl,
-      expires_at: Math.floor(Date.now() / 1000) + 60 * 60,
+      expires_at: minute * 60 + 60 * 60,
     },
-    `invoice-checkout-${invoice.id}-${amountPence}-${Math.floor(Date.now() / 60_000)}`
+    `invoice-checkout-${invoice.id}-${amountPence}-${minute}`
   );
   return { id: session.id, url: session.url };
 }
