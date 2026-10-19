@@ -65,16 +65,23 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 	it("Monzo's M as a quiet pattern behind the words (no big M), a lighter shade of the theme's colours", () => {
 		const html = page(bankSettings);
 		expect(html).toContain('<a aria-describedby="quickpay-help" class="monzo" href="https://monzo.me/novacane/100.00?d=NS-0007" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzwash" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgrain" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay £100.00 with Monzo</a>');
-		// (Novacane's sky merged over it: stars, sparkles, nebula glow, blended in)
-		expect(html).toMatch(/\.nvsky\{[^}]*url\("data:image\/svg\+xml,[^"]*circle[^}]*radial-gradient[^}]*mix-blend-mode:screen/);
+		// (Novacane's sky merged over it: its nebula glow, blended in; no stars or sparkles)
+		expect(html).toMatch(/\.nvsky\{position:absolute;inset:0;z-index:-1;background:radial-gradient[^}]*mix-blend-mode:screen/);
+		expect(html).not.toMatch(/\.nvsky\{[^}]*url\(/);
 		// (no inner border: what filled the gap, stripes under glass, now fills the whole button)
 		expect(html).not.toMatch(/mzinner|mzstripes/);
 		expect(html).toMatch(/\.mzgap,\.mzgapglass\{position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none\}/);
 		expect(html).not.toMatch(/clip-path:polygon\(evenodd/);
 		// (Monzo's stripes across the whole button, cut away where the M's sit, and its colours washed over it lightly)
-		expect(html).toMatch(/\.mzgap\{background:repeating-linear-gradient\(135deg,#FF6E5A 0 1\.5px,transparent 1\.5px 4px,[^}]*mix-blend-mode:overlay;[^}]*mask:linear-gradient\(#000 0 0\) exclude,url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*42px 35px round/);
+		expect(html).toMatch(/\.mzgap\{background:repeating-linear-gradient\(135deg,#FF6E5A 0 1\.5px,transparent 1\.5px 4px,[^}]*mix-blend-mode:overlay;[^}]*mask:linear-gradient\(#000 0 0\) exclude,url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*auto 100% round/);
 		// (the words kept crisp over the busy texture: a soft shadow in the theme's own colour)
-		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:var\(--blend\);text-shadow:0 1px 2px/);
+		expect(html).toMatch(/\.paynow a\.monzo:not\(\.second\)\{background:linear-gradient\(90deg,#[0-9A-F]{6},#[0-9A-F]{6}\);text-shadow:0 1px 2px/);
+		// (the gradient's darker end lifted towards white, so it runs lighter)
+		const [left, right] = html.match(/\.paynow a\.monzo:not\(\.second\)\{background:linear-gradient\(90deg,(#[0-9A-F]{6}),(#[0-9A-F]{6})\)/).slice(1);
+		const accents = [html.match(/--accent:(#[0-9A-Fa-f]{6})/)[1], html.match(/--accent2:(#[0-9A-Fa-f]{6})/)[1]].map((h) => h.toUpperCase());
+		expect([left, right].filter((h, i) => h === accents[i]).length).toBe(1);
+		// (a texture on the outer border: a speckle of grain and a fine crosshatch)
+		expect(html).toMatch(/\.paynow a\.monzo::after\{[^}]*background:url\("data:image\/svg\+xml,[^"]*feTurbulence[^}]*repeating-linear-gradient\(45deg,[^}]*repeating-linear-gradient\(135deg,/);
 		// (the M's over the stripes, so they come through)
 		expect(html.indexOf('class="mzgrain"')).toBeGreaterThan(html.indexOf('class="mzgap"'));
 		expect(html).toMatch(/\.mzwash\{[^}]*linear-gradient\(100deg,#FF6E5A 0%,#FFC453 32%,#5BD0B8 66%,#4AA3DF 100%\)[^}]*mix-blend-mode:soft-light/);
@@ -83,10 +90,13 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		expect(html).not.toMatch(/mzring|mzglass\b/);
 		expect(html).not.toContain('class="mz"');
 		// (a fine grain of tiny M's over the whole button: thirty a tile, each turned its own way, eight shades)
-		expect(html).toMatch(/\.mzgrain\{[^}]*background:url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*42px 35px round;/);
+		expect(html).toMatch(/\.mzgrain\{[^}]*background:url\("data:image\/svg\+xml,[^"]*M4\.244[^}]*auto 100% round;/);
 		const pattern = decodeURIComponent(html.match(/\.mzgrain\{[^}]*?background:url\("data:image\/svg\+xml,([^"]+)"/)[1]);
-		expect(pattern.split("M4.244").length).toBe(31);
-		expect(pattern.split("scale(.19)").length).toBe(31);
+		// (in drastically different sizes: from near the button's height down to a couple of pixels)
+		const sizes = [...pattern.matchAll(/scale\(([\d.]+)\)/g)].map((m) => Number(m[1]));
+		expect(pattern.split("M4.244").length - 1).toBe(sizes.length);
+		expect(sizes.length).toBeGreaterThan(24);
+		expect(Math.max(...sizes) / Math.min(...sizes)).toBeGreaterThan(10);
 		expect(new Set([...pattern.matchAll(/fill="(#[0-9A-F]{6})"/g)].map((m) => m[1])).size).toBe(8);
 		expect(new Set([...pattern.matchAll(/rotate\((-?\d+)\)/g)].map((m) => m[1])).size).toBeGreaterThan(15);
 		// (no money in it any more)
@@ -99,7 +109,7 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		expect(html).toMatch(/\.mzshine\{[^}]*linear-gradient\(180deg,rgba\(255,255,255,\.34\)[^}]*linear-gradient\(110deg/);
 		expect(html).toContain("@media (prefers-reduced-motion:reduce){.mzshine{transition:none}}");
 		// (its thick border fades from the M's ink on the left)
-		expect(html).toMatch(/\.paynow a\.monzo::after\{[^}]*padding:3px;background:linear-gradient\(90deg,currentColor 0%/);
+		expect(html).toMatch(/\.paynow a\.monzo::after\{[^}]*padding:3px;background:url[^}]*linear-gradient\(90deg,currentColor 0%/);
 	});
 	it("no bank details: no bank line; a Monzo payment link (no amount): just 'Opens Monzo to pay.'", () => {
 		expect(page(settings)).not.toContain("No Monzo?");

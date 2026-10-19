@@ -409,30 +409,39 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // outline button, a whisper of its accent on the paper)
   // (each tile whole inside the button: "space" lays only whole tiles, spread evenly, none cut at an edge,
   // and each M sits a little in from its tile's edges, clear of the border)
-  // A fine grain of tiny M's over the whole button: thirty a tile, each in its own 7px cell (a little off
-  // its centre), turned its own way (up to 30 degrees) and a little lighter or fainter than the next, so it
-  // reads as a texture, not a grid; each one whole inside its tile
+  // A grain of Monzo's M's over the whole button in drastically different sizes (19 Oct 2026): a couple
+  // big enough to nearly fill the button's height, a few middling, and a scatter of tiny ones down to a
+  // couple of pixels; biggest placed first, each turned its own way (up to 30 degrees), a little lighter or
+  // fainter than the next, clear of the others and whole inside its 84 x 35 tile
   const M_GRAIN = (() => {
     let x = 18102026;
     const rnd = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const sizes = [1.05, 0.78, 0.6, 0.48, 0.4, 0.34, 0.3, 0.26, 0.24, 0.22, 0.2, 0.2, 0.18, 0.18, 0.16, 0.16, 0.14, 0.14, 0.14, 0.12, 0.12, 0.12, 0.11, 0.1, 0.1, 0.1, 0.09, 0.09, 0.08, 0.08, 0.08, 0.08];
     const out = [];
-    for (let row = 0; row < 5; row++)
-      for (let col = 0; col < 6; col++) out.push([3.5 + col * 7 + (rnd() - 0.5) * 1.2, 3.5 + row * 7 + (rnd() - 0.5) * 1.2, Math.round((rnd() - 0.5) * 60), (0.55 + rnd() * 0.45).toFixed(2)]);
-    return out.map(([gx, gy, turn, o]) => [gx.toFixed(1), gy.toFixed(1), turn, o]);
+    for (const size of sizes)
+      for (let tries = 0; tries < 600; tries++) {
+        const r = size * 13 + 0.5;
+        const [cx, cy] = [r + rnd() * (84 - 2 * r), r + rnd() * (35 - 2 * r)];
+        if (out.every(([ox, oy, or]) => Math.hypot(cx - ox, cy - oy) > r + or + 0.4)) {
+          out.push([cx, cy, r, Math.round((rnd() - 0.5) * 60), (0.55 + rnd() * 0.45).toFixed(2), size]);
+          break;
+        }
+      }
+    return out.map(([gx, gy, , turn, o, size]) => [gx.toFixed(1), gy.toFixed(1), turn, o, size]);
   })();
   // (and each its own shade: along the theme's two colours, at different lightnesses, so they're told
   // apart yet stay quiet; light on the button, deeper on the outline button's paper)
   const mShades = (light) => [[0, 0.1], [0.66, 0.2], [1, 0.12], [0.33, 0.26], [0, 0.24], [1, 0.02], [0.5, 0.16], [0.85, 0.3]].map(([towards2, lift]) => vivid(mixHex(accent2, accent, towards2), light ? 0.66 + lift : 0.5 - lift));
-  // Novacane's night sky over it all (the band's): a scatter of small stars and two of Nova's sparkles, in
-  // white and the sky's own colours, laid over the button's height; drawn when the styles are (from, to)
-  const nvSky = () => {
-    let x = 20261018;
-    const rnd = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
-    let stars = "";
-    for (let i = 0; i < 16; i++) stars += `<circle cx="${(4 + rnd() * 152).toFixed(1)}" cy="${(4 + rnd() * 48).toFixed(1)}" r="${(0.35 + rnd() * 0.6).toFixed(2)}" fill="#FFFFFF" fill-opacity="${(0.35 + rnd() * 0.5).toFixed(2)}"/>`;
-    return tile(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="56">${stars}${sparkle(34, 15, 3.4, "#FFFFFF", 0.75)}${sparkle(118, 40, 2.6, to, 0.9)}${sparkle(82, 9, 1.8, from, 0.8)}</svg>`);
-  };
-  const mTile = (shades, opacity) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="42" height="35"><g fill-opacity="${opacity}">${M_GRAIN.map(([x, y, turn, o], i) => `<path fill="${shades[i % shades.length]}" opacity="${o}" transform="translate(${x} ${y}) rotate(${turn}) scale(.19) translate(-12 -12)" d="${MONZO_MARK}"/>`).join("")}</g></svg>`);
+  // The button's blend with its darker end lifted a good way towards white (19 Oct 2026), so it runs
+  // lighter across; whichever of the theme's two colours is darker is the one lifted
+  const mzBlend = (() => {
+    const lum = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const lift = (h) => mixHex(h, "#FFFFFF", 0.62);
+    return lum(accent) < lum(accent2) ? [lift(accent), accent2] : [accent, lift(accent2)];
+  })();
+  // (the border's speckle: fine fractal noise, dark grains at varying strength)
+  const borderGrain = () => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><filter id="g"><feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1.6 -.55"/></filter><rect width="64" height="64" filter="url(#g)"/></svg>`);
+  const mTile = (shades, opacity) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="84" height="35"><g fill-opacity="${opacity}">${M_GRAIN.map(([x, y, turn, o, size], i) => `<path fill="${shades[i % shades.length]}" opacity="${o}" transform="translate(${x} ${y}) rotate(${turn}) scale(${size}) translate(-12 -12)" d="${MONZO_MARK}"/>`).join("")}</g></svg>`);
   const monzo = monzoHref ? `<p class="monzo-line"><span class="k">Monzo</span><a href="${esc(monzoHref)}">${esc(monzoShort(settings.monzo))}</a>${monzoHref.includes("monzo.me/") ? `<br><small>Opens Monzo with ${pounds(s.dueNowPence)} and the reference filled in</small>` : ""}</p>` : "";
   // (on the client's own page: its card button instead of a link to itself)
   const buttons = client && !receipt && !cancelled && (client.cardForm || monzoButton) ? `<div class="paynow">${client.cardForm || ""}${monzoButton}</div>` : "";
@@ -625,20 +634,21 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 .paynow a.monzo{align-items:center;gap:10px}.pay .paynow a.monzo{display:inline-flex}
 /* Monzo's M (18 Oct 2026): small and repeated across the button, a quiet pattern a shade lighter than it */
 .paynow a.monzo{position:relative;overflow:hidden;isolation:isolate;white-space:nowrap}
-/* Its border: thick and white, solid on the left and fading towards the right, with a soft glow inside */
-.paynow a.monzo::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:3px;background:linear-gradient(90deg,currentColor 0%,color-mix(in srgb,currentColor 70%,transparent) 30%,color-mix(in srgb,currentColor 12%,transparent) 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);pointer-events:none}
+/* Its border: thick and white, solid on the left and fading towards the right, with a soft glow inside,
+   and textured (19 Oct 2026): a fine crosshatch in the theme's colour and a speckle of grain through it */
+.paynow a.monzo::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:3px;background:${borderGrain()},repeating-linear-gradient(45deg,color-mix(in srgb,var(--accent) 45%,transparent) 0 .7px,transparent .7px 2.2px),repeating-linear-gradient(135deg,color-mix(in srgb,var(--accent2) 40%,transparent) 0 .7px,transparent .7px 2.2px),linear-gradient(90deg,currentColor 0%,color-mix(in srgb,currentColor 70%,transparent) 30%,color-mix(in srgb,currentColor 12%,transparent) 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0);pointer-events:none}
 .paynow a.monzo{box-shadow:inset 10px 0 14px -6px color-mix(in srgb,currentColor 35%,transparent),inset 0 0 10px color-mix(in srgb,currentColor 14%,transparent)}
 .quickpay .paynow a.monzo::after{inset:-2px}
-/* Novacane over it all, merged in: its night sky's nebula glow in the theme's colours, stars and Nova's
-   sparkles, lightening what's under them (screen) so the pattern shows through; still */
-.nvsky{position:absolute;inset:0;z-index:-1;background:${nvSky()} 0 50%/auto 100% repeat-x,radial-gradient(ellipse 45% 90% at 16% 20%,color-mix(in srgb,${to} 45%,transparent),transparent 70%),radial-gradient(ellipse 40% 80% at 86% 85%,color-mix(in srgb,${from} 40%,transparent),transparent 70%);mix-blend-mode:screen;opacity:.75;pointer-events:none}
+/* Novacane over it all, merged in: its night sky's nebula glow in the theme's colours (no stars or
+   sparkles), lightening what's under them (screen) so the pattern shows through; still */
+.nvsky{position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse 45% 90% at 16% 20%,color-mix(in srgb,${to} 45%,transparent),transparent 70%),radial-gradient(ellipse 40% 80% at 86% 85%,color-mix(in srgb,${from} 40%,transparent),transparent 70%);mix-blend-mode:screen;opacity:.75;pointer-events:none}
 .monzo.second .nvsky{mix-blend-mode:multiply;opacity:.35}
 /* Monzo's colours washed over the whole button, lightly (soft light), so Novacane's pinks and purples still
    lead and coral, amber, mint and blue warm and cool them from left to right */
 .mzwash{position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,#FF6E5A 0%,#FFC453 32%,#5BD0B8 66%,#4AA3DF 100%);opacity:.38;mix-blend-mode:soft-light;pointer-events:none}
 /* The grain of tiny M's over the stripes, in the holes cut for them (round: whole tiles, stretched a hair to
    fit the button exactly, so it fills it edge to edge with no empty rows and no M cut in half) */
-.mzgrain{position:absolute;inset:0;z-index:-1;background:${mTile(mShades(true), 0.4)} 0 0/42px 35px round;pointer-events:none}
+.mzgrain{position:absolute;inset:0;z-index:-1;background:${mTile(mShades(true), 0.4)} 0 0/auto 100% round;pointer-events:none}
 .monzo.second .mzgrain{background-image:${mTile(mShades(false), 0.12)}}
 .monzo.second .mzwash{opacity:.2;mix-blend-mode:multiply}
 /* Monzo's line stripes in the corners: fine slanted lines in its coral, amber, mint and blue, cutting across
@@ -653,7 +663,7 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
    slanted coloured stripes blended in, cut away wherever an M sits so the M's come through them, under a glass
    sheen (a gloss along the top, a faint reflection below, two glints that drift on hover) */
 .mzgap,.mzgapglass{position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none}
-.mzgap{background:repeating-linear-gradient(135deg,#FF6E5A 0 1.5px,transparent 1.5px 4px,#FFC453 4px 5.5px,transparent 5.5px 8px,#5BD0B8 8px 9.5px,transparent 9.5px 12px,#4AA3DF 12px 13.5px,transparent 13.5px 16px);opacity:.75;mix-blend-mode:overlay;-webkit-mask:linear-gradient(#000 0 0),${mTile(Array(8).fill("#000"), 1)} 0 0/42px 35px round;-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) exclude,${mTile(Array(8).fill("#000"), 1)} 0 0/42px 35px round}
+.mzgap{background:repeating-linear-gradient(135deg,#FF6E5A 0 1.5px,transparent 1.5px 4px,#FFC453 4px 5.5px,transparent 5.5px 8px,#5BD0B8 8px 9.5px,transparent 9.5px 12px,#4AA3DF 12px 13.5px,transparent 13.5px 16px);opacity:.75;mix-blend-mode:overlay;-webkit-mask:linear-gradient(#000 0 0),${mTile(Array(8).fill("#000"), 1)} 0 0/auto 100% round;-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) exclude,${mTile(Array(8).fill("#000"), 1)} 0 0/auto 100% round}
 .mzgapglass{background:linear-gradient(180deg,rgba(255,255,255,.55) 0,rgba(255,255,255,.2) 16%,rgba(255,255,255,0) 42%,rgba(255,255,255,0) 78%,rgba(255,255,255,.18) 100%),linear-gradient(105deg,transparent 0 30%,rgba(255,255,255,.4) 36%,transparent 41% 58%,rgba(255,255,255,.28) 61%,transparent 65%);background-size:100% 100%,250% 100%;background-position:0 0,85% 0;background-repeat:no-repeat;transition:background-position 1.6s ease}
 a.monzo:hover .mzgapglass,a.monzo:focus-visible .mzgapglass{background-position:0 0,15% 0}
 .monzo.second .mzgap{opacity:.4;mix-blend-mode:multiply}.monzo.second .mzgapglass{opacity:.6}
@@ -666,9 +676,9 @@ a.monzo:hover .mzshine,a.monzo:focus-visible .mzshine{background-position:0 0,15
 .monzo.second .mzshine{opacity:.6}
 @media (prefers-reduced-motion:reduce){.mzshine{transition:none}}
 @media (forced-colors:active){.nvsky,.mzshine,.mzcorners,.mzgap,.mzgapglass,.mzwash,.mzgrain{display:none}}
-.paynow a.monzo:not(.second){background:var(--blend);text-shadow:0 1px 2px color-mix(in srgb,var(--accent) 70%,#000),0 0 8px color-mix(in srgb,var(--accent) 55%,transparent)}
+.paynow a.monzo:not(.second){background:linear-gradient(90deg,${mzBlend[0]},${mzBlend[1]});text-shadow:0 1px 2px color-mix(in srgb,var(--accent) 70%,#000),0 0 8px color-mix(in srgb,var(--accent) 55%,transparent)}
 .monzo.second{background-image:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,transparent),transparent 55%)}
-.monzo.second::after{background:linear-gradient(90deg,var(--accent) 0%,color-mix(in srgb,var(--accent2) 60%,transparent) 35%,color-mix(in srgb,var(--accent2) 15%,transparent) 100%)}
+.monzo.second::after{background:${borderGrain()},repeating-linear-gradient(45deg,color-mix(in srgb,var(--paper) 45%,transparent) 0 .7px,transparent .7px 2.2px),linear-gradient(90deg,var(--accent) 0%,color-mix(in srgb,var(--accent2) 60%,transparent) 35%,color-mix(in srgb,var(--accent2) 15%,transparent) 100%)}
 @media (forced-colors:active){.paynow a.monzo::after{display:none}}
 .quickpay{display:flex;flex-direction:column;align-items:flex-end;margin:16px 0 26px;text-align:right}
 .quickpay .paynow{margin:0;justify-content:flex-end}
