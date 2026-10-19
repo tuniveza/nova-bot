@@ -735,7 +735,9 @@ function invoiceMail(env, settings, row, payments, stage, { greeting, paragraphs
   const today = ukToday();
   const link = `${publicUrl(env)}/invoice/${row.token}`;
   // (the email's card button: straight to Stripe's checkout for what's due now, when card payments are set up)
-  const payHref = cardReady(env) && !["paid", "void"].includes(row.status) ? `${link}/pay` : "";
+  // (at another stage than the one it's at, the Invoicer's preview: ?stage=, so it charges what it says)
+  const real = stageOf(publicInvoice(env, row, today), today);
+  const payHref = cardReady(env) && !["paid", "void"].includes(row.status) ? `${link}/pay${stage !== real && stage !== "paid" ? `?stage=${stage}` : ""}` : "";
   return invoiceEmailParts({ invoice: publicInvoice(env, row, today), payments, stage, settings, today, base: publicUrl(env), link, payHref, greeting, paragraphs });
 }
 const firstName = (row) => `Hi ${String(row.bill_name || "").trim().split(/\s+/)[0] || "there"},`;
@@ -1366,10 +1368,11 @@ export async function pdfAnswer(env, draw, number) {
 
 // The card button: Stripe's checkout for what's due now, by way of /invoice/<token>/pay; "" when card
 // payments aren't set up, it's paid or removed, or there's nothing due. newTab: shown inside the Invoicer
-// or a preview, so Stripe opens in its own tab
-export function cardButton(env, row, due, { newTab = false } = {}) {
+// or a preview, so Stripe opens in its own tab. stage: the Invoicer showing it at another stage than the
+// one it's at (its button charges what it says: ?stage=)
+export function cardButton(env, row, due, { newTab = false, stage = null } = {}) {
   if (!row?.token || due <= 0 || ["paid", "void"].includes(row.status) || !cardReady(env)) return "";
-  return `<form method="post" action="/invoice/${esc(row.token)}/pay"${newTab ? ' target="_blank"' : ""}><button type="submit">Pay ${esc(money(due))} by card</button></form>`;
+  return `<form method="post" action="/invoice/${esc(row.token)}/pay${stage ? `?stage=${stage}` : ""}"${newTab ? ' target="_blank"' : ""}><button type="submit">Pay ${esc(money(due))} by card</button></form>`;
 }
 
 function notFoundPage([title, words] = ["Invoice not found", "This link doesn't lead to an invoice. If you were sent it, ask the studio for a new one."], status = 404) {
@@ -1426,10 +1429,12 @@ export async function handleInvoicePage(request, env, pathname) {
     // (POST from the page's card button; GET from the email's, straight to Stripe's checkout in one go;
     // at any stage but paid or removed: before it's sent, while it's being updated and after)
     if (request.method !== "POST" && request.method !== "GET") return new Response("Method not allowed", { status: 405 });
-    // What's due now: the deposit at the deposit stage, else what's left (the same as the page's button)
+    // What's due now: the deposit at the deposit stage, else what's left (the same as the page's button;
+    // ?stage=: the Invoicer's copy at another stage, its button charging what it says)
     const today = ukToday();
     const invoice = publicInvoice(env, row, today);
-    const due = stageSums(invoice, await invoicePayments(env, row.id), stageOf(invoice, today), today).dueNowPence;
+    const asked = new URL(request.url).searchParams.get("stage");
+    const due = stageSums(invoice, await invoicePayments(env, row.id), STAGES.includes(asked) && asked !== "paid" ? asked : stageOf(invoice, today), today).dueNowPence;
     if (["paid", "void"].includes(row.status) || due <= 0 || !cardReady(env)) return Response.redirect(`${publicUrl(env)}/invoice/${row.token}`, 303);
     try {
       const checkout = await createInvoiceCheckout(env, {
@@ -1541,7 +1546,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
       // (in the Invoicer, at every stage, sent or not: the card button (Stripe's checkout) and the Monzo
       // button, as the client gets them, each opening in its own tab)
       const due = stageSums(invoice, payments, stage, today).dueNowPence;
-      const pay = { cardForm: stage === "paid" ? "" : cardButton(env, row, due, { newTab: true }), newTab: true, cancelled: row.status === "void" };
+      const pay = { cardForm: stage === "paid" ? "" : cardButton(env, row, due, { newTab: true, stage: stage === autoStage ? null : stage }), newTab: true, cancelled: row.status === "void" };
       return pageResponse(invoiceDocument(invoice, payments, stage, settings, today, { ...options, pay }), nonce, 200, true);
     }
     const sums = stageSums(invoice, payments, stage, today);
