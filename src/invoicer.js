@@ -579,6 +579,11 @@ body::after{background:${skyNear};background-size:560px 560px;animation:nv-pass 
 @keyframes nv-pass{from{background-position:0 0}to{background-position:560px 280px}}
 @keyframes nv-twinkle{from{opacity:.45}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){body::before,body::after{animation:none}}
+/* Shown at its full height inside another page (the Invoicer on a phone, the live preview: html.still,
+   19 Oct 2026): no moving sky (two fixed layers half as tall again as the whole invoice, one repainted
+   every frame, left a phone drawing grey while it scrolled) and the backdrop scrolls with the page */
+html.still{background-attachment:scroll}
+html.still body::before,html.still body::after{display:none}
 .sheet{position:relative}
 .sheet{max-width:820px;margin:0 auto;background:${sheetLayers},var(--paper);box-shadow:0 0 0 1px ${dark ? "rgb(255 255 255 / .05)" : "rgb(40 20 50 / .06)"},0 2px 4px rgb(0 0 0 / ${dark ? ".35" : ".06"}),0 18px 50px ${dark ? "rgb(0 0 0 / .55)" : "rgb(60 30 80 / .16)"}}
 .band{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 40px;color:var(--band-ink);background:${bandGlow ? `${bandGlow},` : ""}${tex.band},var(--band)}
@@ -723,6 +728,6 @@ ${quickpay}
 </div>
 <footer><span class="thanks">Thank you for recording with ${esc(card.name)}.</span><span>${esc(card.address)}</span><span>${esc(card.phone)} · ${esc(card.email)} · ${esc(card.website)}</span><span>Deposits are non-refundable with less than ${CANCEL_NOTICE_HOURS} hours' notice of cancellation.</span></footer>
 </div></main>${client ? `<p class="tools">${client.pdfHref ? `<a class="pdf" href="${esc(client.pdfHref)}" download>Download PDF</a>` : ""}<button type="button" id="print">Print or save as PDF</button><a href="/privacy">Privacy</a></p><p class="sr" id="copied" role="status" aria-live="polite"></p><script nonce="${esc(client.nonce || "")}">document.getElementById("print").addEventListener("click",function(){window.print()});
-if(window.top!==window.self)document.querySelectorAll('form[action],a[href]:not([href^="#"])').forEach(function(e){e.target="_blank"});
+if(window.top!==window.self){document.documentElement.classList.add("still");document.querySelectorAll('form[action],a[href]:not([href^="#"])').forEach(function(e){e.target="_blank"})}
 if(navigator.clipboard&&window.isSecureContext)document.querySelectorAll(".copy").forEach(function(b){b.hidden=false;b.addEventListener("click",function(){var label=b.getAttribute("aria-label").replace("Copy ","");navigator.clipboard.writeText(b.dataset.copy).then(function(){b.textContent="Copied ✓";document.getElementById("copied").textContent=label.charAt(0).toUpperCase()+label.slice(1)+" copied";setTimeout(function(){b.textContent="Copy"},2500)})})})</script>` : ""}</body></html>`;
 }
