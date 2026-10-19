@@ -466,6 +466,9 @@ REFERRAL CODES
 DEPOSIT AND PAYMENT
 - 50% deposit secures a booking, via the website, or contact Novacane to pay by bank
   transfer. Invoices available if needed.
+- An invoice from the studio can be paid on its own page (the link in its email): with
+  Monzo (the Pay with Monzo button fills in the amount and the invoice number), by
+  card where shown, or by bank transfer with the invoice number as the reference.
 - The remaining 50% is due on arrival, before the session starts.
 
 CANCELLATIONS

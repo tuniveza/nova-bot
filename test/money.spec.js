@@ -4,7 +4,7 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
-import { invoiceHash, readLines, taxYear, totals } from "../src/money.js";
+import { invoiceHash, invoicePage, readLines, readSettings, taxYear, totals } from "../src/money.js";
 import { STAGES, stageEmail, stageOf, stageSums } from "../src/invoicer.js";
 import { sha256 } from "../src/portal/auth.js";
 import { makeStripe, stripeWebhook } from "./fakes.js";
@@ -542,6 +542,37 @@ describe("the Invoicer", () => {
 		const gap = await portal(`money/invoices/${inv.id}/reminder`, { body: { body: "Hi [Client Name],\n\nThank you for the session." } });
 		expect(gap.status).toBe(400);
 		expect(gap.data.error).toContain("[Client Name]");
+	});
+
+	it("puts Monzo on every part of an invoice once the studio's Monzo link is set", async () => {
+		// Not set yet: no Monzo link anywhere
+		const first = await writeAndSend();
+		expect((await portal("money")).data.invoices.find((i) => i.id === first.id).monzoUrl).toBeNull();
+		expect((await portal("money/settings", { body: { monzo: { link: "monzo.me/novacane" } } })).status).toBe(200);
+		// A sent, unpaid invoice: its link with the amount due now (the 50% deposit) and its number
+		const want = "https://monzo.me/novacane/175.00?d=NS-0001";
+		const listed = (await portal("money")).data;
+		expect(listed.invoices.find((i) => i.id === first.id).monzoUrl).toBe(want);
+		expect((await portal(`money/invoices/${first.id}`)).data.invoice.monzoUrl).toBe(want);
+		expect((await portal(`money/invoices/${first.id}/stage`)).data.invoice.monzoUrl).toBe(want);
+		// One not sent yet has none (its page isn't open)
+		const waiting = await write();
+		expect(listed.invoices.find((i) => i.id === waiting.id)?.monzoUrl ?? null).toBeNull();
+		// The Agent sees it, in the context and on each invoice
+		const context = (await agent("/nova-agent/money/context")).data;
+		expect(context.monzo).toBe("https://monzo.me/novacane");
+		expect(context.recentInvoices.find((i) => i.id === first.id).monzoUrl).toBe(want);
+		expect((await agent("/nova-agent/money/invoices")).data.invoices.find((i) => i.id === first.id).monzoUrl).toBe(want);
+		expect((await agent(`/nova-agent/money/invoices/${first.id}`)).data.invoice.monzoUrl).toBe(want);
+		// The copy saved in Google Drive
+		expect(invoicePage(env, await row(first.id), await readSettings(env), { preview: true })).toContain(`Pay with Monzo:</b> <a href="${want}"`);
+		// Paid with Monzo: recorded as Monzo, and then the link goes (nothing left to pay)
+		expect(listed.methods.map((m) => m.name)).toContain("Monzo");
+		const paid = await portal(`money/invoices/${first.id}/payments`, { body: { amount: "349.99", method: "monzo" } });
+		expect(paid.status).toBe(200);
+		const detail = (await portal(`money/invoices/${first.id}`)).data;
+		expect(detail.payments[0]).toMatchObject({ method: "monzo", methodName: "Monzo" });
+		expect(detail.invoice.monzoUrl).toBeNull();
 	});
 
 	it("shows the price list from the booking rules, and an invoice at any stage (team only)", async () => {

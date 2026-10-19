@@ -39,7 +39,7 @@ import { sendStudioEmail } from "./google/gmail.js";
 import { pounds as poundsText, toPence } from "./clients.js";
 import { createInvoiceCheckout, stripeOffline } from "./nova/stripe.js";
 import { invoiceEmailParts } from "./invoice-email.js";
-import { BILLINGS, INVOICE_MODES, INVOICE_PAPERS, INVOICE_THEMES, STAGES, afterSession, themeId, catalogue, invoiceDocument, stageEmail, stageMessage, stageOf, stageSums } from "./invoicer.js";
+import { BILLINGS, INVOICE_MODES, INVOICE_PAPERS, INVOICE_THEMES, STAGES, afterSession, themeId, catalogue, invoiceDocument, monzoLink, monzoReady, stageEmail, stageMessage, stageOf, stageSums } from "./invoicer.js";
 
 export const CATEGORIES = [
   "Equipment",
@@ -53,8 +53,8 @@ export const CATEGORIES = [
   "Bank and payment fees",
   "Other",
 ];
-export const METHODS = ["bank", "card", "cash", "stripe", "other"];
-const METHOD_NAMES = { bank: "Bank transfer", card: "Card", cash: "Cash", stripe: "Card (Stripe)", other: "Other" };
+export const METHODS = ["bank", "monzo", "card", "cash", "stripe", "other"];
+const METHOD_NAMES = { bank: "Bank transfer", monzo: "Monzo", card: "Card", cash: "Cash", stripe: "Card (Stripe)", other: "Other" };
 
 const PREFIX = "NS-";
 const MAX_LINES = 30;
@@ -359,6 +359,16 @@ export function publicInvoice(env, row, today = ukToday()) {
 }
 
 const readRow = (env, id) => env.DB.prepare(`${SELECT} WHERE i.id = ?`).bind(id).first();
+
+// An invoice's Pay with Monzo link (19 October 2026): the studio's Monzo with the amount due now and
+// the invoice number filled in, for sharing it by hand (WhatsApp, a text), Portal and the Agent. Only
+// while it's out and unpaid (its page open) and once the studio's Monzo link is set; else null.
+function monzoFor(invoice, settings, today = ukToday()) {
+  if (!invoice || !monzoReady(settings?.monzo) || !invoice.pageUrl || !OPEN.includes(invoice.status)) return null;
+  const due = stageSums(invoice, [], stageOf(invoice, today), today).dueNowPence;
+  return due > 0 ? monzoLink(settings.monzo, due, invoice.number) : null;
+}
+const withMonzo = (invoice, settings, today) => invoice && { ...invoice, monzoUrl: monzoFor(invoice, settings, today) };
 
 export async function getInvoice(env, id) {
   return publicInvoice(env, await readRow(env, id));
@@ -1236,9 +1246,12 @@ export function invoicePage(env, row, settings, { preview = false, paid = false,
   const payBank = bankReady(settings)
     ? `<dl class="bank"><dt>Account name</dt><dd>${esc(bank.accountName)}</dd><dt>Sort code</dt><dd>${esc(bank.sortCode)}</dd><dt>Account number</dt><dd>${esc(bank.accountNumber)}</dd><dt>Reference</dt><dd>${esc(inv.number)}</dd></dl>${bank.note ? `<p class="small">${esc(bank.note)}</p>` : ""}`
     : "";
+  // (Monzo: its link with the amount due now and the invoice number filled in)
+  const monzoHref = monzoFor(inv, settings);
+  const payMonzo = monzoHref ? `<p class="monzo"><b>Pay with Monzo:</b> <a href="${esc(monzoHref)}">${esc(monzoHref.replace(/^https:\/\//, ""))}</a></p>` : "";
   const howToPay =
-    balance > 0 && inv.status !== "void" && (payCard || payBank || preview)
-      ? `<section class="pay"><h2>How to pay</h2>${payCard}${payCard && payBank ? '<p class="small">Or by bank transfer:</p>' : ""}${payBank}${preview && !payBank && !cardReady(env) ? '<p class="small">No way to pay is set up yet: add the bank details in Portal → Money → Invoice settings.</p>' : ""}</section>`
+    balance > 0 && inv.status !== "void" && (payCard || payMonzo || payBank || preview)
+      ? `<section class="pay"><h2>How to pay</h2>${payCard}${payMonzo}${(payCard || payMonzo) && payBank ? '<p class="small">Or by bank transfer:</p>' : ""}${payBank}${preview && !payBank && !cardReady(env) ? '<p class="small">No way to pay is set up yet: add the bank details in Portal → Money → Invoice settings.</p>' : ""}</section>`
       : "";
   const html = `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
 <title>Invoice ${esc(inv.number)} · ${esc(s.name)}</title>
@@ -1386,7 +1399,9 @@ export async function moneyContext(env) {
     vatRate: settings.vatRate,
     dueDays: settings.dueDays,
     categories: CATEGORIES,
-    recentInvoices: recent.map((i) => ({ id: i.id, number: i.number, to: i.billTo.name, totalPence: i.totalPence, balancePence: i.balancePence, status: i.status, overdue: i.overdue, dueDate: i.dueDate })),
+    recentInvoices: recent.map((i) => ({ id: i.id, number: i.number, to: i.billTo.name, totalPence: i.totalPence, balancePence: i.balancePence, status: i.status, overdue: i.overdue, dueDate: i.dueDate, monzoUrl: monzoFor(i, settings) })),
+    // (clients can pay any invoice with Monzo once the studio's Monzo link is set: Money's settings)
+    monzo: monzoReady(settings.monzo) ? settings.monzo.link : null,
     today: ukToday(),
   };
 }
@@ -1412,7 +1427,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
     ]);
     return json({
       summary,
-      invoices,
+      invoices: invoices.map((i) => withMonzo(i, settings)),
       expenses,
       reminders: reminders.results.map(reminderShape),
       settings: { business: settings.business, bank: settings.bank, monzo: settings.monzo, vatRate: settings.vatRate, dueDays: settings.dueDays, bankReady: bankReady(settings), monzoReady: Boolean(settings.monzo.link) },
@@ -1462,14 +1477,14 @@ export async function handleMoneyForStaff(request, env, me, route) {
       return pageResponse(invoiceDocument(invoice, payments, stage, settings, today, options), nonce, 200, true);
     }
     const sums = stageSums(invoice, payments, stage, today);
-    return json({ stage, autoStage, sums, email: stageEmail(invoice, sums, stage, settings, today), invoice, payments });
+    return json({ stage, autoStage, sums, email: stageEmail(invoice, sums, stage, settings, today), invoice: withMonzo(invoice, settings, today), payments });
   }
   const one = route.match(/^\/money\/invoices\/(\d{1,12})$/);
   if (one && get) {
     const row = await readRow(env, Number(one[1]));
     if (!row) return json({ error: "That invoice doesn't exist." }, 404);
     const { results } = await env.DB.prepare(`${REMINDER_SELECT} WHERE r.invoice_id = ? ORDER BY r.id`).bind(row.id).all();
-    return json({ invoice: publicInvoice(env, row), payments: await invoicePayments(env, row.id), reminders: results.map(reminderShape), log: await moneyLog(env, row.id) });
+    return json({ invoice: withMonzo(publicInvoice(env, row), await readSettings(env)), payments: await invoicePayments(env, row.id), reminders: results.map(reminderShape), log: await moneyLog(env, row.id) });
   }
   if (route === "/money/export.csv" && get) {
     if (!canDecide(me)) return json({ error: "Only an admin, signed in to Portal in a browser, can export." }, 403);
@@ -1525,7 +1540,10 @@ export async function handleMoneyForStaff(request, env, me, route) {
 // send, remind, void, payment or settings route for the agent's key.
 export async function handleMoneyForAgent(env, pathname, body) {
   if (pathname === "/nova-agent/money/context") return json(await moneyContext(env));
-  if (pathname === "/nova-agent/money/invoices") return json({ invoices: await listInvoices(env, { status: typeof body?.status === "string" ? body.status : "all", limit: 50 }) });
+  if (pathname === "/nova-agent/money/invoices") {
+    const [list, settings] = await Promise.all([listInvoices(env, { status: typeof body?.status === "string" ? body.status : "all", limit: 50 }), readSettings(env)]);
+    return json({ invoices: list.map((i) => withMonzo(i, settings)) });
+  }
   if (pathname === "/nova-agent/money/invoices/draft") {
     // Only these fields are read: a status, hash, number or approver sent along is ignored
     const input = {};
@@ -1535,7 +1553,7 @@ export async function handleMoneyForAgent(env, pathname, body) {
   const one = pathname.match(/^\/nova-agent\/money\/invoices\/(\d{1,12})$/);
   if (one) {
     const invoice = await getInvoice(env, Number(one[1]));
-    return invoice ? json({ invoice, payments: await invoicePayments(env, invoice.id) }) : json({ error: "That invoice doesn't exist." }, 404);
+    return invoice ? json({ invoice: withMonzo(invoice, await readSettings(env)), payments: await invoicePayments(env, invoice.id) }) : json({ error: "That invoice doesn't exist." }, 404);
   }
   const edit = pathname.match(/^\/nova-agent\/money\/invoices\/(\d{1,12})\/edit$/);
   if (edit) {
