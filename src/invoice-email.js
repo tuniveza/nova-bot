@@ -108,6 +108,9 @@ ${td(`background:${tint};padding:14px 16px;text-align:right;`, `<div style="font
   const button = link
     ? `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 14px;"><tr>${td(`background:${accent};border-radius:6px;`, `<a href="${esc(link)}" style="display:inline-block;padding:12px 24px;font-family:${FONT};font-size:15px;font-weight:600;letter-spacing:.3px;color:#ffffff;text-decoration:none;">${receipt ? "See your receipt" : `Pay ${esc(pounds(s.dueNowPence))} or see the invoice`}</a>`, `bgcolor="${accent}"`)}</tr></table>`
     : "";
+  // The invoice (or receipt) as a PDF file, to keep: under the buttons, every email (19 Oct 2026)
+  const pdf = link ? `${link}/pdf` : "";
+  const pdfLine = pdf ? `<p style="margin:0 0 14px;"><a href="${esc(pdf)}" style="color:${accent};font-weight:600;">Download the ${receipt ? "receipt" : "invoice"} (PDF)</a></p>` : "";
   // Monzo: a second button, the theme's accent as an outline (opens Monzo with the amount and the
   // reference filled in), and the link as words under it
   const monzoHref = monzoReady(settings?.monzo) && !receipt && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
@@ -138,7 +141,7 @@ ${rows}</table>`, `class="nv-pad"`)}</tr>
 <tr>${td(`padding:12px 32px 0;`, `<table role="presentation" cellpadding="0" cellspacing="0" align="right" style="border-collapse:collapse;min-width:300px;">${sums.join("")}</table>`, `class="nv-pad"`)}</tr>
 <tr>${td(`padding:26px 32px 0;`, `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>
 ${note ? td(`width:52%;vertical-align:top;padding-right:16px;`, `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>${td(`width:3px;background:${accent2};`, "", `bgcolor="${accent2}"`)}${td(`background:${tint2};padding:12px 14px;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${label("Notes")}${sentenceLines(esc(note)).replace(/\n/g, "<br>")}`, `bgcolor="${tint2}"`)}</tr></table>`, `class="nv-col"`) : ""}
-${td(`vertical-align:top;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${label(receipt ? "Payment" : "How to pay")}${button}${monzoButton}${payText}`, `class="nv-col"`)}
+${td(`vertical-align:top;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${label(receipt ? "Payment" : "How to pay")}${button}${monzoButton}${pdfLine}${payText}`, `class="nv-col"`)}
 </tr></table>`, `class="nv-pad"`)}</tr>
 <tr>${td(`padding:22px 32px 26px;`, `<div style="border-top:1px solid ${P.hair};padding-top:14px;font-size:12.5px;color:${heading};">Thank you for recording with ${esc(card.name)}.</div>
 <div style="font-size:11.5px;line-height:1.7;color:${P.soft};margin-top:4px;">${esc(card.address)}<br>${esc(card.phone)} · <a href="mailto:${esc(card.email)}" style="color:${P.soft};">${esc(card.email)}</a> · <a href="https://${esc(card.website.replace(/^https?:\/\//, ""))}" style="color:${P.soft};">${esc(card.website)}</a></div>`, `class="nv-pad"`)}</tr>
@@ -168,6 +171,7 @@ ${td(`vertical-align:top;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${l
     receipt ? "Payment: received with thanks. Nothing more to pay." : "How to pay:",
     ...(receipt ? [] : [...(link ? [`  Pay or see the invoice online: ${link}`] : []), ...(monzoHref ? [`  Pay with Monzo: ${monzoHref}`] : []), ...(bank ? [`  Bank transfer: ${bank.accountName}, sort code ${bank.sortCode}, account ${bank.accountNumber}`] : []), `  Reference: ${invoice.number}`]),
     ...(receipt && link ? [`See your receipt: ${link}`] : []),
+    ...(pdf ? [`Download the ${receipt ? "receipt" : "invoice"} (PDF): ${pdf}`] : []),
     "",
     `Thank you for recording with ${card.name}.`,
     `${card.address} · ${card.phone} · ${card.email} · ${card.website}`,

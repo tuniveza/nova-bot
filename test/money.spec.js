@@ -17,6 +17,8 @@ const EMAIL_ENV = { MAIL_KEY: "re_test_send_123", INVOICE_FROM: "Novacane Studio
 let emails; // bodies POSTed to the mail server's /emails
 let stripe;
 let emailFails;
+let pdfAsked; // pages sent to the PDF maker (Nova Agent's /pdf/make)
+const PDF_ENV = { ...EMAIL_ENV, PDF_MAKER_URL: "http://pdf.test/pdf/make" };
 
 beforeEach(async () => {
 	await env.DB.batch([
@@ -32,6 +34,7 @@ beforeEach(async () => {
 	]);
 	emails = [];
 	emailFails = false;
+	pdfAsked = [];
 	stripe = makeStripe();
 	vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init = {}) => {
 		const u = new URL(String(url));
@@ -39,6 +42,10 @@ beforeEach(async () => {
 			if (emailFails) return Response.json({ message: "domain not verified" }, { status: 422 });
 			emails.push({ ...JSON.parse(init.body), key: init.headers["Idempotency-Key"] });
 			return Response.json({ id: `email-${emails.length}` });
+		}
+		if (u.origin === "http://pdf.test" && u.pathname === "/pdf/make") {
+			pdfAsked.push({ html: init.body, key: init.headers.Authorization });
+			return new Response("%PDF-1.7 made", { headers: { "Content-Type": "application/pdf" } });
 		}
 		const s = await stripe.handle(String(url), init);
 		if (s) return s;
@@ -298,6 +305,59 @@ describe("payments", () => {
 });
 
 // ===== THE CLIENT'S PAGE AND STRIPE =====
+
+describe("the invoice as a PDF", () => {
+	it("the client's link gives the invoice as a PDF file, at any stage once sent (never before)", async () => {
+		const inv = await write();
+		const token = (await row(inv.id)).token;
+		expect((await call(new Request(`${BASE}/invoice/${token}/pdf`), PDF_ENV)).status).toBe(404); // not sent yet
+		await portal(`money/invoices/${inv.id}/approve`, { body: {} });
+		const pdf = await call(new Request(`${BASE}/invoice/${token}/pdf`), PDF_ENV);
+		expect(pdf.status).toBe(200);
+		expect(pdf.headers.get("Content-Type")).toBe("application/pdf");
+		expect(pdf.headers.get("Content-Disposition")).toBe('attachment; filename="Novacane Studios NS-0001.pdf"');
+		expect(pdf.text).toBe("%PDF-1.7 made");
+		expect(pdfAsked).toHaveLength(1);
+		expect(pdfAsked[0].key).toBe(`Bearer ${KEY}`);
+		expect(pdfAsked[0].html).toContain("NS-0001");
+		// paid in full: still there, as the receipt
+		await portal(`money/invoices/${inv.id}/payments`, { body: { amount: "349.99", paidOn: "2026-10-03", method: "bank" } });
+		expect((await call(new Request(`${BASE}/invoice/${token}/pdf`), PDF_ENV)).headers.get("Content-Type")).toBe("application/pdf");
+	});
+
+	it("with no PDF maker (or it's down), the invoice opens ready to print, so there's always a PDF", async () => {
+		const inv = await writeAndSend();
+		const token = (await row(inv.id)).token;
+		const page = await call(new Request(`${BASE}/invoice/${token}/pdf`));
+		expect(page.status).toBe(200);
+		expect(page.headers.get("Content-Type")).toContain("text/html");
+		expect(page.text).toContain("window.print()");
+		expect(page.text).toContain("NS-0001");
+	});
+
+	it("staff get any invoice as a PDF, before it's sent too, in the look and at the stage shown", async () => {
+		const inv = await write();
+		const pdf = await portal(`money/invoices/${inv.id}/pdf?stage=paid&mode=dark`, { extraEnv: PDF_ENV });
+		expect(pdf.headers.get("Content-Type")).toBe("application/pdf");
+		expect(pdfAsked[0].html).toMatch(/Receipt/);
+		expect((await call(new Request(`${BASE}/app/api/money/invoices/${inv.id}/pdf`), PDF_ENV)).status).toBe(401); // signed in only
+	});
+
+	it("an invoice still being written, as a PDF, before it's even made", async () => {
+		const pdf = await portal("money/invoices/preview/pdf", { body: { billName: "Ada Client", lines: LINES }, extraEnv: PDF_ENV });
+		expect(pdf.headers.get("Content-Type")).toBe("application/pdf");
+		expect(pdf.headers.get("Content-Disposition")).toContain("Novacane Studios Draft for Ada Client.pdf");
+		expect(pdfAsked[0].html).toContain("Ada Client");
+	});
+
+	it("the client's page and every email have it", async () => {
+		const inv = await writeAndSend();
+		const token = (await row(inv.id)).token;
+		expect((await call(new Request(`${BASE}/invoice/${token}`))).text).toContain(`href="/invoice/${token}/pdf" download>Download PDF</a>`);
+		expect(emails[0].html).toContain(`${BASE}/invoice/${token}/pdf`);
+		expect(emails[0].text).toContain(`Download the invoice (PDF): ${BASE}/invoice/${token}/pdf`);
+	});
+});
 
 describe("the invoice page", () => {
 	// Every button and link on an invoice works (the user, 19 Oct 2026): nothing on the page, after the

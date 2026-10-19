@@ -4,6 +4,7 @@
 //   - no build step (the panels are already copied into public/ before it's sent)
 //   - no Workers AI binding (it only exists on Cloudflare: voice falls back to the browser's)
 //   - PUBLIC_URL is the VPS's own address, and DESK_HOST says where it's running
+//   - PDF_MAKER_URL: Nova Agent on the same server, which prints invoices as PDF files
 // Usage: node vps/make-config.mjs https://185-185-126-195.sslip.io > wrangler.vps.jsonc
 import { readFileSync } from "node:fs";
 
@@ -37,5 +38,6 @@ delete config.ai;
 delete config.env;
 delete config.observability;
 delete config.upload_source_maps;
-config.vars = { ...(config.vars || {}), PUBLIC_URL: url, DESK_HOST: "vps" };
+// (PDF_MAKER_URL: Nova Agent on this same server prints invoices as PDF files: na src/pdf.ts)
+config.vars = { ...(config.vars || {}), PUBLIC_URL: url, DESK_HOST: "vps", PDF_MAKER_URL: "http://127.0.0.1:4545/pdf/make" };
 process.stdout.write(JSON.stringify(config, null, 2) + "\n");

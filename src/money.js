@@ -742,7 +742,7 @@ export function invoiceEmail(env, settings, row) {
   const sums = stageSums(invoice, [], stage, today);
   const { subject, paragraphs } = stageMessage(invoice, sums, stage, settings, today);
   // (the invoice under the message has the button to its page, Monzo and the bank details)
-  paragraphs.splice(-1, 0, "You can pay, and save the invoice as a PDF, on its page.");
+  paragraphs.splice(-1, 0, "You can pay on its page, and download the invoice as a PDF from this email or the page.");
   const parts = invoiceMail(env, settings, row, [], stage, { greeting: firstName(row), paragraphs });
   return { subject, ...parts };
 }
@@ -1322,6 +1322,31 @@ function pageResponse(html, nonce, status = 200, frame = false) {
 }
 const newNonce = () => hex(crypto.getRandomValues(new Uint8Array(12)));
 
+// ===== THE INVOICE AS A PDF FILE (19 Oct 2026) =====
+// Every invoice can be saved as a PDF wherever it shows, before it's sent and after: the client's
+// /invoice/<token>/pdf (their page, and every email about it), and staff's /app/api/money/invoices/<id>/pdf
+// (any invoice, at any stage, in any look) and /app/api/money/invoices/preview/pdf (one being written).
+// Nova Bot draws the page and Nova Agent, on the same server, prints it with Chromium (PDF_MAKER_URL,
+// na src/pdf.ts). When it can't (Nova Agent restarting, or no PDF maker: local dev) the page opens ready
+// to print instead, with the browser's own Save as PDF, so the button always gives a PDF.
+export const pdfName = (number) => `Novacane Studios ${String(number).replace(/[^\w .-]+/g, "").trim() || "invoice"}.pdf`;
+export async function pdfAnswer(env, draw, number) {
+  if (env.PDF_MAKER_URL && env.AGENT_NOVA_KEY) {
+    try {
+      const made = await fetch(env.PDF_MAKER_URL, { method: "POST", headers: { Authorization: `Bearer ${env.AGENT_NOVA_KEY}`, "Content-Type": "text/html; charset=utf-8" }, body: await draw(""), signal: AbortSignal.timeout(45_000) });
+      if (made.ok && (made.headers.get("Content-Type") || "").startsWith("application/pdf")) {
+        return new Response(made.body, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${pdfName(number)}"`, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" } });
+      }
+      console.log(`PDF: the maker answered ${made.status}`);
+    } catch (err) {
+      console.log(`PDF: the maker couldn't be reached (${err?.name || "error"})`);
+    }
+  }
+  const nonce = newNonce();
+  const page = (await draw(nonce)).replace(/<\/body>/i, `<script nonce="${nonce}">addEventListener("load", function () { setTimeout(function () { window.print(); }, 300); });</script></body>`);
+  return pageResponse(page, nonce);
+}
+
 function notFoundPage() {
   const html = `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Invoice not found</title>
 <style>body{margin:0;font:16px/1.5 system-ui,sans-serif;background:#f7f5f8;color:#1d1820}main{max-width:460px;margin:10vh auto;padding:28px 24px;background:#fff;border-radius:18px}@media (prefers-color-scheme:dark){body{background:#141016;color:#f2edf4}main{background:#1f1922}}</style></head>
@@ -1351,17 +1376,22 @@ export async function clientPage(env, row, settings, { preview = false, paid = f
       : paid
         ? "Thank you: your payment is being confirmed. This page shows it as paid within a minute or two."
         : "";
-  return invoiceDocument(invoice, payments, stage, settings, today, { page: { cardForm, banner: banner ? esc(banner) : "", cancelled: row.status === "void", nonce } });
+  return invoiceDocument(invoice, payments, stage, settings, today, { page: { cardForm, banner: banner ? esc(banner) : "", cancelled: row.status === "void", nonce, pdfHref: preview ? `/app/api/money/invoices/${row.id}/pdf` : row.token ? `/invoice/${row.token}/pdf` : "" } });
 }
 
 export async function handleInvoicePage(request, env, pathname) {
-  const m = pathname.match(/^\/invoice\/([0-9a-f]{32})(\/pay)?$/);
+  const m = pathname.match(/^\/invoice\/([0-9a-f]{32})(\/pay|\/pdf)?$/);
   if (!m) return notFoundPage();
   const row = await env.DB.prepare(`${SELECT} WHERE i.token = ?`).bind(m[1]).first();
   // (one already sent and now changed, waiting to be approved again: its page says it's being updated)
   const updating = row && row.sent_at && ["pending_approval", "approved", "rejected", "failed", "draft"].includes(row.status);
   if (!row || (!PAGE_STATUSES.includes(row.status) && !updating)) return notFoundPage();
   const settings = await readSettings(env);
+  // The invoice as a PDF file, as it is now (any stage: sent, part paid, paid, cancelled)
+  if (m[2] === "/pdf") {
+    if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
+    return pdfAnswer(env, (nonce) => clientPage(env, row, settings, { nonce }), invoiceNumber(row.seq));
+  }
   if (m[2]) {
     if (updating) return Response.redirect(`${publicUrl(env)}/invoice/${row.token}`, 303);
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -1399,7 +1429,8 @@ export async function moneyContext(env) {
     vatRate: settings.vatRate,
     dueDays: settings.dueDays,
     categories: CATEGORIES,
-    recentInvoices: recent.map((i) => ({ id: i.id, number: i.number, to: i.billTo.name, totalPence: i.totalPence, balancePence: i.balancePence, status: i.status, overdue: i.overdue, dueDate: i.dueDate, monzoUrl: monzoFor(i, settings) })),
+    // (pdfUrl: the invoice as a PDF file; once sent, the client's own link to it, which can be passed on)
+    recentInvoices: recent.map((i) => ({ id: i.id, number: i.number, to: i.billTo.name, totalPence: i.totalPence, balancePence: i.balancePence, status: i.status, overdue: i.overdue, dueDate: i.dueDate, monzoUrl: monzoFor(i, settings), pdfUrl: i.pageUrl ? `${i.pageUrl}/pdf` : `${publicUrl(env)}/app/api/money/invoices/${i.id}/pdf` })),
     // (clients can pay any invoice with Monzo once the studio's Monzo link is set: Money's settings)
     monzo: monzoReady(settings.monzo) ? settings.monzo.link : null,
     today: ukToday(),
@@ -1447,7 +1478,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
   }
   // The Invoicer (src/invoicer.js): the price list, and an invoice at one of its stages (read-only)
   if (route === "/money/catalogue" && get) return json({ ...catalogue(), themes: INVOICE_THEMES.map(({ id, name, band, accent }) => ({ id, name, band, accent })), modes: INVOICE_MODES, papers: INVOICE_PAPERS.map(({ id, name, light, dark, tone }) => ({ id, name, light, dark, tone: tone || null })), ...(({ invoiceTheme, invoiceMode, invoicePaper }) => ({ theme: invoiceTheme, mode: invoiceMode, paper: invoicePaper }))(await readSettings(env)) });
-  const staged = route.match(/^\/money\/invoices\/(\d{1,12})\/(stage|document|email)$/);
+  const staged = route.match(/^\/money\/invoices\/(\d{1,12})\/(stage|document|email|pdf)$/);
   if (staged && get) {
     const row = await readRow(env, Number(staged[1]));
     if (!row) return json({ error: "That invoice doesn't exist." }, 404);
@@ -1466,7 +1497,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
       const nonce = newNonce();
       return pageResponse(mail.html, nonce, 200, true);
     }
-    if (staged[2] === "document") {
+    if (staged[2] === "document" || staged[2] === "pdf") {
       const nonce = newNonce();
       // ?theme= one of the invoice's themes and ?mode=bright|dark (else the studio's chosen ones); ?note= the Notes box's words for this copy
       const theme = url.searchParams.get("theme");
@@ -1474,6 +1505,8 @@ export async function handleMoneyForStaff(request, env, me, route) {
       const mode = url.searchParams.get("mode");
       const paper = url.searchParams.get("paper");
       const options = { theme: themeId(theme), mode: INVOICE_MODES.includes(mode) ? mode : null, paper: INVOICE_PAPERS.some((x) => x.id === paper) ? paper : null, note: note === null ? null : cleanText(note, 800) };
+      // (as a PDF file: the same, in the look and at the stage asked for; any invoice, sent or not)
+      if (staged[2] === "pdf") return pdfAnswer(env, () => invoiceDocument(invoice, payments, stage, settings, today, options), invoice.number);
       return pageResponse(invoiceDocument(invoice, payments, stage, settings, today, options), nonce, 200, true);
     }
     const sums = stageSums(invoice, payments, stage, today);
@@ -1500,6 +1533,8 @@ export async function handleMoneyForStaff(request, env, me, route) {
   if (route === "/money/invoices") return answer(await createInvoice(env, body, me.id));
   // The Invoicer's live preview: an invoice not made yet, drawn as it will look (nothing is saved)
   if (route === "/money/invoices/preview") return json({ html: await previewDocument(env, body) });
+  // (and as a PDF file, before it's even made)
+  if (route === "/money/invoices/preview/pdf") return pdfAnswer(env, () => previewDocument(env, body), oneLine(body.billName, 60) ? `Draft for ${oneLine(body.billName, 60)}` : "Draft");
   const edit = route.match(/^\/money\/invoices\/(\d{1,12})\/edit$/);
   if (edit) return answer(await editInvoice(env, me.id, Number(edit[1]), body));
   const lookOf = route.match(/^\/money\/invoices\/(\d{1,12})\/look$/);

@@ -695,6 +695,7 @@ html{scroll-behavior:smooth}
 .tools{max-width:820px;margin:18px auto 0;display:flex;gap:18px;align-items:center;justify-content:center;font-size:13.5px}
 .tools button{font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--hair);border-radius:6px;padding:9px 18px;cursor:pointer}
 .tools a{color:${dark ? "#cfc6c7" : "#5b5256"}}
+.tools a.pdf{color:var(--on-blend);background:var(--blend);border-radius:6px;padding:9px 18px;text-decoration:none;font-weight:600}
 @page{size:A4;margin:12mm}
 @media print{.tools,.paynow,.pagenote,.quickpay,.copy{display:none!important}.paynow~.monzo-line{display:block}body::before,body::after{display:none}html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
 </style></head>
@@ -716,6 +717,6 @@ ${quickpay}
   <section class="pay"><h2>${receipt ? "Payment" : "How to pay"}</h2>${pay}</section>
 </div>
 <footer><span class="thanks">Thank you for recording with ${esc(card.name)}.</span><span>${esc(card.address)}</span><span>${esc(card.phone)} · ${esc(card.email)} · ${esc(card.website)}</span><span>Deposits are non-refundable with less than ${CANCEL_NOTICE_HOURS} hours' notice of cancellation.</span></footer>
-</div></main>${client ? `<p class="tools"><button type="button" id="print">Print or save as PDF</button><a href="/privacy">Privacy</a></p><p class="sr" id="copied" role="status" aria-live="polite"></p><script nonce="${esc(client.nonce || "")}">document.getElementById("print").addEventListener("click",function(){window.print()});
+</div></main>${client ? `<p class="tools">${client.pdfHref ? `<a class="pdf" href="${esc(client.pdfHref)}" download>Download PDF</a>` : ""}<button type="button" id="print">Print or save as PDF</button><a href="/privacy">Privacy</a></p><p class="sr" id="copied" role="status" aria-live="polite"></p><script nonce="${esc(client.nonce || "")}">document.getElementById("print").addEventListener("click",function(){window.print()});
 if(navigator.clipboard&&window.isSecureContext)document.querySelectorAll(".copy").forEach(function(b){b.hidden=false;b.addEventListener("click",function(){var label=b.getAttribute("aria-label").replace("Copy ","");navigator.clipboard.writeText(b.dataset.copy).then(function(){b.textContent="Copied ✓";document.getElementById("copied").textContent=label.charAt(0).toUpperCase()+label.slice(1)+" copied";setTimeout(function(){b.textContent="Copy"},2500)})})})</script>` : ""}</body></html>`;
 }
