@@ -720,7 +720,11 @@ export async function previewDocument(env, input = {}) {
   };
   const stage = STAGES.includes(input.stage) ? input.stage : invoice.billing === "full" ? "balance" : "deposit";
   const options = { theme: themeId(input.theme), mode: INVOICE_MODES.includes(input.mode) ? input.mode : null, paper: INVOICE_PAPERS.some((x) => x.id === input.paper) ? input.paper : null };
-  return invoiceDocument(invoice, [], stage, settings, today, options);
+  // (its pay buttons as they'll look: the live preview is a picture, and once it's made the Invoicer's
+  // own buttons open Stripe and Monzo)
+  const dueNow = stageSums(invoice, [], stage, today).dueNowPence;
+  const cardForm = cardReady(env) && dueNow > 0 ? `<form><button type="button" tabindex="-1">Pay ${esc(money(dueNow))} by card</button></form>` : "";
+  return invoiceDocument(invoice, [], stage, settings, today, { ...options, pay: { cardForm, newTab: true } });
 }
 
 // ===== THE EMAILS =====
@@ -821,7 +825,7 @@ async function emailApproved(env, id, row, updated) {
 }
 
 // "Send me a test": the email, once, to the admin who pressed it, marked [TEST], with a link to the
-// invoice's preview in Portal (the client's page only opens once it's really been sent)
+// invoice's preview in Portal (its buttons and links work as the client's will, before it's sent too)
 // stage and body (from the Invoicer): the email at that stage with that message, as the client would get it
 export async function testSendInvoice(env, me, { id, stage = null, body = "" }) {
   id = positiveId(id);
@@ -849,8 +853,8 @@ export async function testSendInvoice(env, me, { id, stage = null, body = "" }) 
     from: invoiceFrom(env),
     replyTo: replyTo(env, settings),
     subject: `[TEST] ${email.subject}`,
-    text: `This is a test of invoice ${invoiceNumber(row.seq)}, sent only to you. The client's link opens once it's approved and sent; the preview (signed in) is at ${preview}\n\n---\n\n${email.text}`,
-    html: email.html.replace(/(<body[^>]*>)/, `$1<div style="font-family:system-ui,sans-serif;font-size:13px;color:#6b6270;text-align:center;padding:10px 12px;">This is a test, sent only to you. <a href="${esc(preview)}" style="color:#6b6270;">See the invoice's preview</a> (signed in); the client's link opens once it's approved and sent.</div>`),
+    text: `This is a test of invoice ${invoiceNumber(row.seq)}, sent only to you. Its buttons and links work as they will for the client (the card one opens Stripe's real checkout); the preview (signed in) is at ${preview}\n\n---\n\n${email.text}`,
+    html: email.html.replace(/(<body[^>]*>)/, `$1<div style="font-family:system-ui,sans-serif;font-size:13px;color:#6b6270;text-align:center;padding:10px 12px;">This is a test, sent only to you. <a href="${esc(preview)}" style="color:#6b6270;">See the invoice's preview</a> (signed in). Its buttons and links work as they will for the client.</div>`),
   });
   return result.ok ? { ok: true, to, message: `Test sent to ${to}. Check the inbox (and spam).` } : fail(502, result.message);
 }
@@ -866,6 +870,12 @@ async function settle(env, id) {
   await env.DB.prepare("UPDATE invoices SET paid_pence = ?, status = ?, paid_at = ?, updated_at = ? WHERE id = ? AND status IN ('sent', 'part_paid', 'paid')")
     .bind(paid, status, status === "paid" ? row.paid_at || now : null, now, id)
     .run();
+  // (one not sent yet, or being updated, paid by card from its button: the money is kept on it, and it
+  // becomes part paid or paid when it's sent: sendApprovedInvoice)
+  if (!["sent", "part_paid", "paid", "void"].includes(row.status)) {
+    await env.DB.prepare("UPDATE invoices SET paid_pence = ?, updated_at = ? WHERE id = ?").bind(paid, now, id).run();
+    return { before: row.status, status: row.status, paid };
+  }
   return { before: row.status, status, paid };
 }
 
@@ -875,7 +885,9 @@ export async function recordPayment(env, by, { invoiceId, amount, amountPence, p
   if (!id) return fail(400, "Which invoice?");
   const row = await readRow(env, id);
   if (!row) return fail(404, "That invoice doesn't exist.");
-  if (!["sent", "part_paid", "paid"].includes(row.status)) return fail(409, "Payments can only be recorded against an invoice that's been sent.");
+  // (a card payment from Stripe is money really in: kept at any stage but removed, since its card button
+  // works before it's sent and while it's being updated too)
+  if (!["sent", "part_paid", "paid"].includes(row.status) && !(stripeId && row.status !== "void")) return fail(409, "Payments can only be recorded against an invoice that's been sent.");
   const pence = amountPence !== undefined ? (Number.isInteger(amountPence) ? amountPence : null) : toPence(amount);
   if (!pence || pence <= 0) return fail(400, 'amount: how much was paid, in pounds (like "150.00").');
   const balance = row.total_pence - row.paid_pence;
@@ -1352,8 +1364,14 @@ export async function pdfAnswer(env, draw, number) {
   return pageResponse(page, nonce);
 }
 
-// (an invoice not sent yet, its card button pressed in the email's preview: what the button does once it's sent)
-const NOT_SENT = ["Not sent yet", "This invoice hasn't been sent yet, so there's nothing to pay. Once it's sent, this button opens Stripe's secure card checkout for the amount due, ready to pay in one go."];
+// The card button: Stripe's checkout for what's due now, by way of /invoice/<token>/pay; "" when card
+// payments aren't set up, it's paid or removed, or there's nothing due. newTab: shown inside the Invoicer
+// or a preview, so Stripe opens in its own tab
+export function cardButton(env, row, due, { newTab = false } = {}) {
+  if (!row?.token || due <= 0 || ["paid", "void"].includes(row.status) || !cardReady(env)) return "";
+  return `<form method="post" action="/invoice/${esc(row.token)}/pay"${newTab ? ' target="_blank"' : ""}><button type="submit">Pay ${esc(money(due))} by card</button></form>`;
+}
+
 function notFoundPage([title, words] = ["Invoice not found", "This link doesn't lead to an invoice. If you were sent it, ask the studio for a new one."], status = 404) {
   const html = `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title>
 <style>body{margin:0;font:16px/1.5 system-ui,sans-serif;background:#f7f5f8;color:#1d1820}main{max-width:460px;margin:10vh auto;padding:28px 24px;background:#fff;border-radius:18px}@media (prefers-color-scheme:dark){body{background:#141016;color:#f2edf4}main{background:#1f1922}}</style></head>
@@ -1372,15 +1390,14 @@ export async function clientPage(env, row, settings, { preview = false, paid = f
   const stage = stageOf(invoice, today);
   const due = stageSums(invoice, payments, stage, today).dueNowPence;
   const updating = !preview && row.sent_at && !PAGE_STATUSES.includes(row.status);
-  const canCard = !preview && !updating && due > 0 && OPEN.includes(row.status) && cardReady(env);
-  const cardForm = canCard ? `<form method="post" action="/invoice/${esc(row.token)}/pay"><button type="submit">Pay ${esc(money(due))} by card</button></form>` : "";
-  // (a preview, before it's sent, shows the same card button as the client gets: there's nothing to charge
-  // yet, so pressing it says on the page what it does on the sent invoice)
-  const previewCard = preview && due > 0 && cardReady(env);
-  const cardTry = previewCard ? `<form><button type="button" id="card-try">Pay ${esc(money(due))} by card</button></form>` : "";
-  const cardNote = previewCard ? `Preview: on the sent invoice this button opens Stripe's secure card checkout for ${esc(money(due))}, ready to pay in one go. Nothing is charged from a preview.` : "";
+  const unsent = !preview && !row.sent_at && !PAGE_STATUSES.includes(row.status);
+  // The card button (19 Oct 2026): at every stage, before it's sent, while it's being updated and after,
+  // straight to Stripe's checkout for what's due now (a preview's opens it in a new tab)
+  const cardForm = cardButton(env, row, due, { newTab: preview });
   const banner = updating
-    ? "This invoice is being updated. You'll get the new one by email shortly."
+    ? "This invoice is being updated. You'll get the new one by email shortly. You can still pay what's due now."
+    : unsent
+    ? "Not sent yet: this invoice may still change before it's sent."
     : preview
     ? "Preview: this is how the client sees it once it's approved and sent."
     : failed
@@ -1388,7 +1405,7 @@ export async function clientPage(env, row, settings, { preview = false, paid = f
       : paid
         ? "Thank you: your payment is being confirmed. This page shows it as paid within a minute or two."
         : "";
-  return invoiceDocument(invoice, payments, stage, settings, today, { page: { cardForm: cardForm || cardTry, cardNote, banner: banner ? esc(banner) : "", cancelled: row.status === "void", nonce, pdfHref: preview ? `/app/api/money/invoices/${row.id}/pdf` : row.token ? `/invoice/${row.token}/pdf` : "" } });
+  return invoiceDocument(invoice, payments, stage, settings, today, { page: { cardForm, newTab: preview, banner: banner ? esc(banner) : "", cancelled: row.status === "void", nonce, pdfHref: preview ? `/app/api/money/invoices/${row.id}/pdf` : row.token ? `/invoice/${row.token}/pdf` : "" } });
 }
 
 export async function handleInvoicePage(request, env, pathname) {
@@ -1396,9 +1413,9 @@ export async function handleInvoicePage(request, env, pathname) {
   if (!m) return notFoundPage();
   const row = await env.DB.prepare(`${SELECT} WHERE i.token = ?`).bind(m[1]).first();
   // (one already sent and now changed, waiting to be approved again: its page says it's being updated)
-  const updating = row && row.sent_at && ["pending_approval", "approved", "rejected", "failed", "draft"].includes(row.status);
-  if (row && m[2] === "/pay" && !row.sent_at && ["draft", "pending_approval", "approved", "rejected", "failed"].includes(row.status)) return notFoundPage(NOT_SENT, 200);
-  if (!row || (!PAGE_STATUSES.includes(row.status) && !updating)) return notFoundPage();
+  // (one not sent yet opens too, saying so, with its card and Monzo buttons working: its link is only
+  // in the studio's hands until it's sent, in the email's preview and the test email)
+  if (!row) return notFoundPage();
   const settings = await readSettings(env);
   // The invoice as a PDF file, as it is now (any stage: sent, part paid, paid, cancelled)
   if (m[2] === "/pdf") {
@@ -1406,14 +1423,14 @@ export async function handleInvoicePage(request, env, pathname) {
     return pdfAnswer(env, (nonce) => clientPage(env, row, settings, { nonce }), invoiceNumber(row.seq));
   }
   if (m[2]) {
-    if (updating) return Response.redirect(`${publicUrl(env)}/invoice/${row.token}`, 303);
-    // (POST from the page's card button; GET from the email's, straight to Stripe's checkout in one go)
+    // (POST from the page's card button; GET from the email's, straight to Stripe's checkout in one go;
+    // at any stage but paid or removed: before it's sent, while it's being updated and after)
     if (request.method !== "POST" && request.method !== "GET") return new Response("Method not allowed", { status: 405 });
     // What's due now: the deposit at the deposit stage, else what's left (the same as the page's button)
     const today = ukToday();
     const invoice = publicInvoice(env, row, today);
     const due = stageSums(invoice, await invoicePayments(env, row.id), stageOf(invoice, today), today).dueNowPence;
-    if (!OPEN.includes(row.status) || due <= 0 || !cardReady(env)) return Response.redirect(`${publicUrl(env)}/invoice/${row.token}`, 303);
+    if (["paid", "void"].includes(row.status) || due <= 0 || !cardReady(env)) return Response.redirect(`${publicUrl(env)}/invoice/${row.token}`, 303);
     try {
       const checkout = await createInvoiceCheckout(env, {
         invoice: { id: row.id, number: invoiceNumber(row.seq), email: row.bill_email, business: settings.business.name },
@@ -1521,7 +1538,11 @@ export async function handleMoneyForStaff(request, env, me, route) {
       const options = { theme: themeId(theme), mode: INVOICE_MODES.includes(mode) ? mode : null, paper: INVOICE_PAPERS.some((x) => x.id === paper) ? paper : null, note: note === null ? null : cleanText(note, 800) };
       // (as a PDF file: the same, in the look and at the stage asked for; any invoice, sent or not)
       if (staged[2] === "pdf") return pdfAnswer(env, () => invoiceDocument(invoice, payments, stage, settings, today, options), invoice.number);
-      return pageResponse(invoiceDocument(invoice, payments, stage, settings, today, options), nonce, 200, true);
+      // (in the Invoicer, at every stage, sent or not: the card button (Stripe's checkout) and the Monzo
+      // button, as the client gets them, each opening in its own tab)
+      const due = stageSums(invoice, payments, stage, today).dueNowPence;
+      const pay = { cardForm: stage === "paid" ? "" : cardButton(env, row, due, { newTab: true }), newTab: true, cancelled: row.status === "void" };
+      return pageResponse(invoiceDocument(invoice, payments, stage, settings, today, { ...options, pay }), nonce, 200, true);
     }
     const sums = stageSums(invoice, payments, stage, today);
     return json({ stage, autoStage, sums, email: stageEmail(invoice, sums, stage, settings, today), invoice: withMonzo(invoice, settings, today), payments });

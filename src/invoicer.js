@@ -347,10 +347,10 @@ export const sentenceLines = (text, br = "\n") => String(text).replace(/([.!?])[
 const DEFAULT_NOTE = "Thank you for choosing Novacane Studios. Any questions about this invoice, just get in touch.";
 
 // options: { theme, mode ("bright" or "dark"), note (words for the Notes box instead of the invoice's own),
-//   page: the client's own page (/invoice/<token>): { cardForm (the Pay by card button's form), cardNote (a
-//   preview's: what its card button does, shown when it's pressed: the button is id="card-try"), banner
-//   (a note above the invoice), cancelled, nonce (for the Print button's script), contact (when there's no
-//   way to pay set up yet: how to get in touch) } }
+//   page: the client's own page (/invoice/<token>): { cardForm (the Pay by card button's form), newTab (its
+//   buttons open in a new tab: a preview), banner (a note above the invoice), cancelled, nonce (for the
+//   Print button's script), contact (when there's no way to pay set up yet: how to get in touch) },
+//   pay: the Invoicer's copy, with the same pay buttons and none of the page's tools: { cardForm, newTab, cancelled } }
 export function invoiceDocument(invoice, payments, stage, settings, today, options = {}) {
   const s = stageSums(invoice, payments, stage, today);
   const card = studioCard(settings);
@@ -361,7 +361,9 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   const paper = paperOf(options.paper || look.paper || settings?.invoicePaper);
   const receipt = stage === "paid";
   const client = options.page || null;
-  const cancelled = Boolean(client?.cancelled);
+  // (the pay buttons: on the client's page, and in the Invoicer (options.pay: { cardForm, newTab, cancelled }))
+  const buy = client || options.pay || null;
+  const cancelled = Boolean(buy?.cancelled);
   const line = cancelled ? { colour: "ink", text: () => "This invoice was cancelled: there's nothing to pay" } : STAGE_LINES[stage];
   const accent = dark ? t.accentDark : t.accent;
   const accent2 = dark ? t.accent2Dark : t.accent2;
@@ -405,7 +407,7 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // Monzo: on the client's page a button (the theme's blend, or its outline under the card button)
   // that opens Monzo with the amount and reference filled in; on paper, the link to type
   const monzoHref = monzoReady(settings?.monzo) && !receipt && !cancelled && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
-  const monzoButton = client && monzoHref ? `<a class="monzo${client.cardForm ? " second" : ""}" href="${esc(monzoHref)}" rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzwash" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgrain" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
+  const monzoButton = buy && monzoHref ? `<a class="monzo${buy.cardForm ? " second" : ""}" href="${esc(monzoHref)}"${buy.newTab ? ' target="_blank"' : ""} rel="noopener"><span class="nvsky" aria-hidden="true"></span><span class="mzwash" aria-hidden="true"></span><span class="mzgap" aria-hidden="true"></span><span class="mzgrain" aria-hidden="true"></span><span class="mzcorners" aria-hidden="true"></span><span class="mzgapglass" aria-hidden="true"></span><span class="mzshine" aria-hidden="true"></span>Pay ${pounds(s.dueNowPence)} with Monzo</a>` : "";
   // The pattern: Monzo's M, small, in staggered rows, in a lighter shade of the theme's own colours (on the
   // outline button, a whisper of its accent on the paper)
   // (each tile whole inside the button: "space" lays only whole tiles, spread evenly, none cut at an edge,
@@ -446,19 +448,18 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // (on the client's page the Monzo button is the one way in: this line is for paper and print only)
   const monzo = monzoHref ? `<p class="monzo-line${monzoButton ? " print" : ""}"><span class="k">Monzo</span><a href="${esc(monzoHref)}">${esc(monzoShort(settings.monzo))}</a>${monzoHref.includes("monzo.me/") ? `<br><small>Opens Monzo with ${pounds(s.dueNowPence)} and the reference filled in</small>` : ""}</p>` : "";
   // (on the client's own page: no link to itself; its buttons are the ones under the amount)
-  const buttons = client && !receipt && !cancelled && (client.cardForm || monzoButton);
+  const buttons = buy && !receipt && !cancelled && (buy.cardForm || monzoButton);
   const online = client ? (buttons ? `<p class="payup"><span class="k">Pay online</span>${client.cardForm && monzoButton ? "By card or with Monzo" : client.cardForm ? "By card" : "With Monzo"}: ${client.cardForm && monzoButton ? "the buttons" : "the button"} under the amount, at the top. One tap pays.</p>` : "") : invoice.pageUrl && !receipt ? `<p><span class="k">Pay online</span><a href="${esc(invoice.pageUrl)}">${esc(invoice.pageUrl.replace(/^https?:\/\//, ""))}</a></p>` : "";
   const ref = receipt ? "" : `<p><span class="k">Reference</span>${esc(invoice.number)}${copy(invoice.number, "reference")}</p>`;
   // Pay now (18 October 2026), on the client's page: the buttons straight under the amount, so paying is
   // one tap without scrolling (a phone shows the amount first), with a line saying what the Monzo button
   // does and where the bank details are. One card button and one Monzo button on the page, each paying
   // in one go (19 Oct 2026): How to pay below has the bank details, never the buttons again.
-  // (a preview's card button: client.cardNote, shown on the page when it's pressed, says what it does)
   const monzoHelp = monzoButton
     ? `${monzoHref.includes("monzo.me/") ? `Opens Monzo with ${pounds(s.dueNowPence)} and ${esc(invoice.number)} filled in.` : "Opens Monzo to pay."}${bank ? '<br>No Monzo? <a href="#bank">Pay by bank transfer</a>.' : ""}`
     : "";
   const quickpay = buttons
-    ? `<section class="quickpay" aria-label="Pay now"><div class="paynow">${client.cardForm || ""}${monzoButton.replace("<a ", '<a aria-describedby="quickpay-help" ')}</div>${monzoHelp ? `<p id="quickpay-help">${monzoHelp}</p>` : ""}${client.cardNote ? `<p class="pagenote" id="card-note" role="status" hidden>${client.cardNote}</p>` : ""}</section>`
+    ? `<section class="quickpay" aria-label="Pay now"><div class="paynow">${buy.cardForm || ""}${monzoButton.replace("<a ", '<a aria-describedby="quickpay-help" ')}</div>${monzoHelp ? `<p id="quickpay-help">${monzoHelp}</p>` : ""}</section>`
     : "";
   const pay = receipt ? `<p>Received with thanks${s.payments.length ? `, last payment ${esc(longDay(s.payments[s.payments.length - 1].paidOn))}` : ""}.<br>Nothing more to pay.</p>` : cancelled ? "<p>Nothing to pay.</p>" : bank || online || monzo ? `${online}${monzo}${bank}${ref}` : client ? `<p>To pay, get in touch: ${esc(card.email)} or ${esc(card.phone)}.</p>${ref}` : `<p>Payment details are in your email.</p>${ref}`;
 
@@ -722,6 +723,5 @@ ${quickpay}
 </div>
 <footer><span class="thanks">Thank you for recording with ${esc(card.name)}.</span><span>${esc(card.address)}</span><span>${esc(card.phone)} · ${esc(card.email)} · ${esc(card.website)}</span><span>Deposits are non-refundable with less than ${CANCEL_NOTICE_HOURS} hours' notice of cancellation.</span></footer>
 </div></main>${client ? `<p class="tools">${client.pdfHref ? `<a class="pdf" href="${esc(client.pdfHref)}" download>Download PDF</a>` : ""}<button type="button" id="print">Print or save as PDF</button><a href="/privacy">Privacy</a></p><p class="sr" id="copied" role="status" aria-live="polite"></p><script nonce="${esc(client.nonce || "")}">document.getElementById("print").addEventListener("click",function(){window.print()});
-var cardTry=document.getElementById("card-try");if(cardTry)cardTry.addEventListener("click",function(){var n=document.getElementById("card-note");n.hidden=false;n.scrollIntoView({block:"nearest",behavior:"smooth"})});
 if(navigator.clipboard&&window.isSecureContext)document.querySelectorAll(".copy").forEach(function(b){b.hidden=false;b.addEventListener("click",function(){var label=b.getAttribute("aria-label").replace("Copy ","");navigator.clipboard.writeText(b.dataset.copy).then(function(){b.textContent="Copied ✓";document.getElementById("copied").textContent=label.charAt(0).toUpperCase()+label.slice(1)+" copied";setTimeout(function(){b.textContent="Copy"},2500)})})})</script>` : ""}</body></html>`;
 }

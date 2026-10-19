@@ -307,10 +307,13 @@ describe("payments", () => {
 // ===== THE CLIENT'S PAGE AND STRIPE =====
 
 describe("the invoice as a PDF", () => {
-	it("the client's link gives the invoice as a PDF file, at any stage once sent (never before)", async () => {
+	it("the client's link gives the invoice as a PDF file, at any stage, before it's sent too", async () => {
 		const inv = await write();
 		const token = (await row(inv.id)).token;
-		expect((await call(new Request(`${BASE}/invoice/${token}/pdf`), PDF_ENV)).status).toBe(404); // not sent yet
+		const early = await call(new Request(`${BASE}/invoice/${token}/pdf`), PDF_ENV); // not sent yet
+		expect(early.status).toBe(200);
+		expect(early.headers.get("Content-Type")).toBe("application/pdf");
+		pdfAsked.length = 0;
 		await portal(`money/invoices/${inv.id}/approve`, { body: {} });
 		const pdf = await call(new Request(`${BASE}/invoice/${token}/pdf`), PDF_ENV);
 		expect(pdf.status).toBe(200);
@@ -389,13 +392,20 @@ describe("the invoice page", () => {
 		};
 		await check(page.text, "the page");
 		await check(emails[0].html, "the email");
+		// (and before it's sent: the email's preview, the client's page and the Invoicer's copy)
+		const draft = await write();
+		await check((await portal(`money/invoices/${draft.id}/email`)).text, "the email, not sent");
+		await check((await call(new Request(`${BASE}/invoice/${(await row(draft.id)).token}`))).text, "the page, not sent");
+		await check((await portal(`money/invoices/${draft.id}/document`)).text, "the Invoicer, not sent");
 	});
 
-	it("opens only by its random link, only once sent, with nothing but the token in the address", async () => {
+	it("opens only by its random link (before it's sent, saying so), with nothing but the token in the address", async () => {
 		const inv = await write();
 		const token = (await row(inv.id)).token;
 		expect(token).toMatch(/^[0-9a-f]{32}$/);
-		expect((await call(new Request(`${BASE}/invoice/${token}`))).status).toBe(404); // not sent yet
+		const early = await call(new Request(`${BASE}/invoice/${token}`)); // not sent yet
+		expect(early.status).toBe(200);
+		expect(early.text).toContain("Not sent yet: this invoice may still change before it&#39;s sent.");
 		await portal(`money/invoices/${inv.id}/approve`, { body: {} });
 		const page = await call(new Request(`${BASE}/invoice/${token}`));
 		expect(page.status).toBe(200);
@@ -460,19 +470,82 @@ describe("the invoice page", () => {
 		expect(res.status).toBe(303);
 		expect(res.headers.get("Location")).toMatch(/^https:\/\/checkout\.stripe\.com\//);
 		expect(stripe.sessions.at(-1).form["line_items[0][price_data][unit_amount]"]).toBe("17500");
-		// Before it's sent (the email's preview): it says what it does, and nothing is charged
+		// Before it's sent (the email's preview): the card button goes to Stripe's checkout all the same
 		const draft = await write();
-		const before = stripe.sessions.length;
-		const early = await call(new Request(`${BASE}/invoice/${(await row(draft.id)).token}/pay`));
-		expect(early.status).toBe(200);
-		expect(early.text).toContain("Stripe's secure card checkout");
-		expect(stripe.sessions.length).toBe(before);
-		// The preview of the page: the same two buttons, the card one saying what it does once sent
+		const draftToken = (await row(draft.id)).token;
+		const early = await call(new Request(`${BASE}/invoice/${draftToken}/pay`));
+		expect(early.status).toBe(303);
+		expect(early.headers.get("Location")).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+		expect(stripe.sessions.at(-1).form["metadata[invoice_id]"]).toBe(String(draft.id));
+		// The preview of the page: the same two buttons, both real, each opening in its own tab
 		const preview = await portal(`money/invoices/${draft.id}/preview`);
 		const html = preview.text;
-		expect(count(html, /id="card-try"/g)).toBe(1);
-		expect(count(html, /<a [^>]*class="monzo[ "]/g)).toBe(1);
-		expect(html).toContain('id="card-note"');
+		expect(count(html, new RegExp(`<form method="post" action="/invoice/${draftToken}/pay" target="_blank">`, "g"))).toBe(1);
+		expect(count(html, /<a [^>]*class="monzo[ "][^>]*target="_blank"/g)).toBe(1);
+		expect(html).not.toContain("card-try");
+	});
+
+	// The pay buttons at every stage (the user, 19 Oct 2026): before it's sent, while it's being updated,
+	// after it's sent and part paid, in the Invoicer, on the client's page and in the email; card to
+	// Stripe's checkout, Monzo to monzo.me with the amount and the reference
+	it("one card button and one Monzo button at every stage, each going to Stripe and Monzo", async () => {
+		await portal("money/settings", { body: { monzo: { link: "monzo.me/neimanbrown" } } });
+		const count = (html, re) => (html.match(re) || []).length;
+		const both = async (html, token, pence, where) => {
+			const amount = `£${(pence / 100).toFixed(2)}`;
+			expect(count(html, new RegExp(`<form method="post" action="/invoice/${token}/pay"[^>]*><button type="submit">Pay ${amount.replace(".", "\\.")} by card`, "g")), `${where}: card`).toBe(1);
+			const monzo = [...html.matchAll(/<a [^>]*class="monzo[^"]*" href="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
+			expect(monzo, `${where}: Monzo`).toHaveLength(1);
+			expect(monzo[0], `${where}: Monzo`).toMatch(new RegExp(`^https://monzo\\.me/neimanbrown/${(pence / 100).toFixed(2).replace(".", "\\.")}\\?d=NS-\\d{4}$`));
+			const res = await call(new Request(`${BASE}/invoice/${token}/pay`, { method: "POST" }));
+			expect(res.status, `${where}: card`).toBe(303);
+			expect(res.headers.get("Location"), `${where}: card`).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+			expect(stripe.sessions.at(-1).form["line_items[0][price_data][unit_amount]"], `${where}: card`).toBe(String(pence));
+		};
+		// Before it's sent: the Invoicer's copy, the client's page and the email's preview
+		const draft = await write();
+		const token = (await row(draft.id)).token;
+		await both((await portal(`money/invoices/${draft.id}/document`)).text, token, 17500, "the Invoicer, not sent");
+		await both((await call(new Request(`${BASE}/invoice/${token}`))).text, token, 17500, "the page, not sent");
+		const mail = (await portal(`money/invoices/${draft.id}/email`)).text;
+		expect(count(mail, new RegExp(`href="${BASE}/invoice/${token}/pay"[^>]*>Pay £175\\.00 by card`, "g"))).toBe(1);
+		expect(count(mail, /href="https:\/\/monzo\.me\/neimanbrown\/175\.00\?d=NS-\d{4}"[^>]*>Pay £175\.00 with Monzo/g)).toBe(1);
+		// Sent, then part paid by card: what's left
+		await portal(`money/invoices/${draft.id}/approve`, { body: {} });
+		const sentMail = emails.at(-1).html;
+		expect(count(sentMail, new RegExp(`href="${BASE}/invoice/${token}/pay"[^>]*>Pay £175\\.00 by card`, "g"))).toBe(1);
+		expect(count(sentMail, /href="https:\/\/monzo\.me\/neimanbrown\/175\.00\?d=NS-\d{4}"[^>]*>Pay £175\.00 with Monzo/g)).toBe(1);
+		await both((await call(new Request(`${BASE}/invoice/${token}`))).text, token, 17500, "the page, sent");
+		await both((await portal(`money/invoices/${draft.id}/document`)).text, token, 17500, "the Invoicer, sent");
+		await portal(`money/invoices/${draft.id}/payments`, { body: { amount: "200", method: "bank", paidOn: "2026-10-01" } });
+		await both((await call(new Request(`${BASE}/invoice/${token}`))).text, token, 14999, "the page, part paid");
+		// Being updated (sent, then changed): still both, still paying what's due now
+		await portal(`money/invoices/${draft.id}/edit`, { body: { notes: "One more thing" } });
+		expect((await row(draft.id)).status).toBe("pending_approval");
+		const updating = (await call(new Request(`${BASE}/invoice/${token}`))).text;
+		expect(updating).toContain("being updated");
+		await both(updating, token, 14999, "the page, being updated");
+		await both((await portal(`money/invoices/${draft.id}/document`)).text, token, 14999, "the Invoicer, being updated");
+		// Paid: a receipt, nothing to pay, no buttons
+		await portal(`money/invoices/${draft.id}/approve`, { body: {} });
+		await portal(`money/invoices/${draft.id}/payments`, { body: { amount: "149.99", method: "bank", paidOn: "2026-10-01" } });
+		const receipt = (await call(new Request(`${BASE}/invoice/${token}`))).text;
+		expect(receipt).not.toMatch(/by card<|with Monzo</);
+	});
+
+	it("a card payment made before it's sent is kept, and it's part paid once it goes", async () => {
+		const draft = await write();
+		const event = {
+			id: "evt_early_0",
+			type: "checkout.session.completed",
+			data: { object: { id: "cs_test_early", payment_status: "paid", amount_total: 17500, payment_intent: "pi_early_0", metadata: { invoice_id: String(draft.id) }, client_reference_id: `invoice-${draft.id}` } },
+		};
+		expect((await call(await stripeWebhook(event))).status).toBe(200);
+		expect((await row(draft.id)).paid_pence).toBe(17500);
+		expect((await row(draft.id)).status).not.toBe("part_paid");
+		const sent = await portal(`money/invoices/${draft.id}/approve`, { body: {} });
+		expect(sent.data.invoice.status).toBe("part_paid");
+		expect((await call(new Request(`${BASE}/invoice/${(await row(draft.id)).token}`))).text).toContain("Pay £174.99 by card");
 	});
 
 	it("Pay by card opens Stripe's checkout for what's due now (the deposit, then the rest); the webhook records each once", async () => {
