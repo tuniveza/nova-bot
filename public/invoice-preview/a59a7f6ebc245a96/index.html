@@ -1,0 +1,75 @@
+<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<title>Novacane Invoice Preview</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wght@400;500;600&display=swap">
+<style>
+/* Layout: a slim night-sky header with the three views as a switch, then the chosen view full width */
+:root {
+  --bg: #F3EEF5; --surface: #FFFFFF; --fg: #241B29; --soft: #6E6176; --line: #DCD0E2;
+  --accent: #A8237F; --on-accent: #FFFFFF; --band: #160E1B; --on-band: #F4ECF7;
+  --display: "Saira", "Arial Narrow", Arial, sans-serif; --body: "Saira", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #120C16; --surface: #1D1522; --fg: #F1E9F4; --soft: #B3A3BB; --line: #3A2D42;
+  --accent: #E46BC3; --on-accent: #1A0F1F; --band: #0B070E; --on-band: #F4ECF7; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #120C16; --surface: #1D1522; --fg: #F1E9F4; --soft: #B3A3BB; --line: #3A2D42;
+  --accent: #E46BC3; --on-accent: #1A0F1F; --band: #0B070E; --on-band: #F4ECF7; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.5 }
+.band { background: var(--band); color: var(--on-band) }
+.wrap { max-width: 1060px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+.band .wrap { padding-block: 22px 18px; display: grid; gap: 14px }
+.brand { font-family: var(--display); letter-spacing: .32em; text-transform: uppercase; font-size: 13px; opacity: .8 }
+h1 { margin: 0; font-family: var(--display); font-weight: 500; font-size: clamp(22px, 4vw, 30px); text-wrap: balance; letter-spacing: .02em }
+.switch { display: flex; flex-wrap: wrap; gap: 8px }
+.switch button { font: inherit; font-size: 14px; font-weight: 500; color: var(--on-band); background: transparent; border: 1px solid color-mix(in srgb, var(--on-band) 30%, transparent); border-radius: 999px; padding: 7px 16px; cursor: pointer }
+.switch button[aria-selected="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent) }
+.switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px }
+main .wrap { padding-block: 18px 40px; display: grid; gap: 14px }
+.note { margin: 0; color: var(--soft); font-size: 14px; max-width: 70ch }
+.note b { color: var(--fg); font-weight: 600 }
+.frame { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-width: 0 }
+iframe { display: block; width: 100%; height: 1400px; border: 0; background: #fff }
+</style>
+
+<header class="band">
+  <div class="wrap">
+    <span class="brand">Novacane Studios</span>
+    <h1>An invoice, as the artist sees it</h1>
+    <div class="switch" role="tablist" aria-label="Choose what to see">
+      <button type="button" role="tab" id="t-invoice" aria-selected="true" data-view="invoice">The invoice page</button>
+      <button type="button" role="tab" id="t-email" aria-selected="false" data-view="email">The email</button>
+      <button type="button" role="tab" id="t-after" aria-selected="false" data-view="after-deposit">After the deposit is paid</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <p class="note" id="note"></p>
+    <div class="frame"><iframe id="view" title="Invoice preview" src="invoice.html"></iframe></div>
+    <p class="note">Real £1 test invoices on the live site, so every button does the real thing. Pay by card opens Stripe's real checkout. Pay with Monzo opens Monzo with the amount and the invoice number filled in. Download PDF gives the invoice as a real PDF file. Paying really pays (50p).</p>
+  </div>
+</main>
+
+<script>
+const notes = {
+  "invoice": "<b>The invoice page.</b> The artist opens this from their email. Paying is right under the amount: one <b>card</b> button that opens Stripe's checkout and one <b>Monzo</b> button that opens monzo.me, each paying in one tap. The bank details are further down, with a Copy button by each number.",
+  "email": "<b>The email.</b> The invoice itself, with one card button that goes straight to Stripe's checkout and one Monzo button that opens Monzo, plus the bank details for a transfer.",
+  "after-deposit": "<b>After the deposit.</b> Once the deposit is paid by card, the page asks only for what's left, with the same two buttons.",
+};
+const frame = document.getElementById("view");
+const note = document.getElementById("note");
+function fit() {
+  try { const d = frame.contentDocument; if (d && d.documentElement) frame.style.height = Math.max(600, d.documentElement.scrollHeight) + "px"; } catch (e) {}
+}
+function show(view) {
+  document.querySelectorAll(".switch button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === view)));
+  note.innerHTML = notes[view];
+  frame.src = view + ".html";
+}
+document.querySelectorAll(".switch button").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+frame.addEventListener("load", () => { fit(); setTimeout(fit, 400); });
+addEventListener("resize", fit);
+note.innerHTML = notes.invoice;
+</script>
+</html>

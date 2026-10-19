@@ -47,3 +47,10 @@
 
 /portal/sw.js
   Cache-Control: no-cache
+
+# The test-invoice preview (invoice-preview/build.sh): unlisted, never indexed, its address never passed on
+/invoice-preview/*
+  X-Robots-Tag: noindex, nofollow
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  Cache-Control: no-cache
