@@ -60,7 +60,7 @@ export async function fixerHealth(env, now = Date.now()) {
     if (ways.length) return `clients can pay by ${ways.join(" and ")}`;
     const open = (await rows(env, "SELECT COUNT(*) AS n FROM invoices WHERE status IN ('sent', 'part_paid')"))[0]?.n || 0;
     return fail(
-      `Clients have no way to pay on the invoice: add the studio's bank details in Portal → Money → Settings (or set up card payments).${open ? ` ${plural(open, "invoice is", "invoices are")} waiting to be paid.` : ""}`,
+      `Clients have no way to pay on the invoice: add the studio's bank details in the Invoicer (How clients pay) or set up card payments.${open ? ` ${plural(open, "invoice is", "invoices are")} waiting to be paid.` : ""}`,
       open ? "serious" : "minor",
     );
   });
@@ -94,7 +94,7 @@ export async function fixerHealth(env, now = Date.now()) {
     const stuck = await rows(env, "SELECT seq FROM invoices WHERE (status = 'approved' AND updated_at < ?) OR status = 'failed'", iso(STUCK_MINUTES / 60));
     const rem = await rows(env, "SELECT r.id, i.seq FROM invoice_reminders r JOIN invoices i ON i.id = r.invoice_id WHERE (r.status = 'approved' AND r.updated_at < ?) OR r.status = 'failed'", iso(STUCK_MINUTES / 60));
     const parts = [...stuck.map((r) => `invoice ${invoiceNumber(r.seq)}`), ...rem.map((r) => `a reminder for ${invoiceNumber(r.seq)}`)];
-    return parts.length ? fail(`Didn't send: ${parts.join(", ")}. Open it in the Invoicer or Portal → Money to see why and send it again.`) : "every approved email went";
+    return parts.length ? fail(`Didn't send: ${parts.join(", ")}. Open it in the Invoicer to see why and send it again.`) : "every approved email went";
   });
   await add("Invoices", "Paid amounts add up", "checks", "serious", async () => {
     const bad = await rows(

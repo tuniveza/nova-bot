@@ -296,7 +296,7 @@ export function findTestStuff(data, { now = Date.now() } = {}) {
   for (const i of invoices) {
     const reasons = reasonsFor({ name: i.bill_name, email: i.bill_email, title: i.notes }, staff);
     if (invCopies.has(i.id)) reasons.push({ text: "A copy of a newer invoice", strong: true });
-    put("invoice", i.id, `NS-${String(i.seq || i.id).padStart(4, "0")} to ${i.bill_name || i.bill_email || "someone"} (not sent)`, { where: "Money → Invoices", open: `/portal/?view=money&invoice=${i.id}`, created: i.created_at, by: i.created_by === "agent" ? "Nova Agent" : i.created_by || "" }, reasons);
+    put("invoice", i.id, `NS-${String(i.seq || i.id).padStart(4, "0")} to ${i.bill_name || i.bill_email || "someone"} (not sent)`, { where: "the Invoicer", open: `/invoicer/?invoice=${i.id}`, created: i.created_at, by: i.created_by === "agent" ? "Nova Agent" : i.created_by || "" }, reasons);
   }
   const expenses = data.expenses || [];
   const expCopies = copies(expenses, (e) => `${e.spent_on}|${e.amount_pence}|${norm(e.supplier)}`);

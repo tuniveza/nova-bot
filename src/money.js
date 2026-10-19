@@ -354,7 +354,8 @@ export function publicInvoice(env, row, today = ukToday()) {
     voidedAt: row.voided_at || null,
     error: stuck ? "It didn't finish sending (Nova Bot stopped part-way). Check the inbox it went to before sending it again." : row.error || null,
     pageUrl: sent ? `${publicUrl(env)}/invoice/${row.token}` : null,
-    portalUrl: `${publicUrl(env)}/portal/?view=money&invoice=${row.id}`,
+    // (where staff see it: the Invoicer, where everything for invoices is done; the name kept for what reads it)
+    portalUrl: `${publicUrl(env)}/invoicer/?invoice=${row.id}`,
   };
 }
 
@@ -484,7 +485,7 @@ export async function createInvoice(env, input, by) {
   const fields = await checkFields(env, input || {});
   if (fields.error) return fields;
   const { count } = await env.DB.prepare("SELECT COUNT(*) AS count FROM invoices WHERE status IN ('draft', 'pending_approval')").first();
-  if (count >= MAX_WAITING) return fail(429, "There are already many invoices waiting for approval. Ask an admin to go through them in Portal → Money first.");
+  if (count >= MAX_WAITING) return fail(429, "There are already many invoices waiting for approval. Ask an admin to go through them in the Invoicer first.");
   const now = nowIso();
   const token = hex(crypto.getRandomValues(new Uint8Array(16)));
   // The next number, in the same statement (two at once can't get the same one: seq is UNIQUE)
@@ -503,8 +504,8 @@ export async function createInvoice(env, input, by) {
   console.log(`Invoice ${row.id} written by ${by === "agent" ? "agent" : "staff"}; waiting for approval`);
   await pingAdmins(env, {
     title: "Invoice to approve",
-    body: `${whoWrote(by)} wrote invoice ${invoice.number} to ${invoice.billTo.name} for ${money(invoice.totalPence)}. Nothing is emailed until an admin approves it in Portal → Money.`,
-    url: `/portal/?view=money&invoice=${row.id}`,
+    body: `${whoWrote(by)} wrote invoice ${invoice.number} to ${invoice.billTo.name} for ${money(invoice.totalPence)}. Nothing is emailed until an admin approves it in the Invoicer.`,
+    url: `/invoicer/?invoice=${row.id}&do=send`,
     tag: `invoice-${row.id}`,
     by,
   });
@@ -549,8 +550,8 @@ export async function editInvoice(env, by, id, input) {
   const invoice = await getInvoice(env, id);
   await pingAdmins(env, {
     title: "Invoice changed: approve it again",
-    body: `${whoWrote(by)} changed invoice ${invoice.number} to ${invoice.billTo.name} (${money(invoice.totalPence)}). Nothing is emailed until an admin approves it in Portal → Money.`,
-    url: `/portal/?view=money&invoice=${id}`,
+    body: `${whoWrote(by)} changed invoice ${invoice.number} to ${invoice.billTo.name} (${money(invoice.totalPence)}). Nothing is emailed until an admin approves it in the Invoicer.`,
+    url: `/invoicer/?invoice=${id}&do=send`,
     tag: `invoice-${id}`,
     by,
   });
@@ -965,8 +966,8 @@ export async function draftReminder(env, by, { invoiceId, body, kind = "reminder
   await logEntry(env, { invoice: id, event: "reminder", by, detail: kind === "receipt" ? "A receipt is waiting for approval" : "A reminder is waiting for approval" }).run();
   await pingAdmins(env, {
     title: kind === "receipt" ? "Receipt to approve" : "Payment reminder to approve",
-    body: `${kind === "receipt" ? `Invoice ${invoiceNumber(invoice.seq)} (${invoice.bill_name}) is paid in full: its receipt is ready` : `${whoWrote(by)} wrote a reminder for invoice ${invoiceNumber(invoice.seq)} (${invoice.bill_name})`}. Nothing is emailed until an admin approves it in the Invoicer or Portal → Money.`,
-    url: `/portal/?view=money&invoice=${id}`,
+    body: `${kind === "receipt" ? `Invoice ${invoiceNumber(invoice.seq)} (${invoice.bill_name}) is paid in full: its receipt is ready` : `${whoWrote(by)} wrote a reminder for invoice ${invoiceNumber(invoice.seq)} (${invoice.bill_name})`}. Nothing is emailed until an admin approves it in the Invoicer.`,
+    url: `/invoicer/?reminder=${row.id}`,
     tag: `invoice-${id}-reminder`,
     by,
   });
@@ -1294,7 +1295,7 @@ footer { margin-top: 24px; font-size: 13px; color: var(--muted); } footer a { co
   .pay { break-inside: avoid; } tr { break-inside: avoid; }
 }
 </style></head><body><main>
-${preview ? `<p class="banner">Preview in Portal: this is how the client will see it once it's approved and sent.</p>` : ""}${paid ? `<p class="banner thanks">Thank you: your payment is being confirmed. This page shows it as paid once Stripe tells us (usually within a minute).</p>` : ""}
+${preview ? `<p class="banner">Preview: this is how the client will see it once it's approved and sent.</p>` : ""}${paid ? `<p class="banner thanks">Thank you: your payment is being confirmed. This page shows it as paid once Stripe tells us (usually within a minute).</p>` : ""}
 <header><div><p class="brand">${esc(s.name)}</p><h1>Invoice ${esc(inv.number)}</h1><span class="chip ${statusClass}">${esc(statusText)}</span></div>
 <div class="from">${esc(s.name)}${s.address ? "\n" + esc(s.address) : ""}${s.email ? "\n" + esc(s.email) : ""}${s.vatNumber ? "\nVAT number " + esc(s.vatNumber) : ""}</div></header>
 <dl class="meta"><div><dt>Billed to</dt><dd class="to">${esc(inv.billTo.name)}${inv.billTo.address ? "\n" + esc(inv.billTo.address) : ""}</dd></div>

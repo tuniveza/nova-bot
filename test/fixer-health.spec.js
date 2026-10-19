@@ -37,7 +37,7 @@ describe("Nova Bot's health for the Fixer", () => {
 		await invoice();
 		const h = byName(await fixerHealth({ ...env, ...NO_CARD }))["A way to pay"];
 		expect(h).toMatchObject({ ok: false, severity: "serious", area: "server" });
-		expect(h.detail).toMatch(/Portal → Money → Settings/);
+		expect(h.detail).toMatch(/in the Invoicer \(How clients pay\)/);
 		await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('money_settings', ?)").bind(JSON.stringify({ bank: { accountName: "Studio", sortCode: "12-34-56", accountNumber: "12345678" } })).run();
 		expect(byName(await fixerHealth({ ...env, ...NO_CARD }))["A way to pay"].ok).toBe(true);
 	});
