@@ -187,7 +187,7 @@ describe("the apps' version check", () => {
 // Nova Agent instead)
 describe("a client's links open as themselves", () => {
   const T = "0123456789abcdef0123456789abcdef";
-  it.each([`/invoice/${T}`, `/invoice/${T}/pay`, `/invoice/${T}/pdf`, "/booking/AbC_d-12", "/pay/AbC_d-12?for=deposit", "/unsubscribe?e=x&c=1&s=y", "/invoice-preview/a59a7f6ebc245a96/"])("%s", async (path) => {
+  it.each([`/invoice/${T}`, `/invoice/${T}/pay`, `/invoice/${T}/pdf`, "/booking/AbC_d-12", "/pay/AbC_d-12?for=deposit", "/unsubscribe?e=x&c=1&s=y", `/invoice/${T}/email`, "/invoice-preview/a59a7f6ebc245a96/"])("%s", async (path) => {
     const res = await get(path, onItsOwn);
     expect(res.headers.get("Location") || "").not.toContain("/agent/");
   });

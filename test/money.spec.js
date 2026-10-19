@@ -555,6 +555,21 @@ describe("the invoice page", () => {
 		expect((await portal(`money/invoices/${inv.id}/document`)).text).toContain(`action="/invoice/${token}/pay" target="_blank">`);
 	});
 
+	it("its email opens by its link too, and its page and email show inside the site's own pages (the live preview)", async () => {
+		await portal("money/settings", { body: { monzo: { link: "monzo.me/neimanbrown" } } });
+		const inv = await writeAndSend();
+		const token = (await row(inv.id)).token;
+		const mail = await call(new Request(`${BASE}/invoice/${token}/email`));
+		expect(mail.status).toBe(200);
+		expect(mail.text).toContain(`<a target="_blank" rel="noopener" href="${BASE}/invoice/${token}/pay"`);
+		expect(mail.text).toMatch(/<a target="_blank" rel="noopener" href="https:\/\/monzo\.me\/neimanbrown\/175\.00\?d=NS-\d{4}"/);
+		expect(mail.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'self'");
+		const page = await call(new Request(`${BASE}/invoice/${token}`));
+		expect(page.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'self'");
+		expect(page.text).toContain("if(window.top!==window.self)"); // (inside a page, its buttons open in their own tab)
+		expect((await call(new Request(`${BASE}/invoice/${"0".repeat(32)}/email`))).status).toBe(404);
+	});
+
 	it("a card payment made before it's sent is kept, and it's part paid once it goes", async () => {
 		const draft = await write();
 		const event = {

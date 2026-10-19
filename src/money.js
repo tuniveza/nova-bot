@@ -1382,7 +1382,7 @@ function notFoundPage([title, words] = ["Invoice not found", "This link doesn't 
   return new Response(html, { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'" } });
 }
 
-// GET /invoice/<token>, POST /invoice/<token>/pay
+// GET /invoice/<token>, POST /invoice/<token>/pay, GET /invoice/<token>/pdf and /email
 // The client's page for an invoice: the invoice itself (the Invoicer's design, at the stage it's at
 // now, in the studio's theme) with the ways to pay that are set up: a card button (Stripe) for the
 // amount due now (the deposit, at the deposit stage), the bank details, or how to get in touch
@@ -1412,7 +1412,7 @@ export async function clientPage(env, row, settings, { preview = false, paid = f
 }
 
 export async function handleInvoicePage(request, env, pathname) {
-  const m = pathname.match(/^\/invoice\/([0-9a-f]{32})(\/pay|\/pdf)?$/);
+  const m = pathname.match(/^\/invoice\/([0-9a-f]{32})(\/pay|\/pdf|\/email)?$/);
   if (!m) return notFoundPage();
   const row = await env.DB.prepare(`${SELECT} WHERE i.token = ?`).bind(m[1]).first();
   // (one already sent and now changed, waiting to be approved again: its page says it's being updated)
@@ -1424,6 +1424,13 @@ export async function handleInvoicePage(request, env, pathname) {
   if (m[2] === "/pdf") {
     if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
     return pdfAnswer(env, (nonce) => clientPage(env, row, settings, { nonce }), invoiceNumber(row.seq));
+  }
+  // The invoice's email, as the client gets it (the test-invoice preview shows it live, 19 Oct 2026):
+  // shown inside this site's own pages, its links opening in their own tab
+  if (m[2] === "/email") {
+    if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
+    const html = invoiceEmail(env, settings, row).html.replace(/<a (?![^>]*\btarget=)([^>]*\bhref="https?:)/g, '<a target="_blank" rel="noopener" $1');
+    return pageResponse(html, newNonce(), 200, true);
   }
   if (m[2]) {
     // (POST from the page's card button; GET from the email's, straight to Stripe's checkout in one go;
@@ -1453,7 +1460,8 @@ export async function handleInvoicePage(request, env, pathname) {
   if (request.method !== "GET" && request.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
   const nonce = newNonce();
   const paid = new URL(request.url).searchParams.get("paid") === "1" && row.status !== "paid";
-  return pageResponse(await clientPage(env, row, settings, { nonce, paid }), nonce);
+  // (shown inside this site's own pages too: the test-invoice preview; its buttons then open in their own tab)
+  return pageResponse(await clientPage(env, row, settings, { nonce, paid }), nonce, 200, true);
 }
 
 // ===== FOR NOVA AGENT =====

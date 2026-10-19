@@ -46,8 +46,8 @@ iframe { display: block; width: 100%; height: 1400px; border: 0; background: #ff
 <main>
   <div class="wrap">
     <p class="note" id="note"></p>
-    <div class="frame"><iframe id="view" title="Invoice preview" src="invoice.html"></iframe></div>
-    <p class="note">Real £1 test invoices on the live site, so every button does the real thing. Pay by card opens Stripe's real checkout. Pay with Monzo opens Monzo with the amount and the invoice number filled in. Download PDF gives the invoice as a real PDF file. Paying really pays (50p).</p>
+    <div class="frame"><iframe id="view" title="Invoice preview" src="/invoice/23d1e1f27a31075565719ad21a5b27af" allow="clipboard-write"></iframe></div>
+    <p class="note">The real £1 test invoices themselves, live from the site, so this is always the current version and every button does the real thing. Pay by card opens Stripe's real checkout. Pay with Monzo opens Monzo with the amount and the invoice number filled in. Download PDF gives the invoice as a real PDF file. Paying really pays (50p).</p>
   </div>
 </main>
 
@@ -65,7 +65,7 @@ function fit() {
 function show(view) {
   document.querySelectorAll(".switch button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === view)));
   note.innerHTML = notes[view];
-  frame.src = view + ".html";
+  frame.src = {"invoice":"/invoice/23d1e1f27a31075565719ad21a5b27af","email":"/invoice/23d1e1f27a31075565719ad21a5b27af/email","after-deposit":"/invoice/59be929db54f111d950e989b2bda836b"}[view];
 }
 document.querySelectorAll(".switch button").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
 frame.addEventListener("load", () => { fit(); setTimeout(fit, 400); });
