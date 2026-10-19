@@ -171,7 +171,7 @@ function fakeFetch() {
 			}
 			if (p === "/v1/people:searchContacts") {
 				const q = String(url.searchParams.get("query") || "").toLowerCase();
-				return ok({ results: [...G.people.values()].filter((x) => q && JSON.stringify([x.names, x.emailAddresses]).toLowerCase().includes(q)).map((person) => ({ person })) });
+				return ok({ results: [...G.people.values()].filter((x) => q && (JSON.stringify([x.names, x.emailAddresses]).toLowerCase().includes(q) || (x.phoneNumbers || []).some((t) => t.value === url.searchParams.get("query")))).map((person) => ({ person })) });
 			}
 			const u = p.match(/^\/v1\/(people\/[^:]+):updateContact$/);
 			if (u) {
@@ -803,6 +803,27 @@ describe("Google where it fits", () => {
 		await refreshResults(genv());
 		const row = await env.DB.prepare("SELECT stats FROM social_posts WHERE id = ?").bind(made.post.id).first();
 		expect(JSON.parse(row.stats).youtube).toEqual({ views: 120, likes: 9, comments: 2 });
+	});
+
+	it("Import from contacts: a phone number finds the Google contact with it, with everything on its card", async () => {
+		G.people.set("people/p7", {
+			resourceName: "people/p7",
+			names: [{ displayName: "Kemi Adeyemi" }],
+			emailAddresses: [{ value: "Kemi@Example.com" }, { value: "kemi.music@example.com" }],
+			phoneNumbers: [{ value: "+44 7700 900123" }, { value: "020 8291 3028" }],
+			addresses: [{ formattedValue: "12 Station Road\nLondon SE23 3BA" }],
+			organizations: [{ name: "Kemi Music", title: "Singer" }],
+			birthdays: [{ date: { day: 4, month: 7 } }],
+			biographies: [{ value: "Met at the open mic" }],
+		});
+		G.people.set("people/p8", { resourceName: "people/p8", names: [{ displayName: "Someone Else" }], phoneNumbers: [{ value: "+44 7700 900999" }] });
+		// (typed the UK way; kept in Google the international way)
+		const found = await (await call("/app/api/google/contacts/phone?phone=07700%20900123")).json();
+		expect(found.contacts).toEqual([
+			{ name: "Kemi Adeyemi", emails: ["kemi@example.com", "kemi.music@example.com"], phones: ["+44 7700 900123", "020 8291 3028"], addresses: ["12 Station Road London SE23 3BA"], organisation: "Kemi Music, Singer", birthday: "04/07", notes: "Met at the open mic" },
+		]);
+		expect((await (await call("/app/api/google/contacts/phone?phone=07700%20900555")).json()).contacts).toEqual([]);
+		expect((await call("/app/api/google/contacts/phone?phone=123")).status).toBe(400);
 	});
 
 	it("Contacts search for the write forms, and Agent's read-only Drive, Docs, Tasks and YouTube", async () => {

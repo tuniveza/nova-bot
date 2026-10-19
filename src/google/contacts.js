@@ -291,3 +291,44 @@ export async function findContacts(env, query) {
   const found = await google(env, "GET", `${PEOPLE}/people:searchContacts?${new URLSearchParams({ query: String(query || "").slice(0, 100), readMask: "names,emailAddresses,phoneNumbers", pageSize: "10" })}`);
   return (found.results || []).map((r) => personFields(r.person));
 }
+
+// Import from contacts (Portal, 19 Oct 2026): the studio's Google Contacts searched by a phone number,
+// each match with everything on its card, to add as a client (nothing is added here).
+// Google matches numbers as they're written, so the number is tried the ways it may be kept (as typed,
+// digits only, 07…, +44…), and only contacts with that number (its last 9 digits) are kept.
+// -> [{ name, emails, phones, addresses, organisation, birthday, notes }]
+const CARD_FIELDS = "names,emailAddresses,phoneNumbers,addresses,organizations,birthdays,biographies";
+const lastNine = (value) => String(value || "").replace(/\D/g, "").slice(-9);
+export function numberForms(phone) {
+  const typed = String(phone || "").trim().slice(0, 40);
+  const digits = typed.replace(/\D/g, "");
+  const national = digits.startsWith("44") ? "0" + digits.slice(2) : digits.startsWith("0") ? digits : "";
+  const forms = [typed, digits, national, national ? "+44" + national.slice(1) : "", national ? "+44 " + national.slice(1, 5) + " " + national.slice(5) : "", national ? national.slice(0, 5) + " " + national.slice(5) : ""];
+  return [...new Set(forms.filter((f) => f.replace(/\D/g, "").length >= 6))];
+}
+export function contactCard(p) {
+  const list = (items, of) => [...new Set((items || []).map(of).map((v) => String(v || "").replace(/\s+/g, " ").trim()).filter(Boolean))];
+  const name = personFields(p).name;
+  const org = (p.organizations || [])[0];
+  const day = (p.birthdays || [])[0]?.date;
+  return {
+    name,
+    emails: list(p.emailAddresses, (e) => cleanEmail(e.value || "")),
+    phones: list(p.phoneNumbers, (t) => t.value),
+    addresses: list(p.addresses, (a) => a.formattedValue || [a.streetAddress, a.city, a.postalCode, a.country].filter(Boolean).join(", ")),
+    organisation: [org?.name, org?.title].filter(Boolean).join(", "),
+    birthday: day && day.month && day.day ? [day.day, day.month, day.year].filter(Boolean).map((n, i) => (i < 2 ? String(n).padStart(2, "0") : n)).join("/") : "",
+    notes: String((p.biographies || [])[0]?.value || "").trim().slice(0, 1000),
+  };
+}
+export async function lookupByPhone(env, phone) {
+  const want = lastNine(phone);
+  if (want.length < 9) return [];
+  const found = new Map();
+  for (const query of numberForms(phone)) {
+    const r = await google(env, "GET", `${PEOPLE}/people:searchContacts?${new URLSearchParams({ query, readMask: CARD_FIELDS, pageSize: "10" })}`);
+    for (const { person } of r.results || []) if (person?.resourceName && (person.phoneNumbers || []).some((t) => lastNine(t.value) === want)) found.set(person.resourceName, person);
+    if (found.size) break;
+  }
+  return [...found.values()].map(contactCard);
+}

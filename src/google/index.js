@@ -36,7 +36,7 @@ import { keepInvoices } from "./invoices.js";
 import { listTasks, syncTasks } from "./tasks.js";
 import { youtubeSummary } from "./youtube.js";
 import { pullInbox, pullReplies, searchGmail } from "./gmail.js";
-import { findContacts, syncContacts } from "./contacts.js";
+import { findContacts, lookupByPhone, syncContacts } from "./contacts.js";
 import { backupIndex, dropFile, folderUrl, keepFile, keepUploaded, makeDoc, startUpload } from "./drive.js";
 import { refreshSheet, sheetStatus } from "./sheets.js";
 
@@ -187,6 +187,17 @@ export async function handleGoogleForStaff(request, env, me, route, ctx = null) 
     if (!(await partOn(env, "contacts").catch(() => false))) return json({ contacts: [], off: true });
     try {
       return json({ contacts: (await findContacts(env, q)).filter((c) => c.name || c.email).slice(0, 8) });
+    } catch (err) {
+      return json({ error: "Google Contacts didn't answer: " + String(err.message || err).slice(0, 120) }, 502);
+    }
+  }
+  // Import from contacts: who in Google Contacts has this phone number, with everything on their card
+  if (route === "/google/contacts/phone" && request.method === "GET") {
+    const phone = String(new URL(request.url).searchParams.get("phone") || "").trim().slice(0, 40);
+    if (phone.replace(/\D/g, "").length < 9) return json({ error: "A phone number, please (the whole number)." }, 400);
+    if (!(await partOn(env, "contacts").catch(() => false))) return json({ contacts: [], off: true });
+    try {
+      return json({ contacts: (await lookupByPhone(env, phone)).slice(0, 5) });
     } catch (err) {
       return json({ error: "Google Contacts didn't answer: " + String(err.message || err).slice(0, 120) }, 502);
     }
