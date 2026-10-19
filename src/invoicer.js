@@ -347,7 +347,8 @@ export const sentenceLines = (text, br = "\n") => String(text).replace(/([.!?])[
 const DEFAULT_NOTE = "Thank you for choosing Novacane Studios. Any questions about this invoice, just get in touch.";
 
 // options: { theme, mode ("bright" or "dark"), note (words for the Notes box instead of the invoice's own),
-//   page: the client's own page (/invoice/<token>): { cardForm (the Pay by card button's form), banner
+//   page: the client's own page (/invoice/<token>): { cardForm (the Pay by card button's form), cardNote (a
+//   preview's: what its card button does, shown when it's pressed: the button is id="card-try"), banner
 //   (a note above the invoice), cancelled, nonce (for the Print button's script), contact (when there's no
 //   way to pay set up yet: how to get in touch) } }
 export function invoiceDocument(invoice, payments, stage, settings, today, options = {}) {
@@ -442,19 +443,22 @@ export function invoiceDocument(invoice, payments, stage, settings, today, optio
   // (the border's speckle: fine fractal noise, dark grains at varying strength)
   const borderGrain = () => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><filter id="g"><feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1.6 -.55"/></filter><rect width="64" height="64" filter="url(#g)"/></svg>`);
   const mTile = (shades, opacity) => tile(`<svg xmlns="http://www.w3.org/2000/svg" width="84" height="35"><g fill-opacity="${opacity}">${M_GRAIN.map(([x, y, turn, o, size], i) => `<path fill="${shades[i % shades.length]}" opacity="${o}" transform="translate(${x} ${y}) rotate(${turn}) scale(${size}) translate(-12 -12)" d="${MONZO_MARK}"/>`).join("")}</g></svg>`);
-  const monzo = monzoHref ? `<p class="monzo-line"><span class="k">Monzo</span><a href="${esc(monzoHref)}">${esc(monzoShort(settings.monzo))}</a>${monzoHref.includes("monzo.me/") ? `<br><small>Opens Monzo with ${pounds(s.dueNowPence)} and the reference filled in</small>` : ""}</p>` : "";
-  // (on the client's own page: its card button instead of a link to itself)
-  const buttons = client && !receipt && !cancelled && (client.cardForm || monzoButton) ? `<div class="paynow">${client.cardForm || ""}${monzoButton}</div>` : "";
-  const online = client ? buttons : invoice.pageUrl && !receipt ? `<p><span class="k">Pay online</span><a href="${esc(invoice.pageUrl)}">${esc(invoice.pageUrl.replace(/^https?:\/\//, ""))}</a></p>` : "";
+  // (on the client's page the Monzo button is the one way in: this line is for paper and print only)
+  const monzo = monzoHref ? `<p class="monzo-line${monzoButton ? " print" : ""}"><span class="k">Monzo</span><a href="${esc(monzoHref)}">${esc(monzoShort(settings.monzo))}</a>${monzoHref.includes("monzo.me/") ? `<br><small>Opens Monzo with ${pounds(s.dueNowPence)} and the reference filled in</small>` : ""}</p>` : "";
+  // (on the client's own page: no link to itself; its buttons are the ones under the amount)
+  const buttons = client && !receipt && !cancelled && (client.cardForm || monzoButton);
+  const online = client ? (buttons ? `<p class="payup"><span class="k">Pay online</span>${client.cardForm && monzoButton ? "By card or with Monzo" : client.cardForm ? "By card" : "With Monzo"}: ${client.cardForm && monzoButton ? "the buttons" : "the button"} under the amount, at the top. One tap pays.</p>` : "") : invoice.pageUrl && !receipt ? `<p><span class="k">Pay online</span><a href="${esc(invoice.pageUrl)}">${esc(invoice.pageUrl.replace(/^https?:\/\//, ""))}</a></p>` : "";
   const ref = receipt ? "" : `<p><span class="k">Reference</span>${esc(invoice.number)}${copy(invoice.number, "reference")}</p>`;
-  // Pay now (18 October 2026), on the client's page: the same buttons straight under the amount, so
-  // paying is one tap without scrolling (a phone shows the amount first), with a line saying what the
-  // Monzo button does and where the bank details are
+  // Pay now (18 October 2026), on the client's page: the buttons straight under the amount, so paying is
+  // one tap without scrolling (a phone shows the amount first), with a line saying what the Monzo button
+  // does and where the bank details are. One card button and one Monzo button on the page, each paying
+  // in one go (19 Oct 2026): How to pay below has the bank details, never the buttons again.
+  // (a preview's card button: client.cardNote, shown on the page when it's pressed, says what it does)
   const monzoHelp = monzoButton
     ? `${monzoHref.includes("monzo.me/") ? `Opens Monzo with ${pounds(s.dueNowPence)} and ${esc(invoice.number)} filled in.` : "Opens Monzo to pay."}${bank ? '<br>No Monzo? <a href="#bank">Pay by bank transfer</a>.' : ""}`
     : "";
   const quickpay = buttons
-    ? `<section class="quickpay" aria-label="Pay now"><div class="paynow">${client.cardForm || ""}${monzoButton.replace("<a ", '<a aria-describedby="quickpay-help" ')}</div>${monzoHelp ? `<p id="quickpay-help">${monzoHelp}</p>` : ""}</section>`
+    ? `<section class="quickpay" aria-label="Pay now"><div class="paynow">${client.cardForm || ""}${monzoButton.replace("<a ", '<a aria-describedby="quickpay-help" ')}</div>${monzoHelp ? `<p id="quickpay-help">${monzoHelp}</p>` : ""}${client.cardNote ? `<p class="pagenote" id="card-note" role="status" hidden>${client.cardNote}</p>` : ""}</section>`
     : "";
   const pay = receipt ? `<p>Received with thanks${s.payments.length ? `, last payment ${esc(longDay(s.payments[s.payments.length - 1].paidOn))}` : ""}.<br>Nothing more to pay.</p>` : cancelled ? "<p>Nothing to pay.</p>" : bank || online || monzo ? `${online}${monzo}${bank}${ref}` : client ? `<p>To pay, get in touch: ${esc(card.email)} or ${esc(card.phone)}.</p>${ref}` : `<p>Payment details are in your email.</p>${ref}`;
 
@@ -630,7 +634,7 @@ footer .thanks{width:100%;font-size:12.5px;color:var(--accent)}
 .pay .paynow a.monzo{display:inline-block;font-size:15px;font-weight:600;letter-spacing:.02em;color:var(--on-blend);background:var(--blend);border:0;border-radius:6px;padding:12px 22px;text-decoration:none}
 .pay .paynow a.monzo.second{color:var(--accent);background:var(--paper);box-shadow:inset 0 0 0 1.5px var(--accent);padding:12px 20px}
 .pay .paynow a.monzo:hover{filter:brightness(1.08)}.pay .paynow a.monzo.second:hover{background:var(--tint)}
-.paynow~.monzo-line{display:none}.monzo-line small{color:var(--soft);font-size:12px}
+.paynow~.monzo-line,.monzo-line.print{display:none}.monzo-line small{color:var(--soft);font-size:12px}
 .paynow a.monzo{align-items:center;gap:10px}.pay .paynow a.monzo{display:inline-flex}
 /* Monzo's M (18 Oct 2026): small and repeated across the button, a quiet pattern a shade lighter than it */
 .paynow a.monzo{position:relative;overflow:hidden;isolation:isolate;white-space:nowrap}
@@ -697,7 +701,7 @@ html{scroll-behavior:smooth}
 .tools a{color:${dark ? "#cfc6c7" : "#5b5256"}}
 .tools a.pdf{color:var(--on-blend);background:var(--blend);border-radius:6px;padding:9px 18px;text-decoration:none;font-weight:600}
 @page{size:A4;margin:12mm}
-@media print{.tools,.paynow,.pagenote,.quickpay,.copy{display:none!important}.paynow~.monzo-line{display:block}body::before,body::after{display:none}html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
+@media print{.tools,.paynow,.pagenote,.quickpay,.copy,.payup{display:none!important}.paynow~.monzo-line,.monzo-line.print{display:block}body::before,body::after{display:none}html{background:${dark ? "var(--paper)" : "none"}}body{padding:0;font-size:13.5px}.sheet{box-shadow:none;max-width:none}.in{padding:26px 34px 10px}.band{padding:18px 34px}}
 </style></head>
 <body><main class="sheet">
 <header class="band">${bandSky(t, lightBand, from, to)}<div class="brand">${logo}<div><b>NOVACANE</b><small>STUDIOS</small></div></div><div class="doc">${receipt ? "Receipt" : "Invoice"}</div></header>
@@ -718,5 +722,6 @@ ${quickpay}
 </div>
 <footer><span class="thanks">Thank you for recording with ${esc(card.name)}.</span><span>${esc(card.address)}</span><span>${esc(card.phone)} · ${esc(card.email)} · ${esc(card.website)}</span><span>Deposits are non-refundable with less than ${CANCEL_NOTICE_HOURS} hours' notice of cancellation.</span></footer>
 </div></main>${client ? `<p class="tools">${client.pdfHref ? `<a class="pdf" href="${esc(client.pdfHref)}" download>Download PDF</a>` : ""}<button type="button" id="print">Print or save as PDF</button><a href="/privacy">Privacy</a></p><p class="sr" id="copied" role="status" aria-live="polite"></p><script nonce="${esc(client.nonce || "")}">document.getElementById("print").addEventListener("click",function(){window.print()});
+var cardTry=document.getElementById("card-try");if(cardTry)cardTry.addEventListener("click",function(){var n=document.getElementById("card-note");n.hidden=false;n.scrollIntoView({block:"nearest",behavior:"smooth"})});
 if(navigator.clipboard&&window.isSecureContext)document.querySelectorAll(".copy").forEach(function(b){b.hidden=false;b.addEventListener("click",function(){var label=b.getAttribute("aria-label").replace("Copy ","");navigator.clipboard.writeText(b.dataset.copy).then(function(){b.textContent="Copied ✓";document.getElementById("copied").textContent=label.charAt(0).toUpperCase()+label.slice(1)+" copied";setTimeout(function(){b.textContent="Copy"},2500)})})})</script>` : ""}</body></html>`;
 }

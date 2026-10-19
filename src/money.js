@@ -729,7 +729,10 @@ export async function previewDocument(env, input = {}) {
 // email apps, with a plain-text twin), with a short message above it
 function invoiceMail(env, settings, row, payments, stage, { greeting, paragraphs }) {
   const today = ukToday();
-  return invoiceEmailParts({ invoice: publicInvoice(env, row, today), payments, stage, settings, today, base: publicUrl(env), link: `${publicUrl(env)}/invoice/${row.token}`, greeting, paragraphs });
+  const link = `${publicUrl(env)}/invoice/${row.token}`;
+  // (the email's card button: straight to Stripe's checkout for what's due now, when card payments are set up)
+  const payHref = cardReady(env) && !["paid", "void"].includes(row.status) ? `${link}/pay` : "";
+  return invoiceEmailParts({ invoice: publicInvoice(env, row, today), payments, stage, settings, today, base: publicUrl(env), link, payHref, greeting, paragraphs });
 }
 const firstName = (row) => `Hi ${String(row.bill_name || "").trim().split(/\s+/)[0] || "there"},`;
 
@@ -742,8 +745,9 @@ export function invoiceEmail(env, settings, row) {
   const stage = stageOf(invoice, today);
   const sums = stageSums(invoice, [], stage, today);
   const { subject, paragraphs } = stageMessage(invoice, sums, stage, settings, today);
-  // (the invoice under the message has the button to its page, Monzo and the bank details)
-  paragraphs.splice(-1, 0, "You can pay on its page, and download the invoice as a PDF from this email or the page.");
+  // (the invoice under the message has the card and Monzo buttons, each paying in one go, and the bank details)
+  const ways = [cardReady(env) && "by card", monzoReady(settings.monzo) && "with Monzo"].filter(Boolean).join(" or ");
+  paragraphs.splice(-1, 0, ways ? `You can pay ${ways} straight from this email, in one tap, and download the invoice as a PDF from here too.` : "You can see it online and download the invoice as a PDF from this email.");
   const parts = invoiceMail(env, settings, row, [], stage, { greeting: firstName(row), paragraphs });
   return { subject, ...parts };
 }
@@ -1348,11 +1352,13 @@ export async function pdfAnswer(env, draw, number) {
   return pageResponse(page, nonce);
 }
 
-function notFoundPage() {
-  const html = `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Invoice not found</title>
+// (an invoice not sent yet, its card button pressed in the email's preview: what the button does once it's sent)
+const NOT_SENT = ["Not sent yet", "This invoice hasn't been sent yet, so there's nothing to pay. Once it's sent, this button opens Stripe's secure card checkout for the amount due, ready to pay in one go."];
+function notFoundPage([title, words] = ["Invoice not found", "This link doesn't lead to an invoice. If you were sent it, ask the studio for a new one."], status = 404) {
+  const html = `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title>
 <style>body{margin:0;font:16px/1.5 system-ui,sans-serif;background:#f7f5f8;color:#1d1820}main{max-width:460px;margin:10vh auto;padding:28px 24px;background:#fff;border-radius:18px}@media (prefers-color-scheme:dark){body{background:#141016;color:#f2edf4}main{background:#1f1922}}</style></head>
-<body><main><h1>Invoice not found</h1><p>This link doesn't lead to an invoice. If you were sent it, ask the studio for a new one.</p></main></body></html>`;
-  return new Response(html, { status: 404, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'" } });
+<body><main><h1>${title}</h1><p>${words}</p></main></body></html>`;
+  return new Response(html, { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'" } });
 }
 
 // GET /invoice/<token>, POST /invoice/<token>/pay
@@ -1368,6 +1374,11 @@ export async function clientPage(env, row, settings, { preview = false, paid = f
   const updating = !preview && row.sent_at && !PAGE_STATUSES.includes(row.status);
   const canCard = !preview && !updating && due > 0 && OPEN.includes(row.status) && cardReady(env);
   const cardForm = canCard ? `<form method="post" action="/invoice/${esc(row.token)}/pay"><button type="submit">Pay ${esc(money(due))} by card</button></form>` : "";
+  // (a preview, before it's sent, shows the same card button as the client gets: there's nothing to charge
+  // yet, so pressing it says on the page what it does on the sent invoice)
+  const previewCard = preview && due > 0 && cardReady(env);
+  const cardTry = previewCard ? `<form><button type="button" id="card-try">Pay ${esc(money(due))} by card</button></form>` : "";
+  const cardNote = previewCard ? `Preview: on the sent invoice this button opens Stripe's secure card checkout for ${esc(money(due))}, ready to pay in one go. Nothing is charged from a preview.` : "";
   const banner = updating
     ? "This invoice is being updated. You'll get the new one by email shortly."
     : preview
@@ -1377,7 +1388,7 @@ export async function clientPage(env, row, settings, { preview = false, paid = f
       : paid
         ? "Thank you: your payment is being confirmed. This page shows it as paid within a minute or two."
         : "";
-  return invoiceDocument(invoice, payments, stage, settings, today, { page: { cardForm, banner: banner ? esc(banner) : "", cancelled: row.status === "void", nonce, pdfHref: preview ? `/app/api/money/invoices/${row.id}/pdf` : row.token ? `/invoice/${row.token}/pdf` : "" } });
+  return invoiceDocument(invoice, payments, stage, settings, today, { page: { cardForm: cardForm || cardTry, cardNote, banner: banner ? esc(banner) : "", cancelled: row.status === "void", nonce, pdfHref: preview ? `/app/api/money/invoices/${row.id}/pdf` : row.token ? `/invoice/${row.token}/pdf` : "" } });
 }
 
 export async function handleInvoicePage(request, env, pathname) {
@@ -1386,6 +1397,7 @@ export async function handleInvoicePage(request, env, pathname) {
   const row = await env.DB.prepare(`${SELECT} WHERE i.token = ?`).bind(m[1]).first();
   // (one already sent and now changed, waiting to be approved again: its page says it's being updated)
   const updating = row && row.sent_at && ["pending_approval", "approved", "rejected", "failed", "draft"].includes(row.status);
+  if (row && m[2] === "/pay" && !row.sent_at && ["draft", "pending_approval", "approved", "rejected", "failed"].includes(row.status)) return notFoundPage(NOT_SENT, 200);
   if (!row || (!PAGE_STATUSES.includes(row.status) && !updating)) return notFoundPage();
   const settings = await readSettings(env);
   // The invoice as a PDF file, as it is now (any stage: sent, part paid, paid, cancelled)
@@ -1395,7 +1407,8 @@ export async function handleInvoicePage(request, env, pathname) {
   }
   if (m[2]) {
     if (updating) return Response.redirect(`${publicUrl(env)}/invoice/${row.token}`, 303);
-    if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
+    // (POST from the page's card button; GET from the email's, straight to Stripe's checkout in one go)
+    if (request.method !== "POST" && request.method !== "GET") return new Response("Method not allowed", { status: 405 });
     // What's due now: the deposit at the deposit stage, else what's left (the same as the page's button)
     const today = ukToday();
     const invoice = publicInvoice(env, row, today);

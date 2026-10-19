@@ -13,7 +13,7 @@
 // Each email is HTML with a plain-text twin (multipart/alternative: the mail server sends both), so an
 // email app that can't show HTML shows the whole invoice as text instead.
 
-import { STAGE_LINES, longDay, monzoLink, monzoReady, monzoShort, paperOf, pounds, sentenceLines, stageSums, studioCard, themeOf } from "./invoicer.js";
+import { STAGE_LINES, longDay, monzoLink, monzoReady, paperOf, pounds, sentenceLines, stageSums, studioCard, themeOf } from "./invoicer.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // Two colours mixed (email apps can't mix them themselves): a share of a over b
@@ -31,9 +31,10 @@ const FONT = "Futura,'Century Gothic','Avenir Next','Segoe UI',Helvetica,Arial,s
 export const bandPicture = (base, theme, mode, receipt, paper = "moonstone") => `${base}/invoice-email/band-${theme}-${mode}-${receipt ? "receipt" : "invoice"}${paper && paper !== "moonstone" ? `-${paper}` : ""}.jpg`;
 
 // { invoice (publicInvoice's shape), payments, stage, settings, today, base (the site's address),
-//   link (the invoice's own page), greeting, paragraphs (the message above the invoice), mode }
+//   link (the invoice's own page), payHref (its card payment: straight to Stripe's checkout; "" when card
+//   payments aren't set up), greeting, paragraphs (the message above the invoice), mode }
 //   -> { html, text }
-export function invoiceEmailParts({ invoice, payments = [], stage, settings, today, base, link, greeting, paragraphs = [], mode = null, paper: paperId = null }) {
+export function invoiceEmailParts({ invoice, payments = [], stage, settings, today, base, link, payHref = "", greeting, paragraphs = [], mode = null, paper: paperId = null }) {
   // (the invoice's own look, else the studio's)
   const look = invoice?.look || {};
   const t = themeOf(look.theme || settings?.invoiceTheme);
@@ -103,14 +104,19 @@ ${td(`background:${tint};padding:14px 16px;text-align:right;`, `<div style="font
     sums.push(sum(receipt ? "Amount due" : "Remaining balance", receipt ? "£0.00 (paid in full)" : pounds(s.dueNowPence), "due"));
   }
 
-  // How to pay: the button to the invoice's page (pay there, see it, save it), then the bank
+  // How to pay (19 Oct 2026): one card button and one Monzo button, each paying in one go (the card one
+  // straight to Stripe's checkout, never to a page with more buttons); the invoice's page and its PDF as
+  // links under them, then the bank. With no card payments set up, the first button opens the invoice.
   const bank = bankReady(settings?.bank) && !receipt ? settings.bank : null;
-  const button = link
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 14px;"><tr>${td(`background:${accent};border-radius:6px;`, `<a href="${esc(link)}" style="display:inline-block;padding:12px 24px;font-family:${FONT};font-size:15px;font-weight:600;letter-spacing:.3px;color:#ffffff;text-decoration:none;">${receipt ? "See your receipt" : `Pay ${esc(pounds(s.dueNowPence))} or see the invoice`}</a>`, `bgcolor="${accent}"`)}</tr></table>`
+  const cardHref = !receipt && s.dueNowPence > 0 ? payHref : "";
+  const button = cardHref
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 14px;"><tr>${td(`background:${accent};border-radius:6px;`, `<a href="${esc(cardHref)}" style="display:inline-block;padding:12px 24px;font-family:${FONT};font-size:15px;font-weight:600;letter-spacing:.3px;color:#ffffff;text-decoration:none;">Pay ${esc(pounds(s.dueNowPence))} by card</a>`, `bgcolor="${accent}"`)}</tr></table>`
+    : link
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 14px;"><tr>${td(`background:${accent};border-radius:6px;`, `<a href="${esc(link)}" style="display:inline-block;padding:12px 24px;font-family:${FONT};font-size:15px;font-weight:600;letter-spacing:.3px;color:#ffffff;text-decoration:none;">${receipt ? "See your receipt" : "See the invoice"}</a>`, `bgcolor="${accent}"`)}</tr></table>`
     : "";
   // The invoice (or receipt) as a PDF file, to keep: under the buttons, every email (19 Oct 2026)
   const pdf = link ? `${link}/pdf` : "";
-  const pdfLine = pdf ? `<p style="margin:0 0 14px;"><a href="${esc(pdf)}" style="color:${accent};font-weight:600;">Download the ${receipt ? "receipt" : "invoice"} (PDF)</a></p>` : "";
+  const pdfLine = pdf ? `<p style="margin:0 0 14px;">${cardHref ? `<a href="${esc(link)}" style="color:${accent};font-weight:600;">See the invoice online</a> · ` : ""}<a href="${esc(pdf)}" style="color:${accent};font-weight:600;">Download the ${receipt ? "receipt" : "invoice"} (PDF)</a></p>` : "";
   // Monzo: a second button, the theme's accent as an outline (opens Monzo with the amount and the
   // reference filled in), and the link as words under it
   const monzoHref = monzoReady(settings?.monzo) && !receipt && s.dueNowPence > 0 ? monzoLink(settings.monzo, s.dueNowPence, invoice.number) : "";
@@ -119,7 +125,7 @@ ${td(`background:${tint};padding:14px 16px;text-align:right;`, `<div style="font
     : "";
   const payText = receipt
     ? `<p style="margin:0 0 10px;">Received with thanks. Nothing more to pay.</p>`
-    : `${monzoHref ? `<p style="margin:0 0 10px;"><span style="font-size:10px;letter-spacing:2.4px;text-transform:uppercase;color:${heading};">Monzo</span><br><a href="${esc(monzoHref)}" style="color:${accent};">${esc(monzoShort(settings.monzo))}</a></p>` : ""}${bank ? `<p style="margin:0 0 10px;"><span style="font-size:10px;letter-spacing:2.4px;text-transform:uppercase;color:${heading};">Bank transfer</span><br>${esc(bank.accountName)}<br>Sort code ${esc(bank.sortCode)} · Account ${esc(bank.accountNumber)}</p>` : ""}<p style="margin:0 0 10px;"><span style="font-size:10px;letter-spacing:2.4px;text-transform:uppercase;color:${heading};">Reference</span><br>${esc(invoice.number)}</p>`;
+    : `${bank ? `<p style="margin:0 0 10px;"><span style="font-size:10px;letter-spacing:2.4px;text-transform:uppercase;color:${heading};">Bank transfer</span><br>${esc(bank.accountName)}<br>Sort code ${esc(bank.sortCode)} · Account ${esc(bank.accountNumber)}</p>` : ""}<p style="margin:0 0 10px;"><span style="font-size:10px;letter-spacing:2.4px;text-transform:uppercase;color:${heading};">Reference</span><br>${esc(invoice.number)}</p>`;
   const note = String(invoice.notes || "").trim();
 
   const html = `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="${dark ? "dark" : "light"}"><meta name="supported-color-schemes" content="${dark ? "dark" : "light"}"><title>${esc(word)} ${esc(invoice.number)}</title>
@@ -169,8 +175,8 @@ ${td(`vertical-align:top;font-size:13.5px;line-height:1.6;color:${P.ink};`, `${l
     ...(note ? ["", `Notes: ${sentenceLines(note)}`] : []),
     "",
     receipt ? "Payment: received with thanks. Nothing more to pay." : "How to pay:",
-    ...(receipt ? [] : [...(link ? [`  Pay or see the invoice online: ${link}`] : []), ...(monzoHref ? [`  Pay with Monzo: ${monzoHref}`] : []), ...(bank ? [`  Bank transfer: ${bank.accountName}, sort code ${bank.sortCode}, account ${bank.accountNumber}`] : []), `  Reference: ${invoice.number}`]),
-    ...(receipt && link ? [`See your receipt: ${link}`] : []),
+    ...(receipt ? [] : [...(cardHref ? [`  Pay by card: ${cardHref}`] : []), ...(monzoHref ? [`  Pay with Monzo: ${monzoHref}`] : []), ...(bank ? [`  Bank transfer: ${bank.accountName}, sort code ${bank.sortCode}, account ${bank.accountNumber}`] : []), `  Reference: ${invoice.number}`]),
+    ...(link ? [receipt ? `See your receipt: ${link}` : `See the invoice online: ${link}`] : []),
     ...(pdf ? [`Download the ${receipt ? "receipt" : "invoice"} (PDF): ${pdf}`] : []),
     "",
     `Thank you for recording with ${card.name}.`,

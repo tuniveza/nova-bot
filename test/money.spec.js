@@ -434,6 +434,47 @@ describe("the invoice page", () => {
 		expect((await call(new Request(`${BASE}/invoice/${(await row(inv.id)).token}`))).text).not.toContain("monzo.me");
 	});
 
+	// One card button and one Monzo button (the user, 19 Oct 2026): each pays in one go, from the page and
+	// from the email; never the same button twice on a page, never a button that leads to more buttons
+	it("one card button and one Monzo button, on the page and in the email, each paying in one go", async () => {
+		await portal("money/settings", { body: { bank: { accountName: "Novacane Studios Ltd", sortCode: "12-34-56", accountNumber: "12345678" }, monzo: { link: "monzo.me/novacane" } } });
+		const inv = await writeAndSend();
+		const token = (await row(inv.id)).token;
+		const monzo = "https://monzo.me/novacane/175.00?d=NS-0001";
+		const count = (html, re) => (html.match(re) || []).length;
+		const page = (await call(new Request(`${BASE}/invoice/${token}`))).text;
+		expect(count(page, /<form method="post" action="\/invoice\/[0-9a-f]{32}\/pay">/g)).toBe(1);
+		expect(count(page, /Pay £175\.00 by card/g)).toBe(1);
+		expect(count(page, /<a [^>]*class="monzo[ "]/g)).toBe(1);
+		expect(count(page, /Pay £175\.00 with Monzo/g)).toBe(1);
+		expect(page).toContain('class="monzo-line print"'); // (the link to type, on paper only)
+		const mail = emails[0].html;
+		expect(count(mail, /Pay £175\.00 by card/g)).toBe(1);
+		expect(count(mail, /Pay £175\.00 with Monzo/g)).toBe(1);
+		expect(count(mail, new RegExp(`href="${monzo.replace(/[.?]/g, "\\$&")}"`, "g"))).toBe(1);
+		const card = mail.match(/<a href="([^"]+)"[^>]*>Pay £175\.00 by card</)[1];
+		expect(card).toBe(`${BASE}/invoice/${token}/pay`);
+		expect(emails[0].text).toContain(`Pay by card: ${BASE}/invoice/${token}/pay`);
+		// The email's card button goes straight to Stripe's checkout for the deposit
+		const res = await call(new Request(card));
+		expect(res.status).toBe(303);
+		expect(res.headers.get("Location")).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+		expect(stripe.sessions.at(-1).form["line_items[0][price_data][unit_amount]"]).toBe("17500");
+		// Before it's sent (the email's preview): it says what it does, and nothing is charged
+		const draft = await write();
+		const before = stripe.sessions.length;
+		const early = await call(new Request(`${BASE}/invoice/${(await row(draft.id)).token}/pay`));
+		expect(early.status).toBe(200);
+		expect(early.text).toContain("Stripe's secure card checkout");
+		expect(stripe.sessions.length).toBe(before);
+		// The preview of the page: the same two buttons, the card one saying what it does once sent
+		const preview = await portal(`money/invoices/${draft.id}/preview`);
+		const html = preview.text;
+		expect(count(html, /id="card-try"/g)).toBe(1);
+		expect(count(html, /<a [^>]*class="monzo[ "]/g)).toBe(1);
+		expect(html).toContain('id="card-note"');
+	});
+
 	it("Pay by card opens Stripe's checkout for what's due now (the deposit, then the rest); the webhook records each once", async () => {
 		const inv = await writeAndSend();
 		const token = (await row(inv.id)).token;
@@ -750,7 +791,7 @@ describe("invoice emails are the Nova invoice", () => {
 		expect(e.html).toContain("Deposit due now (50%)");
 		expect(e.html).toContain("£175.00");
 		expect(e.html).toContain("Mixing, per song");
-		expect(e.html).toMatch(/Pay £175\.00 or see the invoice/);
+		expect(e.html).toMatch(/Pay £175\.00 by card/);
 		expect(e.html).not.toMatch(/<svg|<script|url\(data:/); // (nothing email apps don't show)
 		// The text twin: everything, for email apps without HTML
 		expect(e.text).toContain("INVOICE NS-0001");

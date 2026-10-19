@@ -59,8 +59,8 @@ describe("easy to pay on the client's page (18 Oct 2026)", () => {
 		expect(html).toContain('id="quickpay-help">Opens Monzo with £100.00 and NS-0007 filled in.<br>No Monzo? <a href="#bank">Pay by bank transfer</a>.');
 		expect(html).toMatch(/\.quickpay a\.monzo,[^{]*\{[^}]*min-height:52px/);
 		expect(html).toMatch(/a\.monzo:focus-visible[^{]*\{outline:3px solid/);
-		// (still in How to pay too)
-		expect(html.split("Pay £100.00 with Monzo").length).toBe(3);
+		// (one Monzo button on the page, 19 Oct 2026: How to pay has the bank details, not the button again)
+		expect(html.split("Pay £100.00 with Monzo").length).toBe(2);
 	});
 	it("Monzo's M as a quiet pattern behind the words (no big M), a lighter shade of the theme's colours", () => {
 		const html = page(bankSettings);
