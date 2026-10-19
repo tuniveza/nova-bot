@@ -300,6 +300,37 @@ describe("payments", () => {
 // ===== THE CLIENT'S PAGE AND STRIPE =====
 
 describe("the invoice page", () => {
+	// Every button and link on an invoice works (the user, 19 Oct 2026): nothing on the page, after the
+	// deposit, or in the email leads to a page that isn't there, and a link to a place on the page finds it
+	it("every button and link on the page and in the email goes somewhere that's there", async () => {
+		await portal("money/settings", { body: { bank: { accountName: "Novacane Studios Ltd", sortCode: "12-34-56", accountNumber: "12345678" }, monzo: { link: "monzo.me/neimanbrown" } } });
+		const inv = await writeAndSend();
+		const token = (await row(inv.id)).token;
+		const page = await call(new Request(`${BASE}/invoice/${token}`));
+		const check = async (html, where) => {
+			const targets = [...html.matchAll(/<(a|form)\b[^>]*?\b(href|action)="([^"]*)"[^>]*>/g)].map((m) => ({ tag: m[0], url: m[3].replace(/&amp;/g, "&") }));
+			expect(targets.length, where).toBeGreaterThan(0);
+			for (const { tag, url } of targets) {
+				if (/^(mailto|tel):/.test(url)) continue;
+				if (url.startsWith("#")) {
+					expect(html.includes(`id="${url.slice(1)}"`), `${where}: ${url} isn't on the page`).toBe(true);
+					continue;
+				}
+				const abs = new URL(url, `${BASE}/invoice/${token}`);
+				if (abs.origin !== BASE) {
+					expect(abs.protocol, `${where}: ${url}`).toBe("https:");
+					continue;
+				}
+				const method = /method="post"/i.test(tag) ? "POST" : "GET";
+				const res = await call(new Request(abs, { method }));
+				expect(res.status, `${where}: ${method} ${abs.pathname}`).not.toBe(404);
+				expect(res.status, `${where}: ${method} ${abs.pathname}`).toBeLessThan(500);
+			}
+		};
+		await check(page.text, "the page");
+		await check(emails[0].html, "the email");
+	});
+
 	it("opens only by its random link, only once sent, with nothing but the token in the address", async () => {
 		const inv = await write();
 		const token = (await row(inv.id)).token;
