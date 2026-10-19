@@ -181,3 +181,14 @@ describe("the apps' version check", () => {
     expect(typeof (await res.json()).version).toBe("string");
   });
 });
+
+// Every link a client is sent opens as itself in a browser, never Nova Agent (19 Oct 2026: an invoice
+// email's Pay by card and Download PDF, a booking's page and pay link, and Unsubscribe all opened
+// Nova Agent instead)
+describe("a client's links open as themselves", () => {
+  const T = "0123456789abcdef0123456789abcdef";
+  it.each([`/invoice/${T}`, `/invoice/${T}/pay`, `/invoice/${T}/pdf`, "/booking/AbC_d-12", "/pay/AbC_d-12?for=deposit", "/unsubscribe?e=x&c=1&s=y", "/invoice-preview/a59a7f6ebc245a96/"])("%s", async (path) => {
+    const res = await get(path, onItsOwn);
+    expect(res.headers.get("Location") || "").not.toContain("/agent/");
+  });
+});

@@ -1643,7 +1643,11 @@ function novaAgentPage(request, env, pathname) {
 // goes to /agent/: a panel's address (or one it had before, or /agent/<panel>) opens that panel,
 // anything else just Nova Agent. Files (scripts, icons, a CSV) aren't pages and stay as they are,
 // and so do the website chat's pages for customers (Nova Bot's own) and connecting Google.
-const CUSTOMER_PAGES = /^\/(book(\/.*)?|referral|privacy|status(\.json)?|enquiry\/stop|join(\/confirm)?|invoice\/[0-9a-f]{32})$/;
+// Every link a client is sent stays itself too (19 Oct 2026: the email's Pay by card and Download PDF,
+// a booking's page and pay link, and unsubscribing all went to Nova Agent when opened in a browser):
+// an invoice's page, its card payment (straight to Stripe) and its PDF; a booking's page and its pay
+// link; unsubscribing from a campaign; and the test-invoice preview (invoice-preview/build.sh)
+const CUSTOMER_PAGES = /^\/(book(\/.*)?|booking\/[A-Za-z0-9_-]+|pay\/[A-Za-z0-9_-]+|referral|privacy|status(\.json)?|enquiry\/stop|join(\/confirm)?|unsubscribe|invoice\/[0-9a-f]{32}(\/(pay|pdf))?|invoice-preview\/.*)$/;
 function panelFor(pathname) {
   const place = placeFor(pathname);
   if (place && !(place.name === "portal" && !pathname.startsWith(AGENT))) return place.open;

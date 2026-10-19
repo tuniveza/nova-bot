@@ -385,7 +385,9 @@ describe("the invoice page", () => {
 					continue;
 				}
 				const method = /method="post"/i.test(tag) ? "POST" : "GET";
-				const res = await call(new Request(abs, { method }));
+				// (opened the way a browser opens a link: as a page, never sent off into Nova Agent instead)
+				const res = await call(new Request(abs, { method, headers: { "Sec-Fetch-Dest": "document", Accept: "text/html" } }));
+				expect(res.headers.get("Location") || "", `${where}: ${method} ${abs.pathname}`).not.toContain("/agent/");
 				expect(res.status, `${where}: ${method} ${abs.pathname}`).not.toBe(404);
 				expect(res.status, `${where}: ${method} ${abs.pathname}`).toBeLessThan(500);
 			}
