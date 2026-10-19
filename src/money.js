@@ -39,7 +39,7 @@ import { sendStudioEmail } from "./google/gmail.js";
 import { pounds as poundsText, toPence } from "./clients.js";
 import { createInvoiceCheckout, stripeOffline } from "./nova/stripe.js";
 import { invoiceEmailParts } from "./invoice-email.js";
-import { INVOICE_MODES, INVOICE_PAPERS, INVOICE_THEMES, STAGES, themeId, catalogue, invoiceDocument, stageEmail, stageOf, stageSums } from "./invoicer.js";
+import { BILLINGS, INVOICE_MODES, INVOICE_PAPERS, INVOICE_THEMES, STAGES, afterSession, themeId, catalogue, invoiceDocument, stageEmail, stageMessage, stageOf, stageSums } from "./invoicer.js";
 
 export const CATEGORIES = [
   "Equipment",
@@ -275,7 +275,7 @@ export function totals(lines, vatRate) {
 // The hash of exactly what an admin approves
 export function invoiceHash(row) {
   return sha256Hex(
-    JSON.stringify(["nova-invoice-v1", row.client_id ?? null, row.bill_name, row.bill_email || null, row.bill_address || "", row.lines, Number(row.vat_rate) || 0, row.total_pence, row.issue_date, row.due_date, row.notes || ""])
+    JSON.stringify(["nova-invoice-v1", row.client_id ?? null, row.bill_name, row.bill_email || null, row.bill_address || "", row.lines, Number(row.vat_rate) || 0, row.total_pence, row.issue_date, row.due_date, row.notes || "", ...(row.billing === "full" ? ["full"] : [])])
   );
 }
 const reminderHash = (row, invoice) => sha256Hex(JSON.stringify(["nova-invoice-reminder-v2", row.kind || "reminder", row.invoice_id, row.body, invoice.bill_email || null, invoice.total_pence - invoice.paid_pence]));
@@ -328,6 +328,7 @@ export function publicInvoice(env, row, today = ukToday()) {
     number: invoiceNumber(row.seq),
     clientId: row.client_id ?? null,
     billTo: { name: row.bill_name, email: row.bill_email || null, address: row.bill_address || "" },
+    billing: row.billing === "full" ? "full" : "deposit",
     lines: lines.map((l) => ({ description: l.description, qty: l.qty, unitPence: l.unit_pence, totalPence: lineTotal(l) })),
     vatRate: Number(row.vat_rate) || 0,
     subtotalPence: row.subtotal_pence,
@@ -444,10 +445,13 @@ async function checkFields(env, input, base = null, settings = null) {
   if (!isDay(due_date)) return fail(400, "dueDate: a day, YYYY-MM-DD.");
   if (due_date < issue_date) return fail(400, "dueDate is before the issue date.");
   const notes = has("notes") ? cleanText(input.notes, MAX_NOTES) : base ? base.notes : "";
+  // Before the session (a deposit secures the date) or after it (the full amount)
+  const billing = has("billing") ? input.billing : base?.billing === "full" ? "full" : "deposit";
+  if (!BILLINGS.includes(billing)) return fail(400, 'billing: "deposit" (before the session: a deposit secures the date) or "full" (after the session: the full amount).');
   const sums = totals(lines, vat_rate);
   if (sums.total_pence <= 0) return fail(400, "The invoice comes to nothing: check the prices.");
   if (sums.total_pence > MAX_TOTAL_PENCE) return fail(400, "That's more than £100,000: check the prices.");
-  return { client_id: clientId, bill_name: name, bill_email, bill_address, lines: JSON.stringify(lines), vat_rate, ...sums, issue_date, due_date, notes };
+  return { client_id: clientId, bill_name: name, bill_email, bill_address, lines: JSON.stringify(lines), vat_rate, ...sums, issue_date, due_date, notes, billing };
 }
 
 const WRITERS = { agent: "Agent", "staff-chat": "Portal's staff chat", nova: "Nova Bot" };
@@ -476,10 +480,10 @@ export async function createInvoice(env, input, by) {
   // The next number, in the same statement (two at once can't get the same one: seq is UNIQUE)
   const row = await env.DB.prepare(
     `INSERT INTO invoices (seq, token, client_id, bill_name, bill_email, bill_address, lines, vat_rate, subtotal_pence, vat_pence, total_pence,
-       issue_date, due_date, notes, look, status, created_by, created_at, updated_at, submitted_at)
-     SELECT COALESCE(MAX(CASE WHEN seq > 0 THEN seq END), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', ?, ?, ?, ? FROM invoices RETURNING id, seq`
+       issue_date, due_date, notes, billing, look, status, created_by, created_at, updated_at, submitted_at)
+     SELECT COALESCE(MAX(CASE WHEN seq > 0 THEN seq END), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', ?, ?, ?, ? FROM invoices RETURNING id, seq`
   )
-    .bind(token, fields.client_id, fields.bill_name, fields.bill_email, fields.bill_address, fields.lines, fields.vat_rate, fields.subtotal_pence, fields.vat_pence, fields.total_pence, fields.issue_date, fields.due_date, fields.notes, lookText(input?.look), String(by), now, now, now)
+    .bind(token, fields.client_id, fields.bill_name, fields.bill_email, fields.bill_address, fields.lines, fields.vat_rate, fields.subtotal_pence, fields.vat_pence, fields.total_pence, fields.issue_date, fields.due_date, fields.notes, fields.billing, lookText(input?.look), String(by), now, now, now)
     .first();
   await env.DB.batch([
     logEntry(env, { invoice: row.id, event: "created", by, detail: `${invoiceNumber(row.seq)} for ${money(fields.total_pence)}` }),
@@ -512,22 +516,22 @@ export async function editInvoice(env, by, id, input) {
   // never below what's already been paid)
   const wasSent = OPEN.includes(row.status);
   if (wasSent && fields.total_pence < row.paid_pence) return fail(409, `${money(row.paid_pence)} has already been paid, so the total can't go below that.`);
-  const keys = ["client_id", "bill_name", "bill_email", "bill_address", "lines", "vat_rate", "total_pence", "issue_date", "due_date", "notes"];
-  const changed = keys.filter((k) => (fields[k] ?? null) !== (row[k] ?? null));
+  const keys = ["client_id", "bill_name", "bill_email", "bill_address", "lines", "vat_rate", "total_pence", "issue_date", "due_date", "notes", "billing"];
+  const changed = keys.filter((k) => (fields[k] ?? null) !== ((k === "billing" ? (row.billing === "full" ? "full" : "deposit") : row[k]) ?? null));
   if (!changed.length && WAITING.includes(row.status)) return { invoice: publicInvoice(env, row), unchanged: true };
   const now = nowIso();
   const { meta } = await env.DB.prepare(
     `UPDATE invoices SET client_id = ?, bill_name = ?, bill_email = ?, bill_address = ?, lines = ?, vat_rate = ?, subtotal_pence = ?, vat_pence = ?, total_pence = ?,
-       issue_date = ?, due_date = ?, notes = ?, status = 'pending_approval', approved_hash = NULL, decided_by = NULL, decided_at = NULL, error = NULL,
+       issue_date = ?, due_date = ?, notes = ?, billing = ?, status = 'pending_approval', approved_hash = NULL, decided_by = NULL, decided_at = NULL, error = NULL,
        updated_at = ?, submitted_at = ?
      WHERE id = ? AND status = ? AND updated_at = ?`
   )
-    .bind(fields.client_id, fields.bill_name, fields.bill_email, fields.bill_address, fields.lines, fields.vat_rate, fields.subtotal_pence, fields.vat_pence, fields.total_pence, fields.issue_date, fields.due_date, fields.notes, now, now, id, row.status, row.updated_at)
+    .bind(fields.client_id, fields.bill_name, fields.bill_email, fields.bill_address, fields.lines, fields.vat_rate, fields.subtotal_pence, fields.vat_pence, fields.total_pence, fields.issue_date, fields.due_date, fields.notes, fields.billing, now, now, id, row.status, row.updated_at)
     .run();
   if (!meta.changes) return fail(409, "Someone else changed it at the same moment. Look at it again.");
   if (input?.look !== undefined) await env.DB.prepare("UPDATE invoices SET look = ? WHERE id = ?").bind(lookText(input.look), id).run();
   if (wasSent && row.client_id) await env.DB.batch(clientDelta(env, row.client_id, { invoiced: -row.total_pence, owed: -(row.total_pence - row.paid_pence) }, by));
-  const names = { client_id: "client", bill_name: "name", bill_email: "email", bill_address: "address", lines: "lines", vat_rate: "VAT", total_pence: "total", issue_date: "issue date", due_date: "due date", notes: "notes" };
+  const names = { client_id: "client", bill_name: "name", bill_email: "email", bill_address: "address", lines: "lines", vat_rate: "VAT", total_pence: "total", issue_date: "issue date", due_date: "due date", notes: "notes", billing: "before or after the session" };
   await env.DB.batch([
     logEntry(env, { invoice: id, event: "edited", by, detail: `${wasSent ? "Changed after it was sent (the client gets the updated invoice once it's approved). " : ""}${changed.length ? `Changed: ${changed.map((k) => names[k]).join(", ")}` : "Sent for approval again"}` }),
     logEntry(env, { invoice: id, event: "submitted", by }),
@@ -691,6 +695,7 @@ export async function previewDocument(env, input = {}) {
     number: "Draft",
     status: "draft",
     billTo: { name: oneLine(input.billName, 120) || "Artist name", email: oneLine(input.billEmail, 200).toLowerCase() || null, address: cleanText(input.billAddress, MAX_ADDRESS) },
+    billing: input.billing === "full" ? "full" : "deposit",
     lines: lines.map((l) => ({ description: l.description, qty: l.qty, unitPence: l.unit_pence, totalPence: lineTotal(l) })),
     vatRate,
     subtotalPence: sums.subtotal_pence,
@@ -702,7 +707,7 @@ export async function previewDocument(env, input = {}) {
     notes: cleanText(input.notes, MAX_NOTES),
     pageUrl: null,
   };
-  const stage = STAGES.includes(input.stage) ? input.stage : "deposit";
+  const stage = STAGES.includes(input.stage) ? input.stage : invoice.billing === "full" ? "balance" : "deposit";
   const options = { theme: themeId(input.theme), mode: INVOICE_MODES.includes(input.mode) ? input.mode : null, paper: INVOICE_PAPERS.some((x) => x.id === input.paper) ? input.paper : null };
   return invoiceDocument(invoice, [], stage, settings, today, options);
 }
@@ -717,21 +722,31 @@ function invoiceMail(env, settings, row, payments, stage, { greeting, paragraphs
 }
 const firstName = (row) => `Hi ${String(row.bill_name || "").trim().split(/\s+/)[0] || "there"},`;
 
-// The invoice email, in the words of its stage: a new invoice asks for the deposit (with the rest due
-// later), one already part paid asks for what's left
+// The invoice email, in the words of its stage (src/invoicer.js's stageMessage): before the session it
+// asks for the deposit that secures the date (the rest due on the day); after the session, it thanks
+// them and asks for the full amount; one already part paid asks for what's left
 export function invoiceEmail(env, settings, row) {
-  const number = invoiceNumber(row.seq);
   const today = ukToday();
   const invoice = publicInvoice(env, row, today);
   const stage = stageOf(invoice, today);
   const sums = stageSums(invoice, [], stage, today);
-  const paragraphs =
-    stage === "deposit"
-      ? [`Thank you for booking with ${settings.business.name}. Here's invoice ${number} for your session, ${money(row.total_pence)} in all.`, `To secure your booking, please pay the ${sums.depositPercent}% deposit of ${money(sums.dueNowPence)} now. The remaining ${money(sums.laterPence)} is due by ${dayText(row.due_date)}. You can pay, and save the invoice as a PDF, on its page.`]
-      : [`Here's invoice ${number} from ${settings.business.name}: ${money(sums.dueNowPence)} is due by ${dayText(row.due_date)}. You can pay, and save it as a PDF, on its page.`];
+  const { subject, paragraphs } = stageMessage(invoice, sums, stage, settings, today);
+  // (the invoice under the message has the button to its page, Monzo and the bank details)
+  paragraphs.splice(-1, 0, "You can pay, and save the invoice as a PDF, on its page.");
   const parts = invoiceMail(env, settings, row, [], stage, { greeting: firstName(row), paragraphs });
-  return { subject: stage === "deposit" ? `Invoice ${number} from ${settings.business.name}: deposit to secure your booking` : `Invoice ${number} from ${settings.business.name}`, ...parts };
+  return { subject, ...parts };
 }
+// The subject for an email at a stage: after the session, the thank-you; otherwise as it always was
+function stageSubject(env, settings, row, stage, today = ukToday()) {
+  const number = invoiceNumber(row.seq);
+  if (stage === "paid") return `Receipt for invoice ${number} from ${settings.business.name}: paid in full, thank you`;
+  if (stage === "overdue") return `Reminder: invoice ${number} from ${settings.business.name} is past due`;
+  const invoice = publicInvoice(env, row, today);
+  if (stage === "balance" && afterSession(invoice, today)) return stageMessage(invoice, stageSums(invoice, [], stage, today), stage, settings, today).subject;
+  return `Reminder: invoice ${number} from ${settings.business.name}`;
+}
+// A message that still has a gap to fill in ("[Client Name]", "[Your Name]"): never emailed like that
+const PLACEHOLDER = /\[[^\]\n]{1,40}\]/;
 
 // Email an approved invoice. Only status 'approved' with an approval hash that still matches goes.
 export async function sendApprovedInvoice(env, id, { byHand = false } = {}) {
@@ -811,8 +826,7 @@ export async function testSendInvoice(env, me, { id, stage = null, body = "" }) 
     const paragraphs = String(body || "").slice(0, 4000).split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
     const greeting = paragraphs.length > 1 && /^(hi|hello|dear)\b/i.test(paragraphs[0]) ? paragraphs.shift() : firstName(row);
     const mail = invoiceMail(env, settings, row, await invoicePayments(env, id), stage, { greeting, paragraphs });
-    const number = invoiceNumber(row.seq);
-    email = { ...mail, subject: stage === "paid" ? `Receipt for invoice ${number} from ${settings.business.name}: paid in full, thank you` : stage === "overdue" ? `Reminder: invoice ${number} from ${settings.business.name} is past due` : stage === "balance" ? `Reminder: invoice ${number} from ${settings.business.name}` : email.subject };
+    email = { ...mail, subject: stage === "deposit" ? email.subject : stageSubject(env, settings, row, stage) };
   }
   const preview = `${publicUrl(env)}/app/api/money/invoices/${id}/preview`;
   const result = await sendEmail(env, {
@@ -907,6 +921,10 @@ export async function invoicePaidByStripe(env, { invoiceId, amountPence, stripeI
 function reminderText(env, settings, invoice, kind = "reminder") {
   const number = invoiceNumber(invoice.seq);
   if (kind === "receipt") return `${firstName(invoice)}\n\nThank you! We've received your payment and invoice ${number} (${money(invoice.total_pence)}) is paid in full. Your receipt is below.\n\nIt was a pleasure working on your music. We'd love to have you back in the studio for the next one.`;
+  // (after the session, not yet past due: the thank-you, with the full amount and its due date)
+  const today = ukToday();
+  const shown = publicInvoice(env, invoice, today);
+  if (stageOf(shown, today) === "balance" && afterSession(shown, today)) return [firstName(invoice), ...stageMessage(shown, stageSums(shown, [], "balance", today), "balance", settings, today).paragraphs].join("\n\n");
   const balance = invoice.total_pence - invoice.paid_pence;
   return `${firstName(invoice)}\n\nJust a friendly reminder that invoice ${number} for ${money(balance)}${invoice.paid_pence ? " (what's left of it)" : ""} was due on ${dayText(invoice.due_date)}. If you've already paid, thank you, and please ignore this.`;
 }
@@ -929,6 +947,7 @@ export async function draftReminder(env, by, { invoiceId, body, kind = "reminder
   const settings = await readSettings(env);
   const text = cleanText(body, 4000) || reminderText(env, settings, invoice, kind);
   if (text.length < 10) return fail(400, "body: write the reminder (at least a sentence).");
+  if (PLACEHOLDER.test(text)) return fail(400, `Fill in ${text.match(PLACEHOLDER)[0]} first: the message still has a gap in square brackets.`);
   const now = nowIso();
   const row = await env.DB.prepare("INSERT INTO invoice_reminders (invoice_id, kind, body, status, created_by, created_at, updated_at) VALUES (?, ?, ?, 'pending_approval', ?, ?, ?) RETURNING id")
     .bind(id, kind, text, String(by), now, now)
@@ -976,12 +995,7 @@ export async function decideReminder(env, me, { id, approve }) {
   const today = ukToday();
   const stage = receipt ? "paid" : stageOf(publicInvoice(env, invoice, today), today);
   const email = invoiceMail(env, settings, invoice, await invoicePayments(env, invoice.id), stage, { greeting, paragraphs });
-  const number = invoiceNumber(invoice.seq);
-  const subject = receipt
-    ? `Receipt for invoice ${number} from ${settings.business.name}: paid in full, thank you`
-    : stage === "overdue"
-      ? `Reminder: invoice ${number} from ${settings.business.name} is past due`
-      : `Reminder: invoice ${number} from ${settings.business.name}`;
+  const subject = stageSubject(env, settings, invoice, stage, today);
   const result = await sendStudioEmail(env, {
     to: [invoice.bill_email],
     from: invoiceFrom(env),
@@ -1448,7 +1462,7 @@ export async function handleMoneyForStaff(request, env, me, route) {
       return pageResponse(invoiceDocument(invoice, payments, stage, settings, today, options), nonce, 200, true);
     }
     const sums = stageSums(invoice, payments, stage, today);
-    return json({ stage, autoStage, sums, email: stageEmail(invoice, sums, stage, settings), invoice, payments });
+    return json({ stage, autoStage, sums, email: stageEmail(invoice, sums, stage, settings, today), invoice, payments });
   }
   const one = route.match(/^\/money\/invoices\/(\d{1,12})$/);
   if (one && get) {
@@ -1515,7 +1529,7 @@ export async function handleMoneyForAgent(env, pathname, body) {
   if (pathname === "/nova-agent/money/invoices/draft") {
     // Only these fields are read: a status, hash, number or approver sent along is ignored
     const input = {};
-    for (const key of ["clientId", "billName", "billEmail", "billAddress", "lines", "vatRate", "issueDate", "dueDate", "notes"]) if (body && Object.hasOwn(body, key)) input[key] = body[key];
+    for (const key of ["clientId", "billName", "billEmail", "billAddress", "lines", "vatRate", "issueDate", "dueDate", "notes", "billing"]) if (body && Object.hasOwn(body, key)) input[key] = body[key];
     return answer(await createInvoice(env, input, "agent"));
   }
   const one = pathname.match(/^\/nova-agent\/money\/invoices\/(\d{1,12})$/);
@@ -1526,7 +1540,7 @@ export async function handleMoneyForAgent(env, pathname, body) {
   const edit = pathname.match(/^\/nova-agent\/money\/invoices\/(\d{1,12})\/edit$/);
   if (edit) {
     const changes = {};
-    for (const key of ["clientId", "billName", "billEmail", "billAddress", "lines", "vatRate", "issueDate", "dueDate", "notes"]) if (body && Object.hasOwn(body, key)) changes[key] = body[key];
+    for (const key of ["clientId", "billName", "billEmail", "billAddress", "lines", "vatRate", "issueDate", "dueDate", "notes", "billing"]) if (body && Object.hasOwn(body, key)) changes[key] = body[key];
     return answer(await editInvoice(env, "agent", Number(edit[1]), changes));
   }
   if (pathname === "/nova-agent/money/expenses") {

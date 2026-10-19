@@ -200,7 +200,7 @@ describe("approval", () => {
 		expect(saved.decided_by).toBe("test-admin");
 		expect(emails).toHaveLength(1);
 		expect(emails[0].to).toEqual(["ada@example.com"]);
-		expect(emails[0].subject).toBe("Invoice NS-0001 from Novacane Studios: deposit to secure your booking");
+		expect(emails[0].subject).toBe("Your session with Novacane Studios: 50% deposit to secure your date (NS-0001)");
 		expect(emails[0].text).toContain(`${BASE}/invoice/${saved.token}`);
 		expect(emails[0].text).toContain("£349.99");
 		expect(emails[0].key).toMatch(/^invoice-\d+-/);
@@ -483,6 +483,65 @@ describe("the Invoicer", () => {
 		expect(stageEmail(inv, stageSums(inv, [], "deposit", "2026-10-05"), "deposit", {}).body).toContain("£200.00");
 		expect(stageEmail(inv, stageSums(inv, [], "overdue", "2026-10-13"), "overdue", {}).body).toContain("3 days overdue");
 		expect(stageEmail(inv, stageSums(inv, [], "paid", "2026-10-13"), "paid", {}).body).not.toContain("https://");
+	});
+
+	it("writes the deposit email before the session: excited, the date held only once the deposit's paid", () => {
+		const inv = { number: "NS-0008", status: "pending_approval", billing: "deposit", totalPence: 20000, paidPence: 0, issueDate: "2026-10-19", dueDate: "2026-10-24", billTo: { name: "Ada Client" }, lines: [{ description: "Rap Package, 2 songs (2 hr recording + 2 hr mixing)", totalPence: 20000 }] };
+		expect(stageOf(inv, "2026-10-19")).toBe("deposit");
+		const { subject, body } = stageEmail(inv, stageSums(inv, [], "deposit", "2026-10-19"), "deposit", {}, "2026-10-19");
+		expect(subject).toBe("Your session with Novacane Studios: 50% deposit to secure your date (NS-0008)");
+		expect(body).toContain("We're really excited to have you in the studio for your session (Rap Package, 2 songs) on 24 October 2026.");
+		expect(body).toContain("Your date is pencilled in, and it's yours as soon as the deposit arrives.");
+		expect(body).toContain("please pay the 50% deposit of £100.00 by 19 October 2026");
+		expect(body).toContain("The remaining £100.00 (£200.00 in all) is due on the day of your session, 24 October 2026.");
+		expect(body).toMatch(/your booking is confirmed/);
+		expect(body).not.toMatch(/\[[^\]]+\]/); // nothing left to fill in
+	});
+
+	it("writes the full-payment email after the session: thanks, how well it went, the full amount and its due date", () => {
+		const inv = { number: "NS-0009", status: "pending_approval", billing: "full", totalPence: 20000, paidPence: 0, issueDate: "2026-10-19", dueDate: "2026-11-02", billTo: { name: "Ada Client" }, lines: [{ description: "Singer Package, 1 song (2 hr recording + 2 hr mixing)", totalPence: 20000 }, { description: "Returning artist", totalPence: -2000 }] };
+		// Billed in full: no deposit stage, straight to the payment (and overdue still overdue)
+		expect(stageOf(inv, "2026-10-19")).toBe("balance");
+		expect(stageOf({ ...inv, status: "sent" }, "2026-11-03")).toBe("overdue");
+		const { subject, body } = stageEmail(inv, stageSums(inv, [], "balance", "2026-10-19"), "balance", {}, "2026-10-19");
+		expect(subject).toBe("Thank you for your session: invoice NS-0009 (£200.00)");
+		expect(body).toContain("Thank you for coming in to Novacane Studios for your session (Singer Package, 1 song).");
+		expect(body).toContain("It was a real pleasure working with you, and we're so pleased with how it went.");
+		expect(body).toContain("Invoice NS-0009 for £200.00 is due by 2 November 2026.");
+		expect(body).not.toMatch(/deposit/i);
+		expect(body).not.toMatch(/\[[^\]]+\]/);
+		// Billed with a deposit, once the session day's come: the same thank-you, with what's left after the deposit
+		const dep = { ...inv, billing: "deposit", status: "part_paid", paidPence: 10000, dueDate: "2026-10-24" };
+		const after = stageEmail(dep, stageSums(dep, [], "balance", "2026-10-24"), "balance", {}, "2026-10-24");
+		expect(after.subject).toBe("Thank you for your session: invoice NS-0009 (£100.00)");
+		expect(after.body).toContain("With your payment of £100.00 already received, the remaining £100.00 is due by 24 October 2026.");
+		// Before the session day, the balance email as it was
+		expect(stageEmail(dep, stageSums(dep, [], "balance", "2026-10-20"), "balance", {}, "2026-10-20").subject).toBe("Balance due for invoice NS-0009: £100.00");
+	});
+
+	it("keeps before or after the session on the invoice, and emails the thank-you for one billed after", async () => {
+		const inv = await write({ billing: "full" });
+		expect(inv.billing).toBe("full");
+		expect((await write()).billing).toBe("deposit");
+		expect((await portal("money/invoices", { body: { billName: "Ada", lines: LINES, billing: "later" } })).status).toBe(400);
+		const sent = await portal(`money/invoices/${inv.id}/approve`, { body: {} });
+		expect(sent.data.invoice.status).toBe("sent");
+		expect(emails[0].subject).toBe("Thank you for your session: invoice NS-0001 (£349.99)");
+		expect(emails[0].text).toContain("It was a real pleasure working with you");
+		expect(emails[0].text).not.toMatch(/deposit/i);
+		// The Invoicer's email for it
+		const staged = await portal(`money/invoices/${inv.id}/stage`);
+		expect(staged.data).toMatchObject({ stage: "balance", autoStage: "balance" });
+		expect(staged.data.email.subject).toBe("Thank you for your session: invoice NS-0001 (£349.99)");
+		// The agent can say so too, and changing it is an edit (approved again)
+		const drafted = await agent("/nova-agent/money/invoices/draft", { billName: "Bo", billEmail: "bo@example.com", lines: LINES, billing: "full" });
+		expect(drafted.data.invoice.billing).toBe("full");
+		const edited = await agent(`/nova-agent/money/invoices/${drafted.data.invoice.id}/edit`, { billing: "deposit" });
+		expect(edited.data.invoice).toMatchObject({ billing: "deposit", status: "pending_approval" });
+		// A message with a gap still to fill in is never queued
+		const gap = await portal(`money/invoices/${inv.id}/reminder`, { body: { body: "Hi [Client Name],\n\nThank you for the session." } });
+		expect(gap.status).toBe(400);
+		expect(gap.data.error).toContain("[Client Name]");
 	});
 
 	it("shows the price list from the booking rules, and an invoice at any stage (team only)", async () => {

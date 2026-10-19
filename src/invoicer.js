@@ -73,12 +73,16 @@ const OPEN = ["sent", "part_paid"];
 // Days from one UK day to another
 const daysBetween = (from, to) => Math.round((Date.parse(to + "T12:00:00Z") - Date.parse(from + "T12:00:00Z")) / 86400000);
 
+// How an invoice is billed (19 October 2026): "deposit" (before the session: a deposit secures the date,
+// the rest is due on the session day) or "full" (after the session: the whole amount, no deposit)
+export const BILLINGS = ["deposit", "full"];
+
 // invoice: money.js's publicInvoice shape
 export function stageOf(invoice, today) {
   if (!invoice) return null;
   if (invoice.paidPence >= invoice.totalPence || invoice.status === "paid") return "paid";
   if (OPEN.includes(invoice.status) && invoice.dueDate < today) return "overdue";
-  if (invoice.paidPence > 0) return "balance";
+  if (invoice.paidPence > 0 || invoice.billing === "full") return "balance";
   return "deposit";
 }
 
@@ -138,58 +142,94 @@ function howToPay(invoice, settings, pence) {
   return out;
 }
 
-// The short email for a stage: { subject, body } (plain text, to copy or to send through Money)
-export function stageEmail(invoice, sums, stage, settings) {
+// What the session was, from its lines: "Rap Package, 2 songs" (the price list's brackets left out,
+// discounts and fees skipped; three or more: the first two "and more")
+export function sessionWords(invoice) {
+  const names = (invoice?.lines || []).filter((l) => l.totalPence > 0).map((l) => String(l.description || "").replace(/\s*\([^)]*\)\s*/g, " ").trim()).filter(Boolean);
+  const unique = [...new Set(names)];
+  return unique.length > 2 ? `${unique.slice(0, 2).join(", ")} and more` : unique.join(" and ");
+}
+// After the session yet? (19 October 2026) Billed in full, it was; with a deposit, the balance is due
+// on the session day, so from that day on it has happened
+export const afterSession = (invoice, today) => invoice?.billing === "full" || Boolean(today && invoice?.dueDate && invoice.dueDate <= today);
+
+// A stage's message (19 October 2026): { subject, paragraphs }, everything in it worked out from the
+// invoice (no placeholders to fill in), for the Invoicer's email below and the emails Money sends
+// (src/money.js: the same words above the invoice itself). Two of them follow the studio's rules for
+// client emails:
+//   Deposit required (before the session): welcoming and excited; the booking is only held once the
+//     deposit is paid; the deposit and its due date, clearly; then what happens next.
+//   Full payment (after the session): warm and appreciative; thanks for the session and how well it
+//     went; the full amount and its due date.
+// The others: the balance before the session (deposit paid), overdue (firm, polite, never threatening)
+// and the receipt (thankful).
+export function stageMessage(invoice, sums, stage, settings, today = null) {
   const card = studioCard(settings);
-  const hi = `Hi ${firstName(invoice.billTo?.name)},`;
-  const pay = howToPay(invoice, settings, sums.dueNowPence);
-  const sign = `Best wishes,\nThe ${card.name} team`;
-  const para = (...p) => p.filter(Boolean).join("\n\n");
-  if (stage === "deposit")
+  const what = sessionWords(invoice);
+  const session = what ? `your session (${what})` : "your session";
+  if (stage === "deposit") {
+    const day = longDay(sums.laterBy);
     return {
-      subject: `Your booking with ${card.name}: ${sums.depositPercent}% deposit to confirm (${invoice.number})`,
-      body: para(
-        hi,
-        `Thank you for booking with ${card.name}. We can't wait to get you in the studio.`,
-        `Your booking comes to ${pounds(sums.totalPence)}. To secure your session, please pay the ${sums.depositPercent}% deposit of ${pounds(sums.dueNowPence)} today. Your date is held as soon as it arrives. The remaining ${pounds(sums.laterPence)} is due by ${longDay(sums.laterBy)}.`,
-        pay.join("\n"),
-        `Any questions, just reply to this email.`,
-        sign
-      ),
+      subject: `Your session with ${card.name}: ${sums.depositPercent}% deposit to secure your date (${invoice.number})`,
+      paragraphs: [
+        `Thank you for booking with ${card.name}! We're really excited to have you in the studio for ${session}${day ? ` on ${day}` : ""}.`,
+        `Your date is pencilled in, and it's yours as soon as the deposit arrives. To secure it, please pay the ${sums.depositPercent}% deposit of ${pounds(sums.dueNowPence)} by ${longDay(sums.dueBy)}.`,
+        `The remaining ${pounds(sums.laterPence)} (${pounds(sums.totalPence)} in all) is due ${day ? `on the day of your session, ${day}` : "on the day of your session"}.`,
+        `Once your deposit is in, your booking is confirmed and there's nothing else to do until the day. Any questions, just reply to this email.`,
+      ],
     };
+  }
+  if (stage === "balance" && afterSession(invoice, today)) {
+    const deposit = sums.paidPence > 0;
+    return {
+      subject: `Thank you for your session: invoice ${invoice.number} (${pounds(sums.dueNowPence)})`,
+      paragraphs: [
+        `Thank you for coming in to ${card.name} for ${session}.`,
+        `It was a real pleasure working with you, and we're so pleased with how it went.`,
+        deposit
+          ? `Invoice ${invoice.number} comes to ${pounds(sums.totalPence)}. With your payment of ${pounds(sums.paidPence)} already received, the remaining ${pounds(sums.dueNowPence)} is due by ${longDay(sums.dueBy)}.`
+          : `Invoice ${invoice.number} for ${pounds(sums.totalPence)} is due by ${longDay(sums.dueBy)}.`,
+        `Thank you again. We'd love to have you back for the next one, and any questions, just reply to this email.`,
+      ],
+    };
+  }
   if (stage === "balance")
     return {
       subject: `Balance due for invoice ${invoice.number}: ${pounds(sums.dueNowPence)}`,
-      body: para(
-        hi,
-        `Thank you${sums.paidPence ? ` for your payment of ${pounds(sums.paidPence)}` : ""}. Here's the balance for your session.`,
+      paragraphs: [
+        `Thank you${sums.paidPence ? ` for your payment of ${pounds(sums.paidPence)}` : ""}. Here's the balance for ${session}.`,
         `Invoice ${invoice.number} comes to ${pounds(sums.totalPence)}, so ${pounds(sums.dueNowPence)} is left to pay, due by ${longDay(sums.dueBy)}.`,
-        pay.join("\n"),
         `If anything doesn't look right, reply and we'll sort it out.`,
-        sign
-      ),
+      ],
     };
   if (stage === "overdue")
     return {
       subject: `Overdue: invoice ${invoice.number} (${pounds(sums.dueNowPence)})`,
-      body: para(
-        hi,
+      paragraphs: [
         `Our records show that invoice ${invoice.number} for ${pounds(sums.dueNowPence)} was due on ${longDay(sums.dueBy)} and is now ${sums.daysOverdue} day${sums.daysOverdue === 1 ? "" : "s"} overdue.`,
         `Please pay the outstanding balance as soon as you can.`,
-        pay.join("\n"),
         `If you've already paid, thank you, and please ignore this. If something is stopping you from paying, just reply and we'll work it out together.`,
-        sign
-      ),
+      ],
     };
   return {
     subject: `Receipt for invoice ${invoice.number}: paid in full, thank you`,
-    body: para(
-      hi,
+    paragraphs: [
       `Thank you! We've received your payment and invoice ${invoice.number} (${pounds(sums.totalPence)}) is paid in full. Here's your receipt for your records.`,
       `It was a pleasure working on your music. We'd love to have you back in the studio for the next one.`,
-      sign
-    ),
+    ],
   };
+}
+
+// The short email for a stage: { subject, body } (plain text, to copy or to send through Money): its
+// message, with how to pay after what's asked for and the studio's sign-off
+export function stageEmail(invoice, sums, stage, settings, today = null) {
+  const card = studioCard(settings);
+  const { subject, paragraphs } = stageMessage(invoice, sums, stage, settings, today);
+  const pay = stage === "paid" ? [] : howToPay(invoice, settings, sums.dueNowPence);
+  // (how to pay goes after the sums, before the closing paragraph)
+  const at = paragraphs.length - 1;
+  const body = [`Hi ${firstName(invoice.billTo?.name)},`, ...paragraphs.slice(0, at), pay.join("\n"), ...paragraphs.slice(at), `Best wishes,\nThe ${card.name} team`];
+  return { subject, body: body.filter(Boolean).join("\n\n") };
 }
 
 // ===== THE PAGE: the invoice itself, to print or save as a PDF =====
@@ -295,7 +335,7 @@ function bandSky(t, lightBand, from, to) {
 // A stage, in a few calm words, and its colour (the theme's accent, or a muted red or green)
 export const STAGE_LINES = {
   deposit: { colour: "accent", text: (s) => `Deposit due to secure your booking: ${s.depositPercent}% now, the rest by the session` },
-  balance: { colour: "ink", text: () => "Balance due: the remaining amount for your session" },
+  balance: { colour: "ink", text: (s) => (s.paidPence ? "Balance due: the remaining amount for your session" : "Payment due for your session") },
   overdue: { colour: "#A3233A", text: (s) => `Past due: this invoice was due on ${longDay(s.dueBy)}` },
   paid: { colour: "#1F7A55", text: () => "Paid in full. Thank you for recording with us" },
 };
