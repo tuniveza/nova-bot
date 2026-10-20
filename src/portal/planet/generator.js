@@ -1285,17 +1285,20 @@ export function renderPlanetSVG(planet, options = {}) {
       `<stop offset="0" stop-color="${mix(g.color, c.specular, 0.55)}" stop-opacity="${f(0.95 * g.rim)}"/><stop offset="1" stop-color="${g.color}" stop-opacity="0"/></linearGradient>`
   );
   const pulse = animate ? `<animate attributeName="opacity" values="0.82;1;0.82" dur="6s" repeatCount="indefinite"/>` : "";
-  const halo =
+  // (halo: false, the planet alone: no glow round it, for a small round button that gives it its own)
+  const halo = options.halo === false ? "" :
     `<g>${pulse}<circle r="${f(rh)}" fill="url(#${id}-halo)"/>` +
     (detail >= 1 ? `<circle r="${f(R * 1.005)}" fill="none" stroke="${g.color}" stroke-opacity="${f(0.55 * I)}" stroke-width="${f(R * 0.07)}" ${blurFilter(ctx, "glow", soft(ctx, "glow"))}/>` : "") +
     `</g>`;
   const spinT = `rotate(${f(p.rotation)})`;
+  // (spin: the surface turns slowly under its light, as a planet does; its rings and shading stay put)
+  const turn = options.spin ? `<animateTransform attributeName="transform" type="rotate" from="${f(p.rotation)}" to="${f(p.rotation + 360)}" dur="48s" repeatCount="indefinite"/>` : "";
   const sx = lx * R * 0.42, sy = ly * R * 0.42, sang = f((Math.atan2(ly, lx) * 180) / Math.PI);
   const sphere =
     `<g clip-path="url(#${id}-clip)">` +
-    `<g transform="${spinT}">${surf.under}${clouds}${rings.shadow}</g>` +
+    `<g transform="${spinT}">${turn}${surf.under}${clouds}${rings.shadow}</g>` +
     `<circle r="${f(R)}" fill="url(#${id}-limb)"/><circle r="${f(R)}" fill="url(#${id}-term)"/>` +
-    (surf.emit || aurora ? `<g transform="${spinT}">${surf.emit}${aurora}</g>` : "") +
+    (surf.emit || aurora ? `<g transform="${spinT}">${turn}${surf.emit}${aurora}</g>` : "") +
     `<circle r="${f(R)}" fill="url(#${id}-atmo)"/>` +
     `<ellipse cx="${f(sx)}" cy="${f(sy)}" rx="${f(R * 0.32)}" ry="${f(R * 0.23)}" transform="rotate(${sang} ${f(sx)} ${f(sy)})" fill="url(#${id}-spec)"/>` +
     (sh.gloss > 0 && detail >= 1 ? `<circle cx="${f(lx * R * 0.5)}" cy="${f(ly * R * 0.5)}" r="${f(R * 0.11)}" fill="url(#${id}-spec)" opacity="${f(sh.gloss)}"/>` : "") +

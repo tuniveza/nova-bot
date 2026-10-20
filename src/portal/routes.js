@@ -16,7 +16,7 @@
 //   PATCH /staff/:id            admin: role, status, name, planet, email; yourself: name, planet,
 //                               email (staff confirm it with `current`, their password)
 //   POST /staff/:id/password    admin: a new password for someone else { password } (they're signed out)
-//   GET  /staff/:id/planet.svg  the planet badge (?size=, ?animate=1)
+//   GET  /staff/:id/planet.svg  the planet badge (?size=, ?animate=1, ?halo=0: without its glow, ?spin=1: its surface turning)
 //   GET  /staff/:id/index       that person's Index view (yourself or an admin)
 // Changes from a browser must come from this site (the Origin header); apps
 // using a token are exempt (a token can't be sent by another website).
@@ -228,7 +228,7 @@ export async function handlePortal(request, env, ctx, pathname) {
     const { generatePlanet, renderPlanetSVG, describePlanet, novaTheme: nova } = await import("./planet/index.js");
     const size = Math.min(Math.max(Number(url.searchParams.get("size")) || 256, 16), 1024);
     const planet = generatePlanet(seed, nova, overrides || undefined);
-    let svg = renderPlanetSVG(planet, { size, animate: url.searchParams.get("animate") === "1", background: url.searchParams.get("background") === "1", idPrefix: `p${(await sha256(seed)).slice(0, 6).replace(/[^a-z0-9]/gi, "x")}` });
+    let svg = renderPlanetSVG(planet, { size, animate: url.searchParams.get("animate") === "1", background: url.searchParams.get("background") === "1", halo: url.searchParams.get("halo") !== "0", spin: url.searchParams.get("spin") === "1", idPrefix: `p${(await sha256(seed)).slice(0, 6).replace(/[^a-z0-9]/gi, "x")}` });
     // The title (alt text) says whose planet it is, its name and what it is
     if (row) {
       const xml = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
