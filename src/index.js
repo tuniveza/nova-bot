@@ -70,6 +70,7 @@ import { sendCalendarReminders } from "./calendar/reminders.js";
 import { syncClientsOnSchedule } from "./clients.js";
 import { campaignsOnSchedule, handleUnsubscribe } from "./campaigns.js";
 import { handleSocialMedia, socialOnSchedule } from "./social.js";
+import { funnelOnSchedule } from "./funnel.js";
 import { googleOnSchedule } from "./google/index.js";
 import { relayWithDrive } from "./google/relay.js";
 import { handleInvoicePage } from "./money.js";
@@ -741,6 +742,9 @@ export default {
         // Social posts (src/social.js): approved ones whose time has come go out (Instagram videos
         // carry on until they're ready); every hour, results, followers and new comments from Meta
         socialOnSchedule(env, at).catch((err) => console.log("Social cron failed:", err?.name)),
+        // The outreach funnel (src/funnel.js): the next approved first email, when the warm-up allows;
+        // every 10 minutes, replies and bounces in their Gmail threads
+        funnelOnSchedule(env, at).catch((err) => console.log("Funnel cron failed:", err?.name)),
         // Google (src/google/): Calendar both ways every 5 minutes, customers' replies, Contacts and the
         // Money sheet hourly, backups at night: one part a minute at most
         googleOnSchedule(env, at).catch((err) => console.log("Google cron failed:", err?.name)),

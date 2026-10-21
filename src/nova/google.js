@@ -321,7 +321,23 @@ export async function sendEmail(env, { to, subject, text, html, attachments = []
 
 // An email in the format Gmail's API takes (RFC 2822, UTF-8 throughout)
 // `headers`: more header lines (List-Unsubscribe, In-Reply-To, References, Message-ID)
-export function buildMime({ from, to, subject, text, html, attachments = [], replyTo, headers = {} }) {
+// plain: true sends the text alone (Content-Type: text/plain), with no HTML part or attachments
+export function buildMime({ from, to, subject, text, html, attachments = [], replyTo, headers = {}, plain = false }) {
+  if (plain) {
+    return [
+      ...(from ? [`From: ${from}`] : []),
+      `To: ${headerSafe(to)}`,
+      ...(replyTo ? [`Reply-To: ${headerSafe(replyTo)}`] : []),
+      `Subject: ${encodeHeader(subject)}`,
+      ...Object.entries(headers || {}).filter(([k, v]) => /^[A-Za-z][A-Za-z0-9-]{1,40}$/.test(k) && v).map(([k, v]) => `${k}: ${headerSafe(v)}`),
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=utf-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      wrap(base64(text || "")),
+      "",
+    ].join("\r\n");
+  }
   const boundary = (tag) => `nova-${tag}-${crypto.randomUUID()}`;
   const mixed = boundary("mixed");
   const alt = boundary("alt");

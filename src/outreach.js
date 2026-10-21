@@ -37,6 +37,7 @@ import { publicUrl } from "./nova/booking.js";
 import { emailRecipients, mailReady, sendEmail } from "./enquiries.js";
 import { sendStudioEmail } from "./google/gmail.js";
 import { campaignFrom } from "./campaigns.js";
+import { funnelByToken, stopFunnelFor } from "./funnel.js";
 
 export const KINDS = ["business", "client", "reply"];
 export const STATUSES = ["draft", "pending_approval", "approved", "rejected", "sent", "failed"];
@@ -508,6 +509,8 @@ export async function recordOptout(env, email, source, outreachId = null) {
     .bind(now, clean)
     .all();
   if (results.length) await env.DB.batch(results.map((r) => logEntry(env, r.id, "rejected", "nova", "They asked not to get emails like this")));
+  // …and nothing more from the outreach funnel (src/funnel.js)
+  await stopFunnelFor(env, clean).catch((err) => console.log(`Funnel opt-out not recorded (${err?.message})`));
   return { ok: true, email: clean, stopped: results.length };
 }
 
@@ -527,12 +530,13 @@ export async function handleNoThanks(request, env) {
   }
   const broken = () => page("That link doesn't work", "It may have been copied wrongly. To stop emails from Novacane Studios, just reply to one with “no thanks”.", "", 404);
   if (!TOKEN_PATTERN.test(token)) return broken();
-  const row = await env.DB.prepare("SELECT id, to_email FROM outreach_emails WHERE optout_token = ?").bind(token).first();
+  // (a one-to-one email's link, or a funnel email's: src/funnel.js)
+  const row = (await env.DB.prepare("SELECT id, to_email FROM outreach_emails WHERE optout_token = ?").bind(token).first()) || (await funnelByToken(env, token));
   if (!row) return broken();
   if (!press) {
     return page("Stop these emails?", "Press the button and Novacane Studios won't send you emails like this again.", `<form method="post" action="/no-thanks"><input type="hidden" name="t" value="${esc(token)}"><button type="submit">Don't email me again</button></form>`);
   }
-  await recordOptout(env, row.to_email, "The link in an email", row.id);
+  await recordOptout(env, row.to_email, "The link in an email", row.funnel ? null : row.id);
   console.log(`Outreach ${row.id}: opted out by link`);
   return page("Done", "You won't get emails like this from Novacane Studios again. Sorry to have bothered you.");
 }

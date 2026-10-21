@@ -64,6 +64,14 @@ export async function sendStudioEmail(env, msg, ref = null) {
   return result.ok ? { ...result, via: "vps" } : result;
 }
 
+// From the studio's Gmail only, no mail server behind it (the outreach funnel, src/funnel.js: its
+// replies and bounces have to come back to the Gmail thread). Throws like gmailSend.
+// -> { ok, id, threadId, messageId, via: "gmail" }
+export async function sendFromGmail(env, msg, ref) {
+  if (!(await connectedAccount(env))) throw new GoogleError("The studio's Gmail isn't connected", 409);
+  return gmailSend(env, msg, ref);
+}
+
 async function gmailSend(env, msg, ref) {
   const account = await connectedAccount(env);
   const to = Array.isArray(msg.to) ? msg.to.join(", ") : String(msg.to || "");
@@ -83,12 +91,13 @@ async function gmailSend(env, msg, ref) {
     text: msg.text,
     html: msg.html,
     headers,
+    plain: Boolean(msg.plain),
   });
   const sent = await google(env, "POST", `${GMAIL}/messages/send`, { raw: base64Url(raw), ...(thread ? { threadId: thread.google_id } : {}) });
   if (key && sent.threadId) await putLink(env, "gmail-thread", key, sent.threadId, { extra: messageId }).run();
   // Our own message: never read back as their reply
   if (sent.id) await putLink(env, "gmail-in", sent.id, sent.threadId || "", { extra: "ours" }).run();
-  return { ok: true, id: sent.id || null, via: "gmail" };
+  return { ok: true, id: sent.id || null, threadId: sent.threadId || null, messageId, via: "gmail" };
 }
 
 // ===== READING REPLIES =====
@@ -164,6 +173,11 @@ async function takeMessage(env, msg, { ref = null, account, budget }) {
     markSeen("ours");
     return 0;
   }
+  // A bounce or an away message in a funnel email's thread isn't a customer writing: src/funnel.js reads those
+  if (ref?.kind === "funnel" && looksAutomated(msg)) {
+    markSeen("auto");
+    return 0;
+  }
   const body = messageText(msg.payload) || String(msg.snippet || "").slice(0, 500);
   const at = new Date(Number(msg.internalDate) || Date.now()).toISOString();
   const now = new Date().toISOString();
@@ -173,7 +187,7 @@ async function takeMessage(env, msg, { ref = null, account, budget }) {
   const subject = header(msg, "Subject").slice(0, 200);
   if (!enquiryId) {
     // A reply about a one-to-one email or an invoice (or someone new): a new enquiry, so the team sees it
-    const what = ref?.kind === "outreach" ? "Reply to a one-to-one email" : ref?.kind === "invoice" ? "Reply about an invoice" : "Email";
+    const what = ref?.kind === "outreach" ? "Reply to a one-to-one email" : ref?.kind === "funnel" ? "Reply to a funnel email" : ref?.kind === "invoice" ? "Reply about an invoice" : "Email";
     spendDb(budget);
     const row = await env.DB.prepare(
       `INSERT INTO enquiries (created_at, name, email, subject, details, page, status, state_at, state_by) VALUES (?, ?, ?, ?, ?, 'gmail', 'new', ?, 'gmail') RETURNING id`

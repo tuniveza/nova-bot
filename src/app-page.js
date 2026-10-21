@@ -119,6 +119,18 @@
 //   POST /app/api/social/comments/:id/reject   { note? }
 //   POST /app/api/social/comments/:id/handled  { handled } -> "Dealt with" (or not)
 //     (Approve and reject need an admin with Portal open in a browser, the cookie.)
+//
+//   GET  /app/api/funnel                -> { prospects, counts, today, settings, ready, canDecide, roles, risky, pass }
+//                                       the outreach funnel (see src/funnel.js)
+//   GET  /app/api/funnel/export.csv     -> everyone on it as a CSV (Name, Email, Role, Bio, Status, Last_Sent, Message_Id…)
+//   GET  /app/api/funnel/:id            -> { prospect, log, email } (email: the text as it goes, with its footer)
+//   POST /app/api/funnel/import         { csv } -> { added, duplicates, optedOut, invalid, already }
+//   POST /app/api/funnel/draft          { ids? } -> { written, failed, left } (Claude reads and writes up to 5)
+//   POST /app/api/funnel/:id/edit       { name?, company?, bio?, role?, subject?, body? } -> back to waiting
+//   POST /app/api/funnel/:id/hold|stop|replied|remove   ({ why: "rejected" | "opted_out" } for stop)
+//   POST /app/api/funnel/pause          { paused } (anyone can pause; starting again is for an admin)
+//   POST /app/api/funnel/approve        { items: [{ id, updatedAt }] } -> into the warm-up queue (admin, cookie)
+//   POST /app/api/funnel/settings       { cap?, rampStart?, rampStep?, rampEvery?, gapMin?, gapMax?, fromHour?, toHour?, weekdaysOnly?, signoff?, pitch? } (admin, cookie)
 
 import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { askPortal } from "./portal-ask.js";
@@ -138,6 +150,7 @@ import { handleOutreachForStaff } from "./outreach.js";
 import { handleLiveForStaff, staffView } from "./livechat.js";
 import { STATES as INBOX_STATES, handleInboxForStaff, labelsInUse, stateCounts, team } from "./inbox.js";
 import { handleSocialForStaff } from "./social.js";
+import { handleFunnelForStaff } from "./funnel.js";
 import { handleMoneyForStaff } from "./money.js";
 import { handleGoogleForStaff } from "./google/index.js";
 import { handleDeskForStaff } from "./desk.js";
@@ -206,6 +219,11 @@ export async function handleApp(request, env, ctx, answer) {
   // Social posts (src/social.js): approving and rejecting are for an admin in a browser
   if (route === "/social" || route.startsWith("/social/")) {
     const answer = await handleSocialForStaff(request, env, me, route);
+    if (answer) return answer;
+  }
+  // The outreach funnel (src/funnel.js): approving, starting and its settings are for an admin in a browser
+  if (route === "/funnel" || route.startsWith("/funnel/")) {
+    const answer = await handleFunnelForStaff(request, env, me, route);
     if (answer) return answer;
   }
   // Money (src/money.js): invoices, payments and expenses; approving, voiding and settings are for an admin in a browser
