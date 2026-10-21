@@ -339,7 +339,9 @@ describe("after sending", () => {
 	it("the email's no-thanks link stops them for good", async () => {
 		await sendAll();
 		const r = await row("maya@velvetstatic.co.uk");
-		const page = await call(new Request(`${BASE}/no-thanks?t=${r.optout_token}`));
+		// Opened from the email in a browser, it's the page itself (not Nova Agent)
+		const page = await call(new Request(`${BASE}/no-thanks?t=${r.optout_token}`, { headers: { "Sec-Fetch-Dest": "document", Accept: "text/html" } }));
+		expect(page.status).toBe(200);
 		expect(page.text).toContain("Don't email me again");
 		await call(new Request(`${BASE}/no-thanks`, { method: "POST", body: new URLSearchParams({ t: r.optout_token }) }));
 		expect(await row("maya@velvetstatic.co.uk")).toMatchObject({ status: "bounced", stop_reason: "opted_out" });

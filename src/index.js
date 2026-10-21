@@ -1650,8 +1650,9 @@ function novaAgentPage(request, env, pathname) {
 // Every link a client is sent stays itself too (19 Oct 2026: the email's Pay by card and Download PDF,
 // a booking's page and pay link, and unsubscribing all went to Nova Agent when opened in a browser):
 // an invoice's page, its card payment (straight to Stripe), its PDF and its email; a booking's page and its pay
-// link; unsubscribing from a campaign; and the test-invoice preview (invoice-preview/build.sh)
-const CUSTOMER_PAGES = /^\/(book(\/.*)?|booking\/[A-Za-z0-9_-]+|pay\/[A-Za-z0-9_-]+|referral|privacy|status(\.json)?|enquiry\/stop|join(\/confirm)?|unsubscribe|invoice\/[0-9a-f]{32}(\/(pay|pdf|email))?|invoice-preview\/.*)$/;
+// link; unsubscribing from a campaign; "don't email me again" (/no-thanks, one-to-one and funnel emails; 21 Oct 2026
+// it opened Nova Agent); and the test-invoice preview (invoice-preview/build.sh)
+const CUSTOMER_PAGES = /^\/(book(\/.*)?|booking\/[A-Za-z0-9_-]+|pay\/[A-Za-z0-9_-]+|referral|privacy|status(\.json)?|enquiry\/stop|join(\/confirm)?|unsubscribe|no-thanks|invoice\/[0-9a-f]{32}(\/(pay|pdf|email))?|invoice-preview\/.*)$/;
 function panelFor(pathname) {
   const place = placeFor(pathname);
   if (place && !(place.name === "portal" && !pathname.startsWith(AGENT))) return place.open;
