@@ -13,6 +13,9 @@ import { STAFF_COOKIE } from "./sign-in.js";
 import { sha256 } from "../src/portal/auth.js";
 
 const BASE = "https://novacane-worker.test";
+// Without Claude unless a test gives a key (a .dev.vars with one would turn it on)
+const NO_AI = { ANTHROPIC_API_KEY: "" };
+const plain = () => ({ ...env, ...NO_AI });
 const ADMIN = { id: "test-admin", role: "admin", session_kind: "cookie", display_name: "Test Admin" };
 const SCOPES = "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly";
 
@@ -66,7 +69,7 @@ afterEach(() => vi.restoreAllMocks());
 
 async function call(request, extra = {}) {
 	const ctx = createExecutionContext();
-	const res = await worker.fetch(request, { ...env, ...extra }, ctx);
+	const res = await worker.fetch(request, { ...env, ...NO_AI, ...extra }, ctx);
 	await waitOnExecutionContext(ctx);
 	const text = await res.text();
 	let data = null;
@@ -97,7 +100,7 @@ const CSV = [
 	"Priya Shah,Night Bus Pod,Hosts a weekly podcast about London music,priya@nightbuspod.com",
 	"Gmail Person,Some Band,Singer in a band,someone@gmail.com",
 ].join("\n");
-const add = (csv = CSV) => importProspects(env, ADMIN, csv);
+const add = (csv = CSV) => importProspects(plain(), ADMIN, csv);
 const anyTime = { paused: false, fromHour: 0, toHour: 24, weekdaysOnly: false };
 const setSettings = (s) => env.DB.prepare("INSERT INTO settings (key, value) VALUES ('funnel_settings', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(JSON.stringify(s)).run();
 
@@ -186,7 +189,7 @@ describe("writing", () => {
 	it("without Claude: roles from keywords, spintax emails, no two subjects alike, personal mailboxes left out", async () => {
 		const many = ["Name,Company/Project,Bio/Notes,Email", ...Array.from({ length: 5 }, (_, i) => `Pro ${i},Studio${i},producer,p${i}@studio${i}.co.uk`)].join("\n");
 		await add(many + "\n" + CSV.split("\n").slice(4).join("\n"));
-		const out = await draftProspects(env, ADMIN);
+		const out = await draftProspects(plain(), ADMIN);
 		expect(out).toMatchObject({ written: 5, failed: 0 });
 		const { results } = await env.DB.prepare("SELECT * FROM funnel_prospects WHERE subject IS NOT NULL").all();
 		expect(results).toHaveLength(5);
@@ -232,7 +235,7 @@ describe("writing", () => {
 describe("approving and sending", () => {
 	it("only an admin with the browser cookie approves; what they saw must be what's saved", async () => {
 		await add();
-		await draftProspects(env, ADMIN);
+		await draftProspects(plain(), ADMIN);
 		const { data } = await portal("funnel");
 		const maya = data.prospects.find((p) => p.email === "maya@velvetstatic.co.uk");
 		const staff = await staffSignIn();
@@ -248,7 +251,7 @@ describe("approving and sending", () => {
 
 	it("sends from Gmail only, plain text with the opt-out footer, within the day's limit and a random gap", async () => {
 		await add();
-		await draftProspects(env, ADMIN);
+		await draftProspects(plain(), ADMIN);
 		await approveAll();
 		// Paused until an admin starts it
 		expect(await sendNext(env)).toBe("paused");
@@ -278,7 +281,7 @@ describe("approving and sending", () => {
 
 	it("outside the sending hours nothing goes; an email changed after approval goes back for approval", async () => {
 		await add();
-		await draftProspects(env, ADMIN);
+		await draftProspects(plain(), ADMIN);
 		await approveAll();
 		await setSettings({ ...anyTime, fromHour: 9, toHour: 10, weekdaysOnly: false });
 		const night = Date.parse("2026-10-21T23:30:00Z");
@@ -292,7 +295,7 @@ describe("approving and sending", () => {
 
 	it("Gmail saying no pauses the funnel and keeps the email in the queue", async () => {
 		await add();
-		await draftProspects(env, ADMIN);
+		await draftProspects(plain(), ADMIN);
 		await approveAll();
 		await setSettings(anyTime);
 		failGmail = true;
@@ -306,7 +309,7 @@ describe("approving and sending", () => {
 describe("after sending", () => {
 	async function sendAll() {
 		await add();
-		await draftProspects(env, ADMIN);
+		await draftProspects(plain(), ADMIN);
 		await approveAll();
 		await setSettings(anyTime);
 		let at = Date.now();
@@ -350,7 +353,7 @@ describe("after sending", () => {
 
 	it("someone in the queue who writes to the studio first is replied, and isn't emailed", async () => {
 		await add();
-		await draftProspects(env, ADMIN);
+		await draftProspects(plain(), ADMIN);
 		await approveAll();
 		await setSettings(anyTime);
 		await env.DB.prepare("INSERT INTO enquiries (created_at, name, email, subject, details, page, status) VALUES (?, 'Maya', 'Maya@VelvetStatic.co.uk', 'hi', 'hello', 'gmail', 'new')").bind(new Date(Date.now() + 1000).toISOString()).run();
@@ -377,7 +380,7 @@ describe("after sending", () => {
 describe("the numbers", () => {
 	it("the reply rate counts only people the first email went to", async () => {
 		await add();
-		await draftProspects(env, ADMIN);
+		await draftProspects(plain(), ADMIN);
 		await approveAll();
 		await setSettings(anyTime);
 		expect(await sendNext(env)).toBe("sent");
