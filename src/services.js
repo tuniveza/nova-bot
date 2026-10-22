@@ -39,6 +39,9 @@ export async function servicesStatus(env) {
   const from = pickSender(env.ENQUIRY_REPLY_FROM, env.ENQUIRY_EMAIL_FROM);
   // (a setting that holds a key, not an address: said, never shown)
   const wrong = ["ENQUIRY_REPLY_FROM", "ENQUIRY_EMAIL_FROM"].filter((k) => env[k] && !pickSender(env[k]));
+  if (env.ENQUIRY_EMAIL_TO && String(env.ENQUIRY_EMAIL_TO).split(",").some((to) => to.trim() && !pickSender(to))) wrong.push("ENQUIRY_EMAIL_TO");
+  const keyLike = wrong.some((k) => String(env[k]).split(",").some(looksLikeKey));
+  const wrongNote = wrong.length ? ` ${wrong.join(" and ")} ${wrong.length > 1 ? "aren't email addresses" : "isn't an email address"}${keyLike ? ` (${wrong.length > 1 ? "they look like a key" : "it looks like a key"} put in the wrong setting)` : ""}, so ${wrong.length > 1 ? "they aren't" : "it isn't"} used: change ${wrong.length > 1 ? "them" : "it"} on the VPS with /srv/nova/bin/set-secrets.` : "";
   const copies = emailRecipients(env);
   const [lastEmail, lastCampaign, lastPost, phones, system, google, pc] = await Promise.all([
     latest(env, "SELECT MAX(sent_at) AS at FROM enquiry_messages WHERE channel = 'email' AND status = 'sent'"),
@@ -62,8 +65,8 @@ export async function servicesStatus(env) {
       tech: "The studio's own mail server (on the VPS)",
       ready: emailIsSetUp(env) ? (from ? true : "partly") : false,
       detail: emailIsSetUp(env)
-        ? `Replies from Portal go from ${from || "hello@novacane.co.uk (set ENQUIRY_EMAIL_FROM to change it)"}. Copies of new enquiries go to ${copies.join(", ")}.${wrong.length ? ` ${wrong.join(" and ")} ${wrong.length > 1 ? "aren't email addresses" : "isn't an email address"}${wrong.some((k) => looksLikeKey(env[k])) ? " (it looks like a key put in the wrong setting)" : ""}, so it isn't used: change it on the VPS with /srv/nova/bin/set-secrets.` : ""}`
-        : "Needs the mail server (MAIL_API_URL and MAIL_KEY) and the ENQUIRY_EMAIL_TO setting.",
+        ? `Replies from Portal go from ${from || "hello@novacane.co.uk (set ENQUIRY_EMAIL_FROM to change it)"}. Copies of new enquiries go to ${copies.join(", ")}.${wrongNote}`
+        : `Needs the mail server (MAIL_API_URL and MAIL_KEY) and the ENQUIRY_EMAIL_TO setting.${wrongNote}`,
       last: lastEmail,
       test: emailIsSetUp(env),
     },

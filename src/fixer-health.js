@@ -8,7 +8,7 @@
 // never a client's name or email address.
 
 import { bankReady, cardReady, clientPage, emailReady, invoiceEmail, invoiceNumber, readSettings, ukToday } from "./money.js";
-import { mailReady } from "./enquiries.js";
+import { emailRecipients, mailReady } from "./enquiries.js";
 import { STAGES, invoiceDocument } from "./invoicer.js";
 
 const HOUR = 3600_000;
@@ -129,7 +129,7 @@ export async function fixerHealth(env, now = Date.now()) {
     return n > 10 ? `${n} tables` : fail(`the database looks empty (${n} tables)`);
   });
   await add("Nova Bot", "Enquiry emails", "server", "serious", () =>
-    mailReady(env) && String(env.ENQUIRY_EMAIL_TO || "").trim() ? "set up" : fail("New enquiries can't be emailed to the studio (the mail server or ENQUIRY_EMAIL_TO isn't set up)"),
+    mailReady(env) && emailRecipients(env).length ? "set up" : fail("New enquiries can't be emailed to the studio (the mail server or ENQUIRY_EMAIL_TO isn't set up)"),
   );
   await add("Nova Bot", "Phone alerts", "server", "minor", () => (env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY ? "set up" : fail("Phone alerts can't be sent (VAPID keys missing)")));
   await add("Nova Bot", "Google", "server", "minor", async () => {

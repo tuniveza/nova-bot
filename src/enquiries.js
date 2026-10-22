@@ -199,14 +199,15 @@ async function emailTeam(env, enquiry) {
 }
 
 export function emailIsSetUp(env) {
-  return Boolean(mailReady(env) && env.ENQUIRY_EMAIL_TO);
+  return Boolean(mailReady(env) && emailRecipients(env).length);
 }
 
+// (only real addresses: never a key put in the wrong setting)
 export function emailRecipients(env) {
   return String(env.ENQUIRY_EMAIL_TO || "")
     .split(",")
     .map((to) => to.trim())
-    .filter(Boolean);
+    .filter((to) => to.includes("@") && !looksLikeKey(to));
 }
 
 // For the "Send a test email" button on the admin page
