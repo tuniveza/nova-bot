@@ -40,7 +40,7 @@
 
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
-import { emailRecipients, mailReady, sendEmail } from "./enquiries.js";
+import { emailRecipients, mailReady, pickSender, sendEmail } from "./enquiries.js";
 import { readTime } from "./acuity/api.js";
 import { fanPage } from "./fans.js";
 
@@ -371,7 +371,7 @@ export async function editCampaign(env, by, id, input) {
 
 // The address campaigns come from (the studio's own domain, set as a secret)
 export function campaignFrom(env) {
-  return String(env.CAMPAIGN_FROM || env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || "").trim();
+  return pickSender(env.CAMPAIGN_FROM, env.ENQUIRY_REPLY_FROM, env.ENQUIRY_EMAIL_FROM);
 }
 
 // Campaigns can go: the studio's mail server and the from address

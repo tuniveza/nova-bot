@@ -34,7 +34,7 @@
 
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
-import { emailRecipients, mailReady, sendEmail } from "./enquiries.js";
+import { emailRecipients, mailReady, pickSender, sendEmail } from "./enquiries.js";
 import { sendStudioEmail } from "./google/gmail.js";
 import { pounds as poundsText, toPence } from "./clients.js";
 import { createInvoiceCheckout, stripeOffline } from "./nova/stripe.js";
@@ -561,7 +561,7 @@ export async function editInvoice(env, by, id, input) {
 // ===== AN ADMIN DECIDES (a person pressed a button in Portal; handleMoneyForStaff checks who) =====
 
 export function invoiceFrom(env) {
-  return String(env.INVOICE_FROM || env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || "").trim();
+  return pickSender(env.INVOICE_FROM, env.ENQUIRY_REPLY_FROM, env.ENQUIRY_EMAIL_FROM);
 }
 export const emailReady = (env) => Boolean(mailReady(env) && invoiceFrom(env));
 const NOT_READY = "Emails aren't set up: Nova Bot needs the studio's mail server (MAIL_API_URL, MAIL_KEY) and a from address (INVOICE_FROM, or the enquiry replies' ENQUIRY_REPLY_FROM).";

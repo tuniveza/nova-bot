@@ -237,6 +237,17 @@ export const mailKey = (env) => String(env.MAIL_KEY || "").trim();
 // The mail server is set up: where it is, and its key
 export const mailReady = (env) => Boolean(mailApiUrl(env) && mailKey(env));
 
+// The first of these that is really an email address to send from: never a key put in the wrong setting
+// (22 Oct 2026: ENQUIRY_EMAIL_FROM held a Stripe secret key, and Portal showed it as the sender)
+export const looksLikeKey = (v) => /\b(sk|rk|pk)_(live|test)_|\bwhsec_|\bsk-ant-/i.test(String(v || ""));
+export function pickSender(...values) {
+  for (const v of values) {
+    const s = String(v || "").trim();
+    if (s && s.includes("@") && !looksLikeKey(s)) return s;
+  }
+  return "";
+}
+
 export async function sendEmail(env, { subject, text, html, replyTo, to, from, headers, idempotencyKey }) {
   if (!mailReady(env)) return { ok: false, message: "The studio's mail server isn't set up (MAIL_API_URL and MAIL_KEY)." };
   try {
@@ -248,7 +259,7 @@ export async function sendEmail(env, { subject, text, html, replyTo, to, from, h
         ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       },
       body: JSON.stringify({
-        from: from || env.ENQUIRY_EMAIL_FROM || "Novacane Studios <hello@novacane.co.uk>",
+        from: pickSender(from, env.ENQUIRY_EMAIL_FROM) || "Novacane Studios <hello@novacane.co.uk>",
         to: to || emailRecipients(env),
         ...(replyTo ? { reply_to: replyTo } : {}),
         subject,

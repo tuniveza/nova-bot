@@ -17,7 +17,7 @@
 // or a retried request can't send the same reply twice. Email goes only to the enquiry's own
 // address. Times are stored in UTC; emails show dates in UK time.
 
-import { dialNumber, emailIsSetUp, emailRecipients, mobileNumber } from "./enquiries.js";
+import { dialNumber, emailIsSetUp, emailRecipients, mobileNumber, pickSender } from "./enquiries.js";
 import { sendStudioEmail } from "./google/gmail.js";
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
@@ -467,7 +467,7 @@ async function sendByEmail(env, m, attempt) {
   const result = await sendStudioEmail(env, {
     ...mail,
     to: [to],
-    from: env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || "Novacane Studios <hello@novacane.co.uk>",
+    from: pickSender(env.ENQUIRY_REPLY_FROM, env.ENQUIRY_EMAIL_FROM) || "Novacane Studios <hello@novacane.co.uk>",
     replyTo: env.ENQUIRY_REPLY_TO || emailRecipients(env)[0],
     // The mail server sends a request with the same key at most once (a retry after a failure gets a new one)
     idempotencyKey: `enquiry-reply-${m.id}-${attempt}`,

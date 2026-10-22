@@ -4,7 +4,7 @@
 // mail server and it's set up. Only names, plain addresses the studio chose (the email "from" and
 // where copies go) and yes/no are shown: never a key or a secret's value.
 
-import { emailIsSetUp, emailRecipients, sendEmail } from "./enquiries.js";
+import { emailIsSetUp, emailRecipients, looksLikeKey, pickSender, sendEmail } from "./enquiries.js";
 import { bookingSystem } from "./mode.js";
 import { googleReady } from "./nova/google.js";
 import { stripeReady } from "./nova/stripe.js";
@@ -36,7 +36,9 @@ async function pcConnected(env) {
 // The list Portal shows. ready: true (working), false (not set up) or "partly"; detail: a
 // sentence about how it's set up; last: when it last did something (UTC), if that's known.
 export async function servicesStatus(env) {
-  const from = env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || "";
+  const from = pickSender(env.ENQUIRY_REPLY_FROM, env.ENQUIRY_EMAIL_FROM);
+  // (a setting that holds a key, not an address: said, never shown)
+  const wrong = ["ENQUIRY_REPLY_FROM", "ENQUIRY_EMAIL_FROM"].filter((k) => env[k] && !pickSender(env[k]));
   const copies = emailRecipients(env);
   const [lastEmail, lastCampaign, lastPost, phones, system, google, pc] = await Promise.all([
     latest(env, "SELECT MAX(sent_at) AS at FROM enquiry_messages WHERE channel = 'email' AND status = 'sent'"),
@@ -60,7 +62,7 @@ export async function servicesStatus(env) {
       tech: "The studio's own mail server (on the VPS)",
       ready: emailIsSetUp(env) ? (from ? true : "partly") : false,
       detail: emailIsSetUp(env)
-        ? `Replies from Portal go from ${from || "hello@novacane.co.uk (set ENQUIRY_EMAIL_FROM to change it)"}. Copies of new enquiries go to ${copies.join(", ")}.`
+        ? `Replies from Portal go from ${from || "hello@novacane.co.uk (set ENQUIRY_EMAIL_FROM to change it)"}. Copies of new enquiries go to ${copies.join(", ")}.${wrong.length ? ` ${wrong.join(" and ")} ${wrong.length > 1 ? "aren't email addresses" : "isn't an email address"}${wrong.some((k) => looksLikeKey(env[k])) ? " (it looks like a key put in the wrong setting)" : ""}, so it isn't used: change it on the VPS with /srv/nova/bin/set-secrets.` : ""}`
         : "Needs the mail server (MAIL_API_URL and MAIL_KEY) and the ENQUIRY_EMAIL_TO setting.",
       last: lastEmail,
       test: emailIsSetUp(env),
@@ -182,7 +184,7 @@ export async function testEmailToMe(env, me) {
   await env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(key, new Date().toISOString()).run();
   const result = await sendEmail(env, {
     to: [to],
-    from: env.ENQUIRY_REPLY_FROM || env.ENQUIRY_EMAIL_FROM || undefined,
+    from: pickSender(env.ENQUIRY_REPLY_FROM, env.ENQUIRY_EMAIL_FROM) || undefined,
     subject: "Test email from Portal",
     text: `This is a test from Portal's "How it works" page, sent by the studio's own mail server. If you're reading this, emails from Nova are working.`,
   });
