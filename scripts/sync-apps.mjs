@@ -60,6 +60,7 @@ const copies = [
   ["web/fixer/", "../public/fixer/", "the Fixer"],
   ["web/computer/", "../public/computer/", "Computer"],
   ["web/invoicer/", "../public/invoicer/", "Invoicer"],
+  ["web/phone/", "../public/phone/", "Nova on a phone"],
   ["web/lossless/src/", "../src/lossless/", "Lossless audio's signalling"],
 ];
 // Nova Agent's page used to be the main address (public/index.html); the main address is Nova Bot's again

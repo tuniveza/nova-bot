@@ -29,6 +29,14 @@
   Content-Security-Policy: default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'
 
 
+# Nova on a phone (/phone/, 23 Oct 2026: a separate web app for phones; the computer's is Nova Agent at /agent/).
+# Its own files only, no writing inside the page; a shared note's pictures may be on the web.
+/phone/*
+  X-Frame-Options: SAMEORIGIN
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Content-Security-Policy: default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'
+
 # Calendar and Notes (online they save in the browser; Notes can export to Google Docs)
 /calendar/*
   X-Content-Type-Options: nosniff
