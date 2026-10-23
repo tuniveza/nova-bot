@@ -53,7 +53,9 @@ describe("a panel opened on its own opens inside Nova Agent", () => {
     ["/nova", "/visualizer"],
     ["/computer", "/computer/"],
     ["/Notes", "/notes/"],
-    ["/agent/plans/missions", "pane:missions"],
+    // Missions went from Nova (23 Oct 2026): their old addresses open Quests
+    ["/agent/plans/missions", "/quests/"],
+    ["/missions", "/quests/"],
     ["/agent/helpers/manual", "manual"],
     ["/manual", "manual"],
   ])("%s → /agent/?open=%s", async (from, address) => {

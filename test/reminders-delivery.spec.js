@@ -191,7 +191,7 @@ describe("Nova Quests' reminders reach their own phones too", () => {
 		await notify({ title: "Mix the EP", message: "Starting now", source: "quest", kind: "starting", owner: "test-admin" });
 		expect(delivered).toEqual(["https://web.push.apple.com/owner"]);
 		delivered = [];
-		// A mission's news too
+		// An old Nova Agent's mission news too (Missions went from Nova: it's treated as a quest's)
 		await notify({ title: "Mission planned", message: "12 quests", source: "mission", kind: "mission", owner: "test-staff" });
 		expect(delivered).toEqual(["https://web.push.apple.com/staff"]);
 	});

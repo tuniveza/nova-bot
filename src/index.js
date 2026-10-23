@@ -785,7 +785,7 @@ export default {
     // watchdog, and "Test the chat now" (src/status.js). /status opened in a browser is the page;
     // Nova Agent's own fetch('/status') still goes to the studio PC below
     if (isStatusAddress(request, pathname)) return handleStatus(request, env);
-    // Nova Agent online: its own addresses (chat, Missions, Quests, Calendar's data, the Visualizer's
+    // Nova Agent online: its own addresses (chat, Quests, Calendar's data, the Visualizer's
     // feeds) go to the studio PC over its link (src/agent-relay.js)
     // (a social post's picture or a receipt comes from Google Drive when the PC is off: src/google/relay.js)
     if (isRelayed(pathname)) return relayWithDrive(request, env, ctx, handleRelay);
@@ -1543,7 +1543,8 @@ const AGENT = "/agent/";
 // Every place's addresses: its own, with its group in it (/agent/tools/fixer: what Nova Agent shows in
 // the address bar while it's open), /agent/<name>, and the short one, like the website's (/fixer;
 // /calender and other spellings people type too). open: what Nova Agent opens (a panel's address,
-// or pane:chat, pane:missions, manual).
+// or pane:chat, manual). Missions went from Nova on 23 Oct 2026: their old addresses (/missions,
+// /agent/plans/missions) open Quests, where their quests are.
 export const PLACES = [
   { name: "portal", group: "apps", open: "/portal/" },
   { name: "agent", group: "apps", open: "pane:chat", also: ["chat"] },
@@ -1551,8 +1552,7 @@ export const PLACES = [
   { name: "notes", group: "apps", open: "/notes/", also: ["note"] },
   { name: "board", group: "apps", open: "/board/", also: ["boards"] },
   { name: "index", group: "apps", open: "/app/memory/", also: ["memory"] },
-  { name: "quests", group: "plans", open: "/quests/", also: ["quest"] },
-  { name: "missions", group: "plans", open: "pane:missions", also: ["mission"] },
+  { name: "quests", group: "plans", open: "/quests/", also: ["quest", "missions", "mission"] },
   { name: "fixer", group: "tools", open: "/fixer/", also: ["fix"] },
   { name: "computer", group: "tools", open: "/computer/", also: ["vps"] },
   { name: "lossless", group: "tools", open: "/lossless/" },

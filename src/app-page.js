@@ -294,16 +294,17 @@ export async function handleApp(request, env, ctx, answer) {
 
 // ===== NOVA QUESTS =====
 
-// A tap on a quest or mission in Portal, passed on to Nova Agent
-const QUEST_ACTIONS = ["done", "start", "skip", "reopen", "snooze", "finish", "pause", "resume", "mode"];
+// A tap on a quest in Portal, passed on to Nova Agent (Missions went from Nova on 23 Oct 2026:
+// a tap on one, or a mission's pause or resume, is turned away like anything else unknown)
+const QUEST_ACTIONS = ["done", "start", "skip", "reopen", "snooze", "finish", "mode"];
 // How a quest is going (Nova Agent's MODES): Portal's mode chip
 const QUEST_MODES = ["waiting", "soon", "working", "nearly", "longer", "questions", "done"];
 async function questAction(request, env, me) {
   const body = await readJson(request);
   const id = String(body.id || "").replace(/[^\w-]/g, "").slice(0, 64);
   const action = String(body.action || "");
-  const kind = body.kind === "mission" ? "mission" : "quest";
-  if (!id || !QUEST_ACTIONS.includes(action)) return json({ error: "That isn't something Nova Agent can do" }, 400);
+  const kind = "quest";
+  if (!id || !QUEST_ACTIONS.includes(action) || (body.kind !== undefined && body.kind !== kind)) return json({ error: "That isn't something Nova Agent can do" }, 400);
   const minutes = Math.min(Math.max(Number(body.minutes) || 15, 1), 1440);
   // The session it was tapped on, so a late or repeated "done" can't count against the next one
   const session = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(body.session) ? body.session : undefined;

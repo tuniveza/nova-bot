@@ -200,9 +200,9 @@ export async function listAlerts(env) {
 
 // What an alert is about, for its label in the Alerts tab
 export function alertKind(n) {
-  // Sent by Nova Agent: its quests, missions, and its own news
-  if (n.title.startsWith("Quest: ")) return "quest";
-  if (n.title.startsWith("Mission: ")) return "mission";
+  // Sent by Nova Agent: its quests, and its own news (an old "Mission: " alert, from before
+  // Missions went from Nova, counts as a quest's)
+  if (n.title.startsWith("Quest: ") || n.title.startsWith("Mission: ")) return "quest";
   // A test notification
   if (/\btest\b/i.test(n.title)) return "test";
   // A booking made in Acuity, or with Nova Bot's own booking system

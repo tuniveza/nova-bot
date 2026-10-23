@@ -32,7 +32,7 @@ export const SCOPES = [
   "https://www.googleapis.com/auth/drive.file",
   // The studio's Gmail as Enquiries' inbox: a "Nova" label on what came in, archived when it's done
   "https://www.googleapis.com/auth/gmail.modify",
-  // Missions and quests ⇄ a "Nova quests" list in Google Tasks
+  // Quests ⇄ a "Nova quests" list in Google Tasks
   "https://www.googleapis.com/auth/tasks",
   // Reading the studio's Drive (Agent's search, opening a Google Doc in Notes); nothing is changed
   "https://www.googleapis.com/auth/drive.readonly",

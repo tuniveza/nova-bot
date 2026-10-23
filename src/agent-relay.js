@@ -1,4 +1,4 @@
-// Nova Agent online: its chat, Missions, Quests, Calendar and Visualizer, from the studio PC.
+// Nova Agent online: its chat, Quests, Calendar and Visualizer, from the studio PC.
 //
 // Nova Agent runs on the studio PC, which can't be reached from the internet. So the PC dials
 // out: it opens a WebSocket to /nova-agent/link with its key (AGENT_NOVA_KEY), and keeps it open.
@@ -37,8 +37,8 @@ export const RELAYED = [
   // Each person's own Agent conversation, kept on the PC (who's asking goes with every request)
   { methods: ["GET"], path: /^\/chat\/history$/ },
   { methods: ["POST"], path: /^\/actions\/chat\/(clear|adopt)$/ },
-  { methods: ["POST"], path: /^\/actions\/(chat|missions|quests|blocks|rhythm|replan)$/ },
-  { methods: ["POST"], path: /^\/actions\/(missions|quests)\/[\w-]+(\/(refine|export))?$/ },
+  { methods: ["POST"], path: /^\/actions\/(chat|quests|blocks|rhythm|replan)$/ },
+  { methods: ["POST"], path: /^\/actions\/quests\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/actions\/files\/[\w-]+\/remove$/ },
   { methods: ["GET"], path: /^\/files\/(list|[\w-]+\/[^/]+)$/ },
   { methods: ["GET", "PUT"], path: /^\/calendar-api\/data$/ },

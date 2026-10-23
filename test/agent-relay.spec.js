@@ -65,7 +65,11 @@ describe("which addresses go to the PC", () => {
     expect(relayRule("GET", "/quests/state")).toBeTruthy();
     expect(relayRule("POST", "/actions/chat")).toBeTruthy();
     expect(relayRule("POST", "/actions/quests/q-123")).toBeTruthy();
-    expect(relayRule("POST", "/actions/missions/m-1/refine")).toBeTruthy();
+    // Missions went from Nova (23 Oct 2026): their addresses aren't passed on any more
+    expect(relayRule("POST", "/actions/missions")).toBeNull();
+    expect(relayRule("POST", "/actions/missions/m-1")).toBeNull();
+    expect(relayRule("POST", "/actions/missions/m-1/refine")).toBeNull();
+    expect(relayRule("POST", "/actions/quests/q-123/refine")).toBeNull();
     expect(relayRule("PUT", "/calendar-api/data")).toBeTruthy();
     // Board: each person's boards and what's dropped on them (never another file of the PC's)
     expect(relayRule("GET", "/board-api/boards")).toBeTruthy();
@@ -93,10 +97,10 @@ describe("which addresses go to the PC", () => {
     expect(relayRule("POST", "/actions/chat/adopt")).toBeTruthy();
     expect(relayRule("POST", "/chat/history")).toBeNull();
     expect(relayRule("POST", "/actions/chat/other")).toBeNull();
-    // Files Nova Agent wrote: the list, one to read, removing one; a mission saved as a file
+    // Files Nova Agent wrote: the list, one to read, removing one
     expect(relayRule("GET", "/files/list")).toBeTruthy();
     expect(relayRule("POST", "/actions/files/f-1/remove")).toBeTruthy();
-    expect(relayRule("POST", "/actions/missions/m-1/export")).toBeTruthy();
+    expect(relayRule("POST", "/actions/missions/m-1/export")).toBeNull();
     expect(relayRule("POST", "/files/abc/report.pdf")).toBeNull();
     // Pages and scripts this worker serves itself (the Visualizer's page, Calendar's sync script)
     expect(relayRule("GET", "/visualizer")).toBeNull();

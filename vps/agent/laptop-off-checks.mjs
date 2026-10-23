@@ -120,7 +120,7 @@ try {
     const s = await call("/quests/state?who=everyone");
     must(Array.isArray(s.quests), "no quests in the answer");
     questCount = s.quests.length;
-    return `${s.quests.length} quests, ${(s.missions || []).length} missions`;
+    return `${s.quests.length} quests`;
   });
 
   await check("A quest can be added and removed", async () => {

@@ -102,13 +102,13 @@ describe("alerts from Nova Agent", () => {
 		expect(await alerts()).toEqual([{ title: "Nova Agent: Can't log in", body: "Run npm run login" }]);
 	});
 
-	it("labels Quest and Mission alerts, and treats an unknown source as Nova Agent", async () => {
+	it("labels Quest alerts (an old Nova Agent's \"mission\" one too), and treats an unknown source as Nova Agent", async () => {
 		await notify({ title: "Up next at 19:30: Vocals", message: "Ready when you are.", source: "quest", kind: "starting", tag: "q1", ttl: 600 }, "agent-nova-test-key");
 		await notify({ title: "Mission complete", message: "Release the EP", source: "mission", kind: "mission", urgent: true }, "agent-nova-test-key");
 		await notify({ title: "Odd", message: "x", source: "<script>" }, "agent-nova-test-key");
 		expect(pushes).toBe(3);
 		const titles = (await alerts()).map((a) => a.title).sort();
-		expect(titles).toEqual(["Mission: Mission complete", "Nova Agent: Odd", "Quest: Up next at 19:30: Vocals"]);
+		expect(titles).toEqual(["Nova Agent: Odd", "Quest: Mission complete", "Quest: Up next at 19:30: Vocals"]);
 	});
 
 	it("rings the phone for quick repeats without filling the Alerts list", async () => {

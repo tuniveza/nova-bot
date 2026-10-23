@@ -18,10 +18,10 @@
 //                            when Acuity last said a booking changed (its webhook, or an approved change). The
 //                            wait ends early when that's newer than bookingsSeen (ISO, or "" for never).
 //   POST /nova-agent/result   { id, ok, message }   -> staff phones get the result
-//   POST /nova-agent/quests   { state }             -> Portal shows Nova Agent's missions and quests;
+//   POST /nova-agent/quests   { state }             -> Portal shows Nova Agent's quests;
 //                            replies with { actions } tapped in Portal since (also handed over with /next)
 //   POST /nova-agent/notify         { title, message, source?, kind?, tag?, ttl?, urgent?, keep? }
-//                            -> staff phones get Nova Agent's, Quest's and Mission's alerts
+//                            -> staff phones get Nova Agent's and Quest's alerts
 //
 //   POST /nova-agent/enquiries          { show? }  -> the enquiries ("new", "open", "all" or "spam")
 //   POST /nova-agent/inbox/sort         { id, state, label? } -> sorts one (new, open, waiting, done, spam;
@@ -434,25 +434,26 @@ async function reportResult(env, body) {
 
 // An alert from Nova Agent itself (e.g. "can't log in to Acuity")
 // Which Nova app an alert is from, and the name shown in front of its title
-const ALERT_SOURCES = { agent: "Nova Agent", quest: "Quest", mission: "Mission", fixer: "Fixer" };
+const ALERT_SOURCES = { agent: "Nova Agent", quest: "Quest", fixer: "Fixer" };
 
 async function sendAlert(env, body) {
   const title = typeof body.title === "string" ? body.title.trim().slice(0, 100) : "";
   const message = typeof body.message === "string" ? body.message.trim().slice(0, 1000) : "";
   if (!title) return Response.json({ error: "A title is needed" }, { status: 400 });
   // How the phone should show it (anything missing or odd falls back to a plain Nova Agent alert)
-  const source = Object.hasOwn(ALERT_SOURCES, body.source) ? body.source : "agent";
+  // (a Nova Agent from before Missions went may still send "mission": it's someone's own, like a quest's)
+  const source = body.source === "mission" ? "quest" : Object.hasOwn(ALERT_SOURCES, body.source) ? body.source : "agent";
   const kind = typeof body.kind === "string" ? body.kind.replace(/[^a-z-]/g, "").slice(0, 20) : "";
   const tag = typeof body.tag === "string" ? body.tag.replace(/[^\w-]/g, "").slice(0, 64) : "";
   const ttl = Math.min(Math.max(Number(body.ttl) || 86400, 60), 86400);
   const style = { source, kind, tag: tag ? `${source}-${tag}` : "", ttl, urgent: body.urgent === true };
   // `keep: false` (quick repeats): ring the phone but leave it out of the Alerts list
-  // Quest and mission reminders are someone's own: the phones the quest picked, or else its
+  // Quest reminders are someone's own: the phones the quest picked, or else its
   // owner's (`owner`, the staff id Nova Agent sends), never anyone else's. Without an owner (a Nova
   // Agent from before, or one that doesn't know who it works for yet): the studio owner's.
   // Nova Agent's own alerts (Acuity problems) still go to every phone.
   let to = null;
-  if (source === "quest" || source === "mission") {
+  if (source === "quest") {
     const phones = Array.isArray(body.phones) ? body.phones.filter((x) => typeof x === "string" && /^[0-9a-f]{12}$/.test(x)).slice(0, 10) : [];
     to = { phones, staff: await reminderOwner(env, body.owner) };
   }
@@ -468,7 +469,7 @@ async function sendAlert(env, body) {
   return Response.json({ ok: true, phones: delivered });
 }
 
-// Whose phones a quest or mission reminder goes to: its owner, or (none given) the studio owner
+// Whose phones a quest reminder goes to: its owner, or (none given) the studio owner
 export async function reminderOwner(env, owner) {
   const id = typeof owner === "string" ? owner.toLowerCase().trim() : "";
   if (/^[a-z0-9_-]{1,64}$/.test(id) && id !== "owner") return [id];
@@ -477,7 +478,7 @@ export async function reminderOwner(env, owner) {
 }
 
 // ===== NOVA QUESTS IN STUDIO =====
-// Nova Agent keeps its plan (missions, quests, pulses) here, so Portal can
+// Nova Agent keeps its plan (quests, pulses) here, so Portal can
 // show it; taps in Portal (Done, Start, Not now...) wait here until Nova
 // Agent next checks in, usually within a second.
 
@@ -497,9 +498,10 @@ async function saveQuests(env, body) {
 }
 
 // What Portal shows: the latest plan, when it came, and whether Nova Agent is online.
-// With `me` (the signed-in person): their own missions and quests; `who: "everyone"` shows an
-// admin everyone's (each says whose it is). Quests and missions with no owner (from a Nova Agent
-// before owners) are the studio owner's.
+// With `me` (the signed-in person): their own quests; `who: "everyone"` shows an admin everyone's
+// (each says whose it is). Quests with no owner (from a Nova Agent before owners) are the studio
+// owner's. Missions went from Nova on 23 Oct 2026: a plan saved by a Nova Agent from before that
+// still has them, and they're left out.
 export async function questsForPortal(env, me = null, who = "mine") {
   const { results } = await env.DB.prepare("SELECT key, value FROM settings WHERE key IN (?, 'agent_nova_seen')").bind(QUESTS_KEY).all();
   const setting = Object.fromEntries(results.map((row) => [row.key, row.value]));
@@ -507,6 +509,10 @@ export async function questsForPortal(env, me = null, who = "mine") {
   try {
     saved = JSON.parse(setting[QUESTS_KEY] || "null") || saved;
   } catch {}
+  if (saved.state && typeof saved.state === "object" && "missions" in saved.state) {
+    const { missions: _gone, ...rest } = saved.state;
+    saved = { ...saved, state: rest };
+  }
   const seen = setting.agent_nova_seen ? Date.parse(setting.agent_nova_seen) : 0;
   const online = Date.now() - seen < ONLINE_MINUTES * 60000;
   if (!me) return { ...saved, online };
@@ -524,7 +530,6 @@ export async function questsForPortal(env, me = null, who = "mine") {
   const own = st.people && st.people[me.id];
   out.state = {
     ...st,
-    missions: list(st.missions).filter(shown),
     quests: list(st.quests).filter(shown),
     pulses: list(st.pulses).filter(shown),
     current: own ? own.current || null : st.current && mine(st.current) ? st.current : null,

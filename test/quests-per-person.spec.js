@@ -1,5 +1,5 @@
 // P0-4: Portal's Quests are each person's own. Nova Agent sends everyone's plan with whose each
-// quest and mission is; Portal shows the signed-in person theirs, and an admin can switch to
+// quest is; Portal shows the signed-in person theirs, and an admin can switch to
 // everyone's. Taps say who tapped (Nova Agent lets staff change only their own).
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -23,7 +23,8 @@ async function call(path, { cookie, body, key } = {}) {
 	return { status: res.status, data: await res.json().catch(() => ({})) };
 }
 
-// What Nova Agent sends: everyone's, each with its owner (and an old one with none)
+// What Nova Agent sends: everyone's, each with its owner (and an old one with none). The missions
+// are what a Nova Agent from before Missions went still sends: Portal leaves them out.
 const plan = {
 	now: "2026-10-11T09:00",
 	people: {
@@ -59,13 +60,13 @@ beforeEach(async () => {
 const titles = (list) => list.map((x) => x.title).sort();
 
 describe("Portal's Quests: each person's own", () => {
-	it("a member of staff sees only their own quests, missions, pulses and 'now'", async () => {
+	it("a member of staff sees only their own quests, pulses and 'now' (and no missions)", async () => {
 		const { status, data } = await call("/app/api/quests", { cookie: STAFF_ONLY_COOKIE });
 		expect(status).toBe(200);
 		expect(data.scope).toBe("mine");
 		expect(data.canSeeEveryone).toBe(false);
 		expect(titles(data.state.quests)).toEqual(["Edit the video", "Practise scales"]);
-		expect(titles(data.state.missions)).toEqual(["Learn piano"]);
+		expect(data.state).not.toHaveProperty("missions");
 		expect(titles(data.state.pulses)).toEqual(["Drink water"]);
 		expect(data.state.current.title).toBe("Practise scales");
 		expect(titles(data.state.next)).toEqual(["Edit the video"]);
@@ -88,7 +89,7 @@ describe("Portal's Quests: each person's own", () => {
 		const all = await call("/app/api/quests?who=everyone", { cookie: STAFF_COOKIE });
 		expect(all.data.scope).toBe("everyone");
 		expect(titles(all.data.state.quests)).toEqual(["Edit the video", "From before owners", "Mix the EP", "Practise scales"]);
-		expect(titles(all.data.state.missions)).toEqual(["Learn piano", "Release the EP"]);
+		expect(all.data.state).not.toHaveProperty("missions");
 		// "Now" is still their own
 		expect(all.data.state.current.title).toBe("Mix the EP");
 	});
@@ -97,5 +98,12 @@ describe("Portal's Quests: each person's own", () => {
 		expect((await call("/app/api/quests/action", { cookie: STAFF_ONLY_COOKIE, body: { id: "s1", action: "done" } })).status).toBe(200);
 		const queued = JSON.parse((await env.DB.prepare("SELECT value FROM settings WHERE key = 'nova_quest_actions'").first("value")) || "[]");
 		expect(queued).toEqual([expect.objectContaining({ id: "s1", action: "done", by: "test-staff", admin: false })]);
+	});
+
+	it("a tap on a mission (Missions went from Nova) is turned away, and nothing is queued", async () => {
+		for (const body of [{ kind: "mission", id: "m-staff", action: "resume" }, { id: "s1", action: "pause" }]) {
+			expect((await call("/app/api/quests/action", { cookie: STAFF_ONLY_COOKIE, body })).status).toBe(400);
+		}
+		expect(await env.DB.prepare("SELECT value FROM settings WHERE key = 'nova_quest_actions'").first("value")).toBeNull();
 	});
 });
