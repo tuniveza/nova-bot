@@ -1667,9 +1667,9 @@ function onlyNovaAgent(request, env, pathname) {
   if (request.method !== "GET" && request.method !== "HEAD") return null;
   if (request.headers.get("Sec-Fetch-Dest") !== "document") return null;
   if (pathname === AGENT || CUSTOMER_PAGES.test(pathname) || NOT_PAGES.test(pathname)) return null;
-  // Nova Agent at phone sizes, on a computer (its own page, phones.html, from Nova Agent's repo)
-  if (pathname === "/agent/phones.html") return null;
-  if (pathname === "/phones" || pathname === "/agent/phones") return Response.redirect(new URL("/agent/phones.html", request.url).toString(), 302);
+  // (the phone emulator page was retired on 23 Oct 2026, when Nova Phone and Nova Desk became the only apps: its
+  // old addresses open Nova Phone)
+  if (pathname === "/phones" || pathname === "/agent/phones" || pathname === "/agent/phones.html") return Response.redirect(new URL("/phone/", request.url).toString(), 302);
   // Nova on a phone: its own web app (23 Oct 2026, a separate one for each platform), at /phone/
   if (pathname === "/phone/" || pathname === "/phone/index.html") return null;
   if (pathname === "/phone") return Response.redirect(new URL("/phone/" + new URL(request.url).search, request.url).toString(), 302);
