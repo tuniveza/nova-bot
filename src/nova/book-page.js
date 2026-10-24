@@ -333,8 +333,9 @@ ${b.status === "booked" && !canMove ? `<p class="small">It's less than ${CUSTOME
 
 const BOOK_STYLE = `
   main.card { max-width: 640px; margin: 5vh auto; padding: 34px 28px; background: #150d1f; border-radius: 40px 40px 56px 40px; box-shadow: 0 20px 60px rgba(113, 4, 57, 0.6); }
-  .kicker { margin: 0; font-size: 12px; letter-spacing: 0.3em; text-transform: uppercase; color: #ff8cc6; }
-  h1 { font-size: clamp(22px, 4vw, 30px); margin: 6px 0 14px; line-height: 1.1; }
+  /* (the titles, the buttons and the line at the bottom sit in the middle: the user, 24 Oct 2026) */
+  .kicker { margin: 0; text-align: center; font-size: 12px; letter-spacing: 0.3em; text-transform: uppercase; color: #ff8cc6; }
+  h1 { font-size: clamp(22px, 4vw, 30px); margin: 6px 0 14px; line-height: 1.1; text-align: center; text-wrap: balance; }
   h2 { font-family: Archivo, "Arial Black", sans-serif; font-stretch: 125%; font-weight: 900; text-transform: uppercase; color: #fff; font-size: 17px; margin: 26px 0 10px; }
   p { line-height: 1.55; }
   .small { font-size: 14px; color: rgba(229, 194, 224, 0.75); }
@@ -342,7 +343,7 @@ const BOOK_STYLE = `
   .rows { width: 100%; border-collapse: collapse; margin: 6px 0 18px; }
   .rows th { text-align: left; font-weight: 500; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(229, 194, 224, 0.7); padding: 9px 12px 9px 0; vertical-align: top; width: 32%; border-bottom: 1px solid rgba(229, 194, 224, 0.14); }
   .rows td { padding: 9px 0; color: #fff; border-bottom: 1px solid rgba(229, 194, 224, 0.14); }
-  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 4px; }
+  .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 8px 0 4px; }
   .btn.danger { background: transparent; border: 1px solid #e5484d; color: #ffb1b4; }
   .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
   label { display: block; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; margin: 14px 0 6px; color: rgba(229, 194, 224, 0.85); }
@@ -370,7 +371,7 @@ const BOOK_STYLE = `
   .msg { min-height: 1.4em; font-weight: 600; }
   .msg.error { color: #ff8fbf; }
   .summary { padding: 14px 16px; border-radius: 16px; background: rgba(255, 95, 168, 0.1); border: 1px solid rgba(255, 95, 168, 0.35); }
-  .foot { margin-top: 28px; }
+  .foot { margin-top: 28px; text-align: center; }
   [hidden] { display: none !important; }
   @media (max-width: 560px) { main.card { margin: 0; min-height: 100vh; border-radius: 0; padding: 26px 18px; } .grid2 { grid-template-columns: 1fr; } }
 `;
