@@ -1,5 +1,5 @@
 // Gmail: approved emails go from the studio's Gmail, and customers' replies come back into
-// Enquiries (Portal → Admin → Google → "Send approved emails from Gmail", "Customers' replies").
+// Enquiries (Portal → Admin → Google → "Send from Gmail", "Replies into Enquiries").
 //
 // Sending: sendStudioEmail() sends the emails a person approved (enquiry replies, one-to-one
 // emails, invoices and their reminders). With MAIL_FIRST=vps the studio's own mail server sends

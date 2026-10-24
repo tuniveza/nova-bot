@@ -1298,7 +1298,7 @@ export async function handleFunnelForStaff(request, env, me, route) {
     const s = await readSettings(env);
     if (body.paused === false) {
       if (!canDecide(me)) return json({ error: ADMIN_ONLY }, 403);
-      if (!(await gmailReady(env))) return json({ error: "Connect the studio's Gmail first (Portal → Admin → Google, with \"Send approved emails from Gmail\" on): the funnel only sends from Gmail." }, 409);
+      if (!(await gmailReady(env))) return json({ error: "Connect the studio's Gmail first (Portal → Admin → Google, with \"Send from Gmail\" on): the funnel only sends from Gmail." }, 409);
       await saveSettings(env, { ...s, paused: false, pausedWhy: null });
     } else await saveSettings(env, { ...s, paused: true, pausedWhy: `Paused by ${me.display_name || "the team"}` });
     return json({ ok: true, settings: await readSettings(env) });

@@ -10,22 +10,24 @@ import { canUse, connectedAccount, googleReady, offline } from "../nova/google.j
 
 // ===== OPTIONS =====
 
-// Every part, its default, and the permission it needs (FEATURE_SCOPES in nova/google.js)
+// Every part, its default, and the permission it needs (FEATURE_SCOPES in nova/google.js). Names short enough for one
+// line on a phone held upright, the rest of the old words at the start of the help line (24 Oct 2026: rules.js
+// into the base code; Nova Phone's Google switches wrapped)
 export const OPTIONS = {
   calendar: { label: "Calendar", on: true, needs: "calendar", help: "Nova's Calendar and Google Calendar, both ways." },
-  calendarPlan: { label: "Quests and music time in Google Calendar", on: false, needs: "calendar", help: "Also put Nova Agent's plan into the Novacane Studio calendar." },
-  bookings: { label: "Bookings in Google Calendar", on: true, needs: "calendar", help: "Copies of Acuity's bookings (they're still booked in Acuity)." },
-  send: { label: "Send approved emails from Gmail", on: true, needs: "send", help: "Replies, one-to-one emails, invoices and reminders go from the studio's Gmail, so they're in its Sent folder." },
-  replies: { label: "Customers' replies into Enquiries", on: true, needs: "replies", help: "Replies to those emails land back in the right enquiry." },
-  contacts: { label: "Clients in Google Contacts", on: true, needs: "contacts", help: "Under a \"Novacane clients\" label, both ways." },
-  drive: { label: "Pictures, videos and receipts in Google Drive", on: true, needs: "drive", help: "In a \"Nova Agent\" folder, so posts go out even with the studio PC off." },
-  backups: { label: "Nightly backups to Google Drive", on: true, needs: "drive", help: "Index and the PC's files, every night." },
-  sheets: { label: "Money in Google Sheets", on: true, needs: "drive", help: "A live sheet of invoices, payments and expenses for the accountant." },
-  inbox: { label: "Gmail as Enquiries' inbox", on: true, needs: "replies", help: "New customer emails to the studio's Gmail come into Enquiries (newsletters, notifications and spam stay out). With the Gmail permission they get a \"Nova\" label, and they're archived in Gmail when they're done." },
+  calendarPlan: { label: "Quests and music time", on: false, needs: "calendar", help: "Quests and music time in Google Calendar: also put Nova Agent's plan into the Novacane Studio calendar." },
+  bookings: { label: "Bookings in Calendar", on: true, needs: "calendar", help: "Bookings in Google Calendar: copies of Acuity's bookings (they're still booked in Acuity)." },
+  send: { label: "Send from Gmail", on: true, needs: "send", help: "Send approved emails from Gmail: replies, one-to-one emails, invoices and reminders go from the studio's Gmail, so they're in its Sent folder." },
+  replies: { label: "Replies into Enquiries", on: true, needs: "replies", help: "Customers' replies to those emails to those emails land back in the right enquiry." },
+  contacts: { label: "Clients in Contacts", on: true, needs: "contacts", help: "Clients in Google Contacts, under a \"Novacane clients\" label, both ways." },
+  drive: { label: "Pictures in Drive", on: true, needs: "drive", help: "Pictures, videos and receipts in Google Drive, in a \"Nova Agent\" folder, so posts go out even with the studio PC off." },
+  backups: { label: "Nightly backups", on: true, needs: "drive", help: "Nightly backups to Google Drive: Index and the PC's files, every night." },
+  sheets: { label: "Money in Sheets", on: true, needs: "drive", help: "Money in Google Sheets: a live sheet of invoices, payments and expenses for the accountant." },
+  inbox: { label: "Gmail as the inbox", on: true, needs: "replies", help: "Gmail as Enquiries' inbox: new customer emails to the studio's Gmail come into Enquiries (newsletters, notifications and spam stay out). With the Gmail permission they get a \"Nova\" label, and they're archived in Gmail when they're done." },
   meet: { label: "Google Meet links", on: true, needs: "calendar", help: "Events you tick \"Google Meet\" on in Calendar, and online-session bookings, get a Meet link." },
-  tasks: { label: "Quests in Google Tasks", on: true, needs: "tasks", help: "Quests in a \"Nova quests\" list; ticking one off in Google Tasks marks it done in Nova." },
-  docs: { label: "Notes kept in Google Docs", on: true, needs: "drive", help: "Notes you mark \"Keep in Google Docs\" stay in step with their Google Doc, both ways (the newest change wins; the other is kept as a copy)." },
-  files: { label: "Files and invoices in Drive", on: true, needs: "drive", help: "Agent's files in \"Nova Agent/Files\" and each sent invoice in \"Nova Agent/Invoices\", kept up to date." },
+  tasks: { label: "Quests in Tasks", on: true, needs: "tasks", help: "Quests in Google Tasks, in a \"Nova quests\" list; ticking one off in Google Tasks marks it done in Nova." },
+  docs: { label: "Notes in Docs", on: true, needs: "drive", help: "Notes kept in Google Docs: notes you mark \"Keep in Google Docs\" stay in step with their Google Doc, both ways (the newest change wins; the other is kept as a copy)." },
+  files: { label: "Files in Drive", on: true, needs: "drive", help: "Files and invoices in Drive: Agent's files in \"Nova Agent/Files\" and each sent invoice in \"Nova Agent/Invoices\", kept up to date." },
   youtube: { label: "YouTube", on: true, needs: "youtube", help: "The channel's numbers in Social, and YouTube as a place to post videos (uploaded only after an admin's Approve)." },
 };
 

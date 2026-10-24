@@ -552,7 +552,7 @@ describe("Portal's Admin → Google and Nova Agent's tools", () => {
 		expect(data).toMatchObject({ connected: true, account: "studio@example.com", canManage: true, hasKey: true });
 		expect(data.steps).toHaveLength(6);
 		expect(data.steps[3].copy).toContain("https://novacane-worker.test/admin/google/callback");
-		expect(data.missing).toContain("Clients in Google Contacts");
+		expect(data.missing).toContain("Clients in Contacts");
 		expect(data.parts.find((p) => p.id === "contacts").allowed).toBe(false);
 		const bad = await call("/app/api/google/key", { method: "POST", body: { clientId: "nope", clientSecret: "x" } });
 		expect(bad.status).toBe(400);
@@ -564,7 +564,7 @@ describe("Portal's Admin → Google and Nova Agent's tools", () => {
 		await env.DB.prepare("DELETE FROM settings WHERE key = 'google_scopes'").run();
 		const data = await (await call("/app/api/google")).json();
 		expect(data.connected).toBe(true);
-		expect(data.missing).toEqual(expect.arrayContaining(["Customers' replies into Enquiries", "Clients in Google Contacts", "Pictures, videos and receipts in Google Drive"]));
+		expect(data.missing).toEqual(expect.arrayContaining(["Replies into Enquiries", "Clients in Contacts", "Pictures in Drive"]));
 		expect(data.parts.find((p) => p.id === "calendar").allowed).toBe(true);
 		expect(data.steps[0].open.href).toContain("calendar-json.googleapis.com,gmail.googleapis.com,drive.googleapis.com,people.googleapis.com,sheets.googleapis.com,docs.googleapis.com");
 	});
