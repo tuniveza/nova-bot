@@ -29,6 +29,8 @@
 import { notifyPhones } from "./push.js";
 import { queueAgentJob } from "./agent-nova.js";
 import { publicUrl } from "./nova/booking.js";
+import { usesNova } from "./mode.js";
+import { makeBookingChange, checkBookingChange } from "./nova/booking-changes.js";
 import {
   AcuityError,
   acuityMessage,
@@ -97,10 +99,16 @@ async function liveAppointment(env, id) {
   return { appt };
 }
 
-// Check and tidy a proposal's details for its kind, reading Acuity where needed, and write the
-// summary. -> { payload, summary } or { status, error }. Throws an AcuityError if Acuity is
-// busy or down.
+// Check and tidy a proposal's details for its kind, and write the summary: Nova's own bookings
+// (nova/booking-changes.js), or Acuity's while the switch is on Acuity.
+// -> { payload, summary } or { status, error }.
 export async function checkProposal(env, kind, raw) {
+  if (await usesNova(env)) return checkBookingChange(env, kind, raw);
+  return checkAcuityProposal(env, kind, raw);
+}
+
+// Acuity's: reading Acuity where needed. Throws an AcuityError if Acuity is busy or down.
+async function checkAcuityProposal(env, kind, raw) {
   const input = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
   const notifyClient = input.notifyClient !== false;
 
@@ -423,13 +431,21 @@ export async function executeApproved(env, id) {
   const row = await env.DB.prepare("SELECT kind, payload FROM booking_actions WHERE id = ? AND status = 'approved'").bind(id).first();
   let outcome;
   try {
-    outcome = await carryOut(env, row.kind, JSON.parse(row.payload));
+    outcome = (await usesNova(env)) ? await makeBookingChange(env, row.kind, JSON.parse(row.payload)) : await carryOut(env, row.kind, JSON.parse(row.payload));
   } catch (err) {
     const unsure = err instanceof AcuityError && err.kind === "unreachable" && ["create", "block_add"].includes(row.kind);
+    // Google or Stripe not answering: their own words (they never hold anyone's details)
+    const outside = !(err instanceof AcuityError) && /^(Google|Stripe)\b/.test(String(err?.message || ""));
     outcome = {
       ok: false,
-      error: err instanceof AcuityError ? err.message + (unsure ? " It may or may not have been made: check Acuity before trying again." : "") : "Something went wrong carrying it out.",
+      error:
+        err instanceof AcuityError
+          ? err.message + (unsure ? " It may or may not have been made: check Acuity before trying again." : "")
+          : outside
+            ? `${String(err.message).slice(0, 200)}. Check the booking before trying again.`
+            : "Something went wrong carrying it out.",
     };
+    if (!(err instanceof AcuityError)) console.log(`Booking action ${id}: carrying it out failed (${err?.name || "error"})`);
   }
   const done = nowIso();
   await env.DB.prepare("UPDATE booking_actions SET status = ?, executed_at = ?, result = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'approved'")

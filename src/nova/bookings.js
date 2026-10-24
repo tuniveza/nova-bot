@@ -23,6 +23,8 @@ import { calendarChanged } from "./club-calendar.js";
 import { deleteEvent, insertEvent, patchEvent } from "./google.js";
 import { manageLink, moneyState, sendBookingEmail } from "./emails.js";
 import { notifyPhones } from "../push.js";
+import { clientsAfterBooking } from "../clients.js";
+import { markBookingsChanged } from "../booking-actions.js";
 import { createCheckout, expireCheckout, refund, stripeOffline, stripeReady } from "./stripe.js";
 import {
   CANCEL_NOTICE_HOURS,
@@ -142,11 +144,16 @@ export function eventFor(env, b) {
   };
 }
 
-// The calendar changed: free times are looked up afresh, and Nova Club hears straight away
+// The calendar changed: free times are looked up afresh, and Nova Club and Nova Agent (its /next
+// says when the bookings last changed) hear straight away
 async function touched(env) {
   calendarTouched();
   await calendarChanged(env).catch((err) => console.log("Couldn't mark the Nova Club calendar as changed:", err));
+  await markBookingsChanged(env).catch((err) => console.log("Couldn't note that the bookings changed:", err?.name));
 }
+
+// A booking was made or changed: the client list follows (its client and session; src/clients.js)
+const noteClient = (env, b) => clientsAfterBooking(env, b);
 
 async function syncEvent(env, b) {
   if (!b.event_id) return;
@@ -216,6 +223,7 @@ export async function createBooking(env, { type, date, time, person, source, sta
   }
 
   await saveReferral(env, b);
+  await noteClient(env, b);
   return { booking: b };
 }
 
@@ -287,6 +295,7 @@ export async function paymentReceived(env, { bookingId, amountPence, stripeId, p
     b = await getBooking(env, b.id);
     await syncEvent(env, b).catch((err) => console.log("Couldn't confirm the calendar event:", err));
     await touched(env);
+    await noteClient(env, b);
     await sendBookingEmail(env, "confirmation", b);
     await tellStaff(env, b, `New booking: ${fullName(b)}`, [`Booked on the website, ${money(amountPence)} deposit paid.`]);
     return;
@@ -371,6 +380,7 @@ export async function cancelBooking(env, b, { by, notify = true, note = "", refu
   await touched(env);
   await markReferralCancelled(env, b.id);
   let cancelled = await getBooking(env, b.id);
+  await noteClient(env, cancelled);
 
   // The money
   let moneyLine = "";
@@ -420,6 +430,7 @@ export async function moveBooking(env, b, { date, time, by, notify = true, ignor
   }
   await touched(env);
   await env.DB.prepare("UPDATE appointments SET starts_at = ?, updated_at = ? WHERE id = ?").bind(startsAt, new Date().toISOString(), b.id).run();
+  await noteClient(env, moved);
   if (notify) await sendBookingEmail(env, "moved", moved, { was });
   await tellStaff(env, moved, `Booking moved: ${fullName(b)}`, [`Moved by ${by === "customer" ? "the customer" : "staff"}. Was: ${was}`]);
   return { ok: true, message: `Moved: ${fullName(b)}'s ${b.session} is now ${when(moved)}.${notify ? " The client has been emailed." : ""}` };
@@ -435,6 +446,7 @@ export async function updateDetails(env, b, changes) {
     .run();
   const updated = await getBooking(env, b.id);
   await syncEvent(env, updated).catch((err) => console.log("Couldn't update the calendar event:", err));
+  await noteClient(env, updated);
   return updated;
 }
 
@@ -470,6 +482,7 @@ export async function changeExtras(env, b, { typeId = null, pricePence = null, p
   }
   await syncEvent(env, updated).catch((err) => console.log("Couldn't update the calendar event:", err));
   await touched(env);
+  await noteClient(env, updated);
   return { booking: updated, lines };
 }
 

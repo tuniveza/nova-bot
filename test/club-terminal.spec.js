@@ -201,74 +201,79 @@ describe("Nova Club's Tap to Pay", () => {
     }
   });
 
-  describe("linked to an Acuity session", () => {
+  describe("linked to a booking", () => {
+    // Nova's own bookings (nova/bookings.js): two today, one cancelled, one a test
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/London" });
-    // Acuity writes times as the London clock with its offset; 12:00 UTC is safe all year
-    const sessions = [
-      { id: 9001, firstName: "Kai", lastName: "Morgan", email: "kai@example.com", type: "Studio A (engineered)", datetime: `${today}T13:00:00+0100`, duration: "240", price: "120.00", amountPaid: "40.00", paid: "no", canceled: false },
-      { id: 9002, firstName: "Ash", lastName: "Lee", email: "ash@example.com", type: "Vocal booth", datetime: `${today}T18:00:00+0100`, duration: "60", price: "35.00", amountPaid: "35.00", paid: "yes", canceled: false },
-      { id: 9003, firstName: "Sam", lastName: "Ward", email: "sam@example.com", type: "Mixing", datetime: `${today}T20:00:00+0100`, duration: "60", price: "50.00", amountPaid: "0.00", paid: "no", canceled: true },
-    ];
-    const acuity = {
-      asked: [],
-      handle: async (url) => {
-        const u = new URL(url);
-        if (u.hostname !== "acuityscheduling.com") return null;
-        acuity.asked.push(u.pathname + u.search);
-        const one = u.pathname.match(/^\/api\/v1\/appointments\/(\d+)$/);
-        if (one) {
-          const a = sessions.find((x) => x.id === Number(one[1]));
-          return a ? Response.json(a) : Response.json({ status_code: 404, message: "Not found" }, { status: 404 });
-        }
-        if (u.pathname === "/api/v1/appointments") return Response.json(sessions.filter((a) => !a.canceled));
-        return Response.json([], { status: 200 });
-      },
+    const at = (hourUtc) => `${today}T${String(hourUtc).padStart(2, "0")}:00:00.000Z`;
+    let n = 0;
+    const book = async ({ first, last, email, session, start, end, price, paid = 0, status = "booked", test = 0 }) => {
+      const now = new Date().toISOString();
+      const { meta } = await env.DB.prepare(
+        `INSERT INTO bookings (token, status, source, type_id, session, duration, changeover, starts_at, ends_at, first_name, last_name, email, price_pence, deposit_pence, paid_pence, created_at, updated_at, test)
+         VALUES (?, ?, 'staff', NULL, ?, 60, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+        .bind(`club-terminal-test-token-${++n}-xxxxxxxx`, status, session, start, end, first, last, email, price, Math.round(price / 2), paid, now, now, test)
+        .run();
+      return meta.last_row_id;
     };
     const staff = { Authorization: `Bearer ${PHONE_KEY}` };
-    beforeEach(() => {
-      acuity.asked = [];
-      fakes = installFakes({ extra: [acuity] });
+    let kai, ash, sam, tester;
+    beforeEach(async () => {
+      await env.DB.prepare("DELETE FROM bookings").run();
+      await env.DB.prepare("DELETE FROM payments").run();
+      kai = await book({ first: "Kai", last: "Morgan", email: "kai@example.com", session: "Studio A (engineered)", start: at(12), end: at(16), price: 12000, paid: 4000 });
+      ash = await book({ first: "Ash", last: "Lee", email: "ash@example.com", session: "Vocal booth", start: at(17), end: at(18), price: 3500, paid: 3500 });
+      sam = await book({ first: "Sam", last: "Ward", email: "sam@example.com", session: "Mixing", start: at(19), end: at(20), price: 5000, status: "cancelled" });
+      tester = await book({ first: "Nova", last: "TEST", email: "test@example.com", session: "Mixing", start: at(20), end: at(21), price: 5000, test: 1 });
     });
 
-    it("lists today's and the coming week's sessions, with what's still due, for the studio's phones only", async () => {
+    it("lists today's and the coming week's bookings, with what's still due, for the studio's phones only", async () => {
       const refused = await call("/club/terminal/sessions?mode=test", { with: { CLUB_TERMINAL_KEY: PHONE_KEY } });
       expect(refused.status).toBe(401);
-      expect(acuity.asked).toHaveLength(0);
 
       const out = await call("/club/terminal/sessions?mode=test", { headers: staff, with: { CLUB_TERMINAL_KEY: PHONE_KEY } });
       expect(out.status).toBe(200);
       expect(out.body.sessions).toEqual([
-        expect.objectContaining({ id: 9001, name: "Kai Morgan", type: "Studio A (engineered)", pricePence: 12000, paidPence: 4000, duePence: 8000 }),
-        expect.objectContaining({ id: 9002, name: "Ash Lee", type: "Vocal booth", pricePence: 3500, paidPence: 3500, duePence: 0 }),
+        expect.objectContaining({ id: kai, name: "Kai Morgan", type: "Studio A (engineered)", start: at(12), end: at(16), pricePence: 12000, paidPence: 4000, duePence: 8000 }),
+        expect.objectContaining({ id: ash, name: "Ash Lee", type: "Vocal booth", pricePence: 3500, paidPence: 3500, duePence: 0 }),
       ]);
-      expect(acuity.asked[0]).toContain(`minDate=${today}`);
     });
 
     it("puts the client, session and time on the QR payment, and the client's email for their receipt", async () => {
-      const made = await call("/club/terminal/qr", { method: "POST", headers: staff, body: { mode: "test", amount: 8000, appointment: 9001 }, with: { CLUB_TERMINAL_KEY: PHONE_KEY } });
+      const made = await call("/club/terminal/qr", { method: "POST", headers: staff, body: { mode: "test", amount: 8000, booking: kai }, with: { CLUB_TERMINAL_KEY: PHONE_KEY } });
       expect(made.status).toBe(200);
       const form = fakes.stripe.sessions.at(-1).form;
-      expect(form["metadata[acuity_appointment]"]).toBe("9001");
-      expect(form["payment_intent_data[metadata][acuity_appointment]"]).toBe("9001");
+      expect(form["metadata[nova_booking]"]).toBe(String(kai));
+      expect(form["payment_intent_data[metadata][nova_booking]"]).toBe(String(kai));
+      // Test money is never paid against a real booking
+      expect(form["metadata[booking_id]"]).toBeUndefined();
       expect(form.customer_email).toBe("kai@example.com");
       expect(form["payment_intent_data[description]"]).toMatch(/^TEST Nova Club QR payment: Studio A \(engineered\), Kai Morgan, \w{3} \d{1,2} \w{3}, \d{2}:00$/);   // (the hour moves with the clocks)
       expect(form["line_items[0][price_data][product_data][description]"]).toContain("Kai Morgan");
     });
 
-    it("says plainly when Acuity won't answer (its API needs the Powerhouse plan)", async () => {
-      const refusing = { handle: async (url) => (new URL(url).hostname === "acuityscheduling.com" ? Response.json({ status_code: 403, message: "API access is only available on Powerhouse plans" }, { status: 403 }) : null) };
-      fakes = installFakes({ extra: [refusing] });
-      const out = await call("/club/terminal/sessions?mode=test", { headers: staff, with: { CLUB_TERMINAL_KEY: PHONE_KEY } });
-      expect(out.status).toBe(502);
-      expect(out.body.error).toMatch(/Acuity/);
-      expect(out.body.error).not.toMatch(/at \w+ \(/);   // no stack trace
+    it("in live mode, the payment is paid against the booking (Stripe's webhook knows it by booking_id)", async () => {
+      const live = { CLUB_TERMINAL_KEY: PHONE_KEY, STRIPE_SECRET_KEY: "sk_live_club_terminal_test" };
+      const made = await call("/club/terminal/qr", { method: "POST", headers: staff, body: { mode: "live", amount: 8000, booking: kai }, with: live });
+      expect(made.status).toBe(200);
+      const form = fakes.stripe.sessions.at(-1).form;
+      expect(form["metadata[booking_id]"]).toBe(String(kai));
+      expect(form["payment_intent_data[metadata][booking_id]"]).toBe(String(kai));
+      expect(form["payment_intent_data[description]"]).toMatch(/^Nova Club QR payment: Studio A/);
     });
 
-    it("won't link a payment to a cancelled or unknown session, or without the studio's key", async () => {
+    it("still takes a booking's number as `appointment` (an app from before)", async () => {
+      const made = await call("/club/terminal/qr", { method: "POST", headers: staff, body: { mode: "test", amount: 3500, appointment: ash }, with: { CLUB_TERMINAL_KEY: PHONE_KEY } });
+      expect(made.status).toBe(200);
+      expect(fakes.stripe.sessions.at(-1).form["metadata[nova_booking]"]).toBe(String(ash));
+    });
+
+    it("won't link a payment to a cancelled, test or unknown booking, or without the studio's key", async () => {
       const env2 = { CLUB_TERMINAL_KEY: PHONE_KEY };
-      expect((await call("/club/terminal/qr", { method: "POST", headers: staff, body: { mode: "test", amount: 5000, appointment: 9003 }, with: env2 })).status).toBe(404);
-      expect((await call("/club/terminal/qr", { method: "POST", headers: staff, body: { mode: "test", amount: 5000, appointment: 1234 }, with: env2 })).status).toBe(404);
-      expect((await call("/club/terminal/qr", { method: "POST", body: { mode: "test", amount: 5000, appointment: 9001 }, with: env2 })).status).toBe(401);
+      expect((await call("/club/terminal/qr", { method: "POST", headers: staff, body: { mode: "test", amount: 5000, booking: sam }, with: env2 })).status).toBe(404);
+      expect((await call("/club/terminal/qr", { method: "POST", headers: staff, body: { mode: "test", amount: 5000, booking: tester }, with: env2 })).status).toBe(404);
+      expect((await call("/club/terminal/qr", { method: "POST", headers: staff, body: { mode: "test", amount: 5000, booking: 98765 }, with: env2 })).status).toBe(404);
+      expect((await call("/club/terminal/qr", { method: "POST", body: { mode: "test", amount: 5000, booking: kai }, with: env2 })).status).toBe(401);
       expect(fakes.stripe.sessions).toHaveLength(0);
     });
   });

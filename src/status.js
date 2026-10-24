@@ -31,6 +31,9 @@
 // Nothing personal is ever shown: no names, emails, messages or keys; only states and times.
 
 import { publicUrl } from "./nova/booking.js";
+import { googleReady } from "./nova/google.js";
+import { stripeReady } from "./nova/stripe.js";
+import { usesNova } from "./mode.js";
 import { deskToken, vpsUrl } from "./desk.js";
 
 const CACHE_KEY = "status_cache";
@@ -148,7 +151,16 @@ async function pcLink(env) {
   }
 }
 
+// Nova's own booking system: Google Calendar holds the bookings, Stripe takes the deposits
+async function bookingsCheck(env) {
+  const [google, stripe] = await Promise.all([googleReady(env).catch(() => false), stripeReady(env)]);
+  if (!google) return part("bookings", "Bookings", "red", "Google Calendar isn't connected, so bookings can't go in.");
+  if (!stripe) return part("bookings", "Bookings", "amber", "Bookings go into Google Calendar, but Stripe isn't set up, so deposits can't be paid online.");
+  return part("bookings", "Bookings", "green", "Google Calendar and Stripe are connected, so bookings come in and deposits can be paid.");
+}
+
 async function feedCheck(env) {
+  if (await usesNova(env)) return { nova: await bookingsCheck(env) };
   const url = env.ACUITY_CALENDAR_URL;
   if (!url) return { ok: false, reason: "no calendar link is set" };
   try {
@@ -225,7 +237,8 @@ export async function computeStatus(env, { now = Date.now(), fetcher = fetch, fo
     parts.push(part("email", "Emails", "amber", `The mail server's details weren't in the server's status. ${gmail}`));
   }
 
-  parts.push(feed.ok ? part("feed", "Bookings feed", "green", "Acuity's calendar answers, so bookings come in.") : part("feed", "Bookings feed", "red", `Acuity's calendar ${feed.reason}.`));
+  if (feed.nova) parts.push(feed.nova);
+  else parts.push(feed.ok ? part("feed", "Bookings feed", "green", "Acuity's calendar answers, so bookings come in.") : part("feed", "Bookings feed", "red", `Acuity's calendar ${feed.reason}.`));
 
   const beatAge = heartbeat ? now - Date.parse(heartbeat) : Infinity;
   parts.push(

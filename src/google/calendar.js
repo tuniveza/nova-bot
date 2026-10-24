@@ -25,6 +25,7 @@
 import { google } from "../nova/google.js";
 import { cleanItem, deleteItem, isAgentItem, saveItem } from "../calendar/items.js";
 import { listBookings, feedTimeToIso } from "../booking-calendar.js";
+import { usesNova } from "../mode.js";
 import { flush, forgetLink, keepLink, later, linkByGoogle, linkOf, links, low, partOn, prep, readSetting, sha, spendDb, writeSetting } from "./common.js";
 
 const API = "https://www.googleapis.com/calendar/v3";
@@ -556,6 +557,42 @@ export async function pushBookings(env, budget) {
   return { done, more: stopped };
 }
 
+// ===== THE OLD COPIES, ONCE BOOKINGS ARE NOVA'S OWN =====
+// With Nova's own booking system every booking is a real event in the studio's Google Calendar
+// (nova/bookings.js), so the copies of Acuity's bookings in the Novacane Studio calendar go: the
+// ones still to come are deleted (they'd show twice); past ones stay there as history. A few
+// each run, as far as the budget goes. Once none are left this does nothing.
+export async function removeBookingCopies(env, budget, now = Date.now()) {
+  prep(budget);
+  const L = await links(env, budget, "booking");
+  if (!L.byNova.size) return { done: 0, more: false };
+  const calId = await studioCalendar(env, budget);
+  let done = 0;
+  let stopped = false;
+  for (const l of [...L.byNova.values()]) {
+    if (low(budget, 2)) {
+      stopped = true;
+      break;
+    }
+    const cal = l.extra || calId;
+    budget.left--;
+    let event = null;
+    try {
+      event = await google(env, "GET", eventsUrl(cal, `/${encodeURIComponent(l.google_id)}`));
+    } catch (err) {
+      if (err.status !== 404 && err.status !== 410) throw err;
+    }
+    const start = Date.parse(event?.start?.dateTime || event?.start?.date || "");
+    if (event && event.status !== "cancelled" && !(start < now)) {
+      budget.left--;
+      await deleteEvent(env, cal, l.google_id);
+    }
+    forgetLink(env, budget, "booking", l.nova_id);
+    done++;
+  }
+  return { done, more: stopped };
+}
+
 // ===== ONE RUN =====
 
 // Pull from Google, push to it, copy the bookings: as far as the budget goes. -> { note, more }
@@ -568,7 +605,10 @@ export async function syncCalendar(env, budget) {
     const studio = await pullCalendar(env, budget, "studio", calId);
     const pushed = await pushItems(env, budget, { plan });
     let bookings = { done: 0, more: false };
-    if ((await partOn(env, "bookings")) && !low(budget, 4)) {
+    if ((await usesNova(env)) && !low(budget, 4)) {
+      // Nova's own bookings are real events already: the old copies of Acuity's go
+      bookings = await removeBookingCopies(env, budget);
+    } else if ((await partOn(env, "bookings")) && !low(budget, 4)) {
       bookings = await pushBookings(env, budget).catch((err) => {
         // The feed failing doesn't stop the calendar
         if (err?.status) throw err;

@@ -97,6 +97,7 @@ function fakeFetch() {
 				}
 				const e = cal.get(eid);
 				if (!e) return ok({ error: { message: "Not Found" } }, 404);
+				if (method === "GET") return ok(e);
 				if (method === "PATCH") {
 					Object.assign(e, await bodyOf(init), { seq: ++G.seq, updated: new Date().toISOString() });
 					return ok(e);
@@ -379,6 +380,33 @@ describe("Calendar: Nova and Google, both ways", () => {
 		await saveItem(env, { kind: "event", id: "quest-1", title: "✦ Mix (2)", start: "2026-11-04T10:00", end: "2026-11-04T11:00", updated: new Date(Date.now() + 1000).toISOString() });
 		await syncCalendar(genv(), budget());
 		expect([...G.calendars["studio-cal"].values()].map((e) => e.summary)).toEqual(["✦ Mix (2)"]);
+	});
+
+	it("with Nova's own bookings, the old copies of Acuity's bookings go: ones to come deleted, past ones kept", async () => {
+		const setting = (key, value) => env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(key, value).run();
+		await setting("booking_system", "nova");
+		await setting("google_studio_calendar", "studio-cal");
+		try {
+			G.calendars["studio-cal"] = new Map();
+			const at = (days, hour) => new Date(Date.now() + days * 86400000 + hour * 3600000).toISOString();
+			const copy = (id, nova, days) => ({ id, seq: ++G.seq, status: "confirmed", summary: "Booking: Rap Package", start: { dateTime: at(days, 0) }, end: { dateTime: at(days, 2) }, extendedProperties: { private: { novaBooking: nova } } });
+			G.calendars["studio-cal"].set("copy-future", copy("copy-future", "1782089433", 5));
+			G.calendars["studio-cal"].set("copy-past", copy("copy-past", "1782089400", -5));
+			const now = new Date().toISOString();
+			for (const [nova, google] of [["1782089433", "copy-future"], ["1782089400", "copy-past"]]) {
+				await env.DB.prepare("INSERT INTO google_links (kind, nova_id, google_id, extra, hash, synced_at) VALUES ('booking', ?, ?, 'studio-cal', 'h', ?)").bind(nova, google, now).run();
+			}
+			await syncCalendar(genv(), budget());
+			expect(G.calendars["studio-cal"].get("copy-future").status).toBe("cancelled");
+			expect(G.calendars["studio-cal"].get("copy-past").status).toBe("confirmed");
+			expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM google_links WHERE kind = 'booking'").first()).n).toBe(0);
+			// Nothing left: the next run makes no booking calls
+			const before = G.calls.length;
+			await syncCalendar(genv(), budget());
+			expect(G.calls.slice(before).filter((c) => c.includes("copy-"))).toEqual([]);
+		} finally {
+			await env.DB.prepare("DELETE FROM settings WHERE key = 'booking_system'").run();
+		}
 	});
 
 	it("turns repeats into Google's rules and back", () => {

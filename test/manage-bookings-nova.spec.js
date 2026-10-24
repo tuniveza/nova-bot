@@ -32,7 +32,7 @@ const run = (name, input) => runManageBookingTool(env, name, input);
 const carry = (name, input) => carryOutNovaChange(env, name, input);
 
 describe("the AI never makes a change itself", () => {
-	it("confirmed true is refused for every change tool, and nothing changes", async () => {
+	it("confirmed true only proposes each change for an admin to approve, and nothing changes", async () => {
 		const b = await makeBooking({ paid: 10000 });
 		for (const [name, input] of [
 			["cancel_booking", { booking_id: b.id, notify_client: true }],
@@ -43,11 +43,35 @@ describe("the AI never makes a change itself", () => {
 			["refund_payment", { booking_id: b.id, amount: "10" }],
 		]) {
 			const out = await run(name, { ...input, confirmed: true });
-			expect(out.ok).toBe(false);
-			expect(out.message).toContain("by hand");
+			expect(out.ok).toBe(true);
+			expect(out.message).toContain("Proposed, NOT done yet");
+			expect(out.message).toContain("/portal/?view=approvals&action=");
 		}
+		const { results } = await env.DB.prepare("SELECT kind, status, proposed_by FROM booking_actions ORDER BY id").all();
+		expect(results.map((r) => r.kind)).toEqual(["cancel", "reschedule", "update", "extras", "extras", "extras"]);
+		expect(results.every((r) => r.status === "pending" && r.proposed_by === "staff-chat")).toBe(true);
 		expect(await getBooking(env, b.id)).toEqual(b);
 		expect(fakes.google.emails).toHaveLength(0);
+	});
+
+	it("a change that doesn't check out isn't proposed", async () => {
+		const b = await makeBooking();
+		const out = await run("cancel_booking", { booking_id: b.id, notify_client: true, refund: "500", confirmed: true });
+		expect(out.ok).toBe(false);
+		expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM booking_actions").first()).n).toBe(0);
+	});
+
+	it("once an admin approves it, it's done (moved, the client emailed)", async () => {
+		const b = await makeBooking();
+		await run("reschedule_booking", { booking_id: b.id, date: ukDay(12), time: "11:00", notify_client: true, confirmed: true });
+		const { id } = await env.DB.prepare("SELECT id FROM booking_actions").first();
+		const { approveAction } = await import("../src/booking-actions.js");
+		const out = await approveAction(env, { id: "test-admin" }, { id });
+		expect(out.action.error).toBeNull();
+		expect(out.action.status).toBe("executed");
+		const moved = await getBooking(env, b.id);
+		expect(moved.starts_at).toBe(ukIso(ukDay(12), "11:00"));
+		expect(fakes.google.emails).toHaveLength(1);
 	});
 });
 

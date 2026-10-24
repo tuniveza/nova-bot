@@ -51,6 +51,10 @@ export function makeGoogle() {
           const newId = g.add(JSON.parse(init.body));
           return Response.json(g.events.get(newId));
         }
+        if (id && method === "GET") {
+          if (!g.events.has(id)) return Response.json({ error: { message: "Not Found" } }, { status: 404 });
+          return Response.json(g.events.get(id));
+        }
         if (id && method === "PATCH") {
           if (!g.events.has(id)) return Response.json({ error: { message: "Not Found" } }, { status: 404 });
           const patch = JSON.parse(init.body);
@@ -261,7 +265,7 @@ export async function useNova(e = env) {
 
 export async function clearTables(e = env) {
   await e.DB.batch(
-    ["bookings", "payments", "outbox", "settings", "appointments", "notifications", "club_calendar", "push_subscriptions", "enquiries"].map((t) => e.DB.prepare(`DELETE FROM ${t}`))
+    ["bookings", "payments", "outbox", "settings", "appointments", "notifications", "club_calendar", "push_subscriptions", "enquiries", "booking_actions", "client_consent_log", "client_sessions", "clients"].map((t) => e.DB.prepare(`DELETE FROM ${t}`))
   );
 }
 

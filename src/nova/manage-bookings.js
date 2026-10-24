@@ -7,17 +7,17 @@
 //
 // The AI never makes a change itself (the owner's rule: a person approves every change to a
 // booking, and the AI can't approve). It can find bookings, and check a change and summarise
-// it (confirmed false); asked to go ahead (confirmed true) it's told no, and staff make the
-// change by hand. carryOutNovaChange() below does the change itself, for an approval step
-// (Portal → Approvals, still to be built for Nova's own booking system) and the tests: it is
-// never given to the AI. (Acuity's tools in ../manage-bookings.js propose changes for approval.)
+// it (confirmed false). Asked to go ahead (confirmed true), it PROPOSES the change
+// (src/booking-actions.js, proposedBy "staff-chat"): an admin approves it in Portal → Approvals,
+// and only then is it made (nova/booking-changes.js). carryOutNovaChange() below makes a change
+// straight away, for the tests only: it is never given to the AI.
 //
 // Safety:
 // - Changes name the booking by its number (#12), which NovaBot gets from
 //   find_bookings, so it can't mix up two people with similar names.
 // - Every change takes two calls. The first (confirmed false) changes nothing and
-//   gives NovaBot a summary to show staff. Only a second call with confirmed true
-//   makes the change, after staff have clearly said yes.
+//   gives NovaBot a summary to show staff. A second call with confirmed true, after
+//   staff have clearly said yes, still changes nothing: it proposes it for approval.
 
 import { dayInWords, eventSpan, normaliseTime, ukToday } from "./booking.js";
 import {
@@ -36,6 +36,7 @@ import {
 import { moneyState } from "./emails.js";
 import { googleReady, listEvents } from "./google.js";
 import { SESSION_TYPES, getType, money, msToUk, pence, ukToMs } from "./studio.js";
+import { proposeAction } from "../booking-actions.js";
 
 // The most bookings find_bookings lists in one go (keeps replies readable)
 const MAX_LISTED = 15;
@@ -43,7 +44,8 @@ const MAX_LISTED = 15;
 const ID = { type: "integer", description: "The booking's number (#12 → 12), from find_bookings" };
 const CONFIRMED = {
   type: "boolean",
-  description: "false: just check it and get a summary to show staff (nothing changes). true: do it, only after staff have seen that summary and clearly said yes.",
+  description:
+    "false: just check it and get a summary to show staff (nothing changes). true: propose it, only after staff have seen that summary and clearly said yes. Nothing changes until an admin approves it in Portal → Approvals.",
 };
 
 export const FIND_BOOKINGS_TOOL = {
@@ -170,23 +172,25 @@ export const MANAGE_BOOKING_TOOLS = [FIND_BOOKINGS_TOOL, CANCEL_BOOKING_TOOL, RE
 // The extra instructions NovaBot gets in the staff chat
 export const MANAGE_BOOKINGS_RULES = `STAFF CHAT: MANAGING BOOKINGS
 You're talking to Novacane staff in Portal, not a customer. Besides everything
-above, you can look up and change bookings. Everything happens straight away in the
-studio's Google Calendar, the client's emails (Gmail) and payments (Stripe), which
-staff change by hand:
+above, you can look up bookings and PROPOSE changes to them. A change happens in the
+studio's Google Calendar, the client's emails (Gmail) and payments (Stripe) only once
+an admin approves it in Portal → Approvals:
 - find_bookings lists bookings with their numbers (#12). Use it to answer questions
   ("what's on Saturday?", "when is Kai in next?", "who hasn't paid?") and before any change.
 - cancel_booking, reschedule_booking, update_booking, change_booking_extras,
-  send_payment_link and refund_payment change a booking by its number.
-- You can't make changes yourself: call a change tool with confirmed false. That
-  changes nothing and tells you exactly what would happen: show staff that summary,
-  and tell them to make the change by hand (the client's Manage booking link, the
-  studio's Google Calendar, Stripe for refunds). Never call with confirmed true
-  expecting it to happen. If more than one booking could be the one they mean, ask which.
+  send_payment_link and refund_payment propose a change to a booking by its number.
+  You can't make changes yourself: an admin approves each one in Portal → Approvals.
+- Every change takes two steps: first call the tool with confirmed false. That
+  changes nothing and tells you exactly what will be proposed: show staff that summary
+  and ask them to confirm. Only after they clearly say yes, call it again with
+  confirmed true, which proposes it. Then tell staff it's waiting for an admin to
+  approve it in Portal → Approvals (give the link). If more than one booking could be
+  the one they mean, ask which.
 - Ask whether to email the client if staff haven't said (it's usually wanted).
 - Cancelling refunds the studio's policy amount unless staff say otherwise: say how
   much will be refunded in the summary.
-- Never say something is cancelled, moved, changed, sent or refunded unless the tool
-  said it was done.`;
+- Never say something is cancelled, moved, changed, sent or refunded: proposed changes
+  happen only once an admin approves them.`;
 
 export function isManageBookingTool(name) {
   return MANAGE_BOOKING_TOOLS.some((tool) => tool.name === name);
@@ -200,19 +204,76 @@ export async function runManageBookingTool(env, name, input, today = ukToday()) 
   if (name === FIND_BOOKINGS_TOOL.name) return findBookings(env, input, today);
   const b = await bookingFor(env, input?.booking_id ?? input?.appointment_id);
   if (b.problem) return { ok: false, message: b.problem };
-  // Checking and summarising only: the AI never carries a change out
+  // The AI never carries a change out: confirmed true checks it (as confirmed false does) and,
+  // if it's sound, proposes it for an admin to approve
   if (input?.confirmed === true) {
-    return {
-      ok: false,
-      message:
-        "Not done: a person has to make changes to bookings, and the chat can't yet ask an admin to approve them for Nova's own booking system. " +
-        "Tell staff to make this change by hand for now (the client's own Manage booking link, the studio's Google Calendar, and Stripe for refunds), and never say it's done.",
-    };
+    const check = await carryOut(env, name, b, { ...input, confirmed: false }, today);
+    if (!check.ok) return check;
+    return propose(env, name, b, input);
   }
   return carryOut(env, name, b, input, today);
 }
 
-// Make a change (no AI ever calls this: see the top of this file). -> { ok, message }
+// ===== PROPOSING (src/booking-actions.js: nothing changes until an admin approves) =====
+
+// Why staff-chat proposals are made (the admin sees it next to Nova Bot's own summary)
+const STAFF_CHAT_REASON = "Asked for in Portal's staff chat, and confirmed there.";
+
+// A tool's input -> the queue's kind and details (nova/booking-changes.js reads them)
+function proposalFor(name, b, input) {
+  const notifyClient = input?.notify_client !== false;
+  if (name === CANCEL_BOOKING_TOOL.name) {
+    const choice = String(input?.refund || "policy").trim().toLowerCase();
+    const refund = ["policy", "full", "all", "none", "0"].includes(choice) ? choice : poundsToPence(choice);
+    return { kind: "cancel", payload: { bookingId: b.id, notifyClient, refund, ...(field(input?.note, 500) ? { note: field(input.note, 500) } : {}) } };
+  }
+  if (name === RESCHEDULE_BOOKING_TOOL.name) {
+    return { kind: "reschedule", payload: { bookingId: b.id, start: `${input.date}T${normaliseTime(input.time)}`, notifyClient, ...(input?.ignore_availability === true ? { ignoreAvailability: true } : {}) } };
+  }
+  if (name === UPDATE_BOOKING_TOOL.name) {
+    const payload = { bookingId: b.id };
+    for (const [from, to, max] of [["first_name", "firstName", 60], ["last_name", "lastName", 60], ["email", "email", 200], ["phone", "phone", 40]]) if (field(input?.[from], max)) payload[to] = field(input[from], max);
+    if (typeof input?.notes === "string") payload.notes = input.notes.slice(0, 2000);
+    return { kind: "update", payload };
+  }
+  if (name === CHANGE_EXTRAS_TOOL.name) {
+    const payload = { bookingId: b.id };
+    if (field(input?.session_type, 150)) payload.type = field(input.session_type, 150);
+    if (input?.price !== undefined && input?.price !== null && input?.price !== "") payload.price = String(input.price);
+    if (typeof input?.paid === "boolean") payload.paid = input.paid;
+    return { kind: "extras", payload };
+  }
+  if (name === PAYMENT_LINK_TOOL.name) return { kind: "extras", payload: { bookingId: b.id, paymentLink: input?.what === "deposit" ? "deposit" : "balance" } };
+  if (name === REFUND_TOOL.name) {
+    const all = String(input?.amount || "").trim().toLowerCase() === "all";
+    return { kind: "extras", payload: { bookingId: b.id, refund: all ? "all" : poundsToPence(input?.amount), ...(field(input?.reason, 200) ? { reason: field(input.reason, 200) } : {}) } };
+  }
+  return null;
+}
+
+async function propose(env, name, b, input) {
+  const proposal = proposalFor(name, b, input);
+  if (!proposal) return { ok: false, message: "Unknown tool." };
+  let result;
+  try {
+    result = await proposeAction(env, { ...proposal, reason: STAFF_CHAT_REASON, proposedBy: "staff-chat" });
+  } catch (err) {
+    console.log(`Staff chat: couldn't propose a booking change (${err?.name || "error"})`);
+    return { ok: false, message: "Not proposed: something went wrong saving it. Tell staff to try again in a minute." };
+  }
+  if (result.error) return { ok: false, message: `Not proposed: ${result.error} Tell staff.` };
+  const action = result.action;
+  return {
+    ok: true,
+    message:
+      `Proposed, NOT done yet (#${action.id}): ${action.summary}.` +
+      (result.repeated ? " (This was already proposed and is still waiting.)" : "") +
+      ` It's waiting for an admin to approve it in Portal → Approvals: ${action.portalUrl}\n` +
+      "Tell staff that. Nothing has changed yet; never say it's done.",
+  };
+}
+
+// Make a change straight away (the tests only; no AI ever calls this: see the top of this file). -> { ok, message }
 export async function carryOutNovaChange(env, name, input, today = ukToday()) {
   if (!(await googleReady(env))) return { ok: false, message: "The studio's Google Calendar isn't connected." };
   const b = await bookingFor(env, input?.booking_id ?? input?.appointment_id);
@@ -240,7 +301,7 @@ async function bookingFor(env, id) {
 }
 
 const confirmFirst = (what, lines, tool) =>
-  ({ ok: true, message: `Not ${what} yet. Show staff this and ask them to confirm:\n${lines.filter(Boolean).join("\n")}\nOnly after they clearly say yes, call ${tool} again with confirmed true.` });
+  ({ ok: true, message: `Not ${what} yet. Show staff this and ask them to confirm:\n${lines.filter(Boolean).join("\n")}\nOnly after they clearly say yes, call ${tool} again with confirmed true. That proposes it: an admin then approves it in Portal → Approvals.` });
 
 // ===== FIND =====
 

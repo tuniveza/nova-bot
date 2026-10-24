@@ -23,7 +23,8 @@
 import { feedTimeToIso, listBookings } from "./booking-calendar.js";
 import { dialNumber } from "./enquiries.js";
 import { TEST_NAME } from "./acuity-test-booking.js";
-import { isUkDate, ukWallToUtc } from "./acuity/api.js";
+import { isUkDate, ukWallToUtc } from "./uk-time.js";
+import { usesNova } from "./mode.js";
 
 // The most clients one list returns (Portal), and one search for Nova Agent
 const LIST_MAX = 500;
@@ -222,7 +223,8 @@ class ClientBook {
         changed = true;
       }
       if (changed) {
-        found._source = source;
+        // (a Nova booking has no source of its own: the row keeps the one it had)
+        found._source = source ?? null;
         if (!found._new) this.changedSessions.add(found);
       }
       return found;
@@ -279,7 +281,7 @@ class ClientBook {
     const changes = [...this.changedSessions].map((s) =>
       env.DB.prepare(
         `UPDATE OR IGNORE client_sessions SET acuity_id = ?, session = ?, starts_at = ?, ends_at = ?, price = ?,
-           status = CASE WHEN status = 'cancelled' THEN 'cancelled' ELSE ? END, source = ?, updated_at = ? WHERE id = ?`
+           status = CASE WHEN status = 'cancelled' THEN 'cancelled' ELSE ? END, source = COALESCE(?, source), updated_at = ? WHERE id = ?`
       ).bind(s.acuity_id, s.session, s.starts_at, s.ends_at, s.price, s.status, s._source, now, s.id)
     );
     counts.sessions.updated = await runBatches(env, changes);
@@ -313,6 +315,59 @@ function addBooking(book, booking, source, status) {
   if (!client) return false;
   book.session(client, { acuityId, session: booking.session, start, end: feedTimeToIso(booking.end), price: booking.price, status }, source);
   return true;
+}
+
+// ===== NOVA'S OWN BOOKINGS (the bookings table, src/nova/bookings.js) =====
+// Each real booking (not a test, not an unpaid hold) is a session of its client. A session row is
+// known by client_sessions.acuity_id, which holds the booking's outside number: Acuity's own
+// number for a booking brought over from Acuity (bookings.sender "acuity:<number>", so it lands on
+// the row the client's Acuity history already has), and minus Nova's booking number for every
+// other one (negative, so it can never be one of Acuity's). No new column is needed.
+
+export function bookingSessionKey(b) {
+  const m = b?.source === "acuity" ? String(b.sender || "").match(/^acuity:(\d{1,15})$/) : null;
+  return m ? Number(m[1]) : -Number(b.id);
+}
+
+const formatPence = (p) => {
+  const pounds = Math.abs(Number(p) || 0) / 100;
+  return "£" + (Number.isInteger(pounds) ? String(pounds) : pounds.toFixed(2));
+};
+
+// One Nova booking into the book. -> true if it was used
+function addNovaBooking(book, b) {
+  if (!b || b.test || !["booked", "cancelled"].includes(b.status)) return false;
+  const key = bookingSessionKey(b);
+  // A booking already stored stays with its client (even if its email changed since)
+  const known = book.byAcuity.get(key);
+  const name = `${b.first_name || ""} ${b.last_name || ""}`.trim();
+  const client = book.person({ name, email: b.email, phone: b.phone }, "booking", known ? book.byId.get(known.client_id) : null);
+  if (!client) return false;
+  book.session(client, { acuityId: key, session: b.session, start: b.starts_at, end: b.ends_at, price: formatPence(b.price_pence), status: b.status }, null);
+  return true;
+}
+
+// Every Nova booking -> clients and sessions
+async function addNovaBookings(env, book) {
+  const { results } = await env.DB.prepare("SELECT * FROM bookings WHERE test = 0 AND status IN ('booked', 'cancelled') ORDER BY id").all();
+  for (const b of results) addNovaBooking(book, b);
+  return results.length;
+}
+
+// A Nova booking was made, moved, changed or cancelled (nova/bookings.js): its client and session.
+// Never throws: the booking itself has already happened.
+export async function clientsAfterBooking(env, b) {
+  try {
+    if (!b || b.test || !["booked", "cancelled"].includes(b.status)) return;
+    const email = cleanEmail(b.email);
+    const phone = cleanPhone(b.phone);
+    const name = cleanName(`${b.first_name || ""} ${b.last_name || ""}`) || email || phone;
+    const book = await ClientBook.load(env, "booking", { email, phoneKey: phoneKey(phone), name, acuityId: bookingSessionKey(b) });
+    addNovaBooking(book, b);
+    await book.save(env);
+  } catch (err) {
+    console.log(`Client list: couldn't note booking #${b?.id} (${err?.name || "error"}).`);
+  }
 }
 
 // ===== THE BOOKING FORM'S "SEND ME STUDIO NEWS" TICK =====
@@ -383,6 +438,13 @@ const addEnquiries = (book, enquiries) => enquiries.forEach((e) => book.person(e
 // The feed (when it's set up) and the enquiries, together: Portal's "Sync now" and the cron.
 // -> { clients, sessions, feed: true | false }. Throws if the feed couldn't be read.
 export async function syncClients(env) {
+  // Nova's own booking system: its bookings table (Acuity's feed isn't read at all)
+  if (await usesNova(env)) {
+    const book = await ClientBook.load(env, "booking");
+    await addNovaBookings(env, book);
+    addEnquiries(book, await readEnquiries(env));
+    return { ...(await book.save(env)), feed: true };
+  }
   const bookings = await listBookings(env);
   const book = await ClientBook.load(env, "acuity");
   for (const booking of bookings || []) addBooking(book, booking, "feed", "booked");

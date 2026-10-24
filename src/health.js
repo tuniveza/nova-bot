@@ -10,6 +10,7 @@
 
 import { ukToday } from "./booking.js";
 import { notifyPhones } from "./push.js";
+import { usesNova } from "./mode.js";
 
 const ACUITY_API = "https://acuityscheduling.com/api/v1";
 
@@ -21,6 +22,8 @@ export async function dailyAcuityCheck(env, now = new Date()) {
   if (ukTime(now) !== CHECK_AT) return;
   // Without the keys, NovaBot doesn't offer bookings at all, so nothing is broken
   if (!env.ACUITY_USER_ID || !env.ACUITY_API_KEY) return;
+  // Nova's own booking system doesn't use Acuity (nova/health.js checks Google and Stripe)
+  if (await usesNova(env)) return;
 
   const problem = await acuityProblem(env, now);
   if (!problem) return;

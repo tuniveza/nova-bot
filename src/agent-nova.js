@@ -106,7 +106,9 @@ import { agentDraft, enquiryThread, listEnquiries } from "./enquiry-replies.js";
 import { handleInboxForAgent } from "./inbox.js";
 import { acuityFailure, availableTimes, daysBetween, isUkDate, listAppointments, listBlocks, listTypes, searchClients, ukWallToUtc } from "./acuity/api.js";
 import { bookingsChangedAt, listActions, proposeAction } from "./booking-actions.js";
-import { handleClientsForAgent } from "./clients.js";
+import { handleClientsForAgent, listClients } from "./clients.js";
+import { usesNova } from "./mode.js";
+import * as diary from "./nova/diary.js";
 import { handleCampaignsForAgent } from "./campaigns.js";
 import { handleOutreachForAgent } from "./outreach.js";
 import { handleSocialForAgent } from "./social.js";
@@ -198,8 +200,12 @@ export async function handleAgentNova(request, env, pathname) {
   if (pathname === "/nova-agent/enquiries" || pathname.startsWith("/nova-agent/enquiries/")) return agentEnquiries(env, pathname, body);
   // The inbox: sort an enquiry (or move it to Spam), read the saved replies (src/inbox.js)
   if (pathname.startsWith("/nova-agent/inbox/")) return handleInboxForAgent(env, pathname, body);
-  // Acuity: read the diary, and PROPOSE changes (never make them: an admin approves in Portal)
-  if (pathname.startsWith("/nova-agent/acuity/")) return agentAcuity(env, pathname, body);
+  // The diary (read only), and PROPOSE changes (never make them: an admin approves in Portal).
+  // /nova-agent/acuity/… is the old address of the same thing (Nova's own bookings once switched).
+  if (pathname.startsWith("/nova-agent/bookings/")) return agentDiary(env, pathname.replace("/nova-agent/bookings/", "/"), body);
+  if (pathname.startsWith("/nova-agent/acuity/")) {
+    return (await usesNova(env)) ? agentDiary(env, pathname.replace("/nova-agent/acuity/", "/"), body) : agentAcuity(env, pathname, body);
+  }
   if (pathname === "/nova-agent/booking-actions" || pathname.startsWith("/nova-agent/booking-actions/")) return agentBookingActions(env, pathname, body);
   // The client list (read-only) and the bookings in Acuity's calendar feed
   if (pathname.startsWith("/nova-agent/clients/")) return handleClientsForAgent(env, pathname, body);
@@ -263,6 +269,55 @@ async function agentAcuity(env, pathname, body) {
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
+// ===== THE DIARY: NOVA'S OWN BOOKINGS (read only; src/nova/diary.js) =====
+// The same answers the Acuity reads gave, from the bookings table and the studio's Google Calendar.
+
+async function agentDiary(env, route, body) {
+  const bad = (error) => Response.json({ error }, { status: 400 });
+  const range = () => {
+    if (!isUkDate(body?.from) || !isUkDate(body?.to)) return "from and to must be UK dates, YYYY-MM-DD.";
+    const days = daysBetween(body.from, body.to);
+    if (days < 0) return "to is before from.";
+    if (days + 1 > MAX_ACUITY_DAYS) return `That's more than ${MAX_ACUITY_DAYS} days: ask for less at a time.`;
+    return "";
+  };
+  try {
+    if (route === "/appointments") {
+      const problem = range();
+      if (problem) return bad(problem);
+      return Response.json({ appointments: await diary.listAppointments(env, { from: body.from, to: body.to, includeCanceled: body.includeCanceled === true }) });
+    }
+    if (route === "/availability") {
+      const typeId = Number(body?.typeId);
+      if (!Number.isInteger(typeId) || typeId <= 0) return bad("typeId: which session type (its id from types)?");
+      if (!isUkDate(body?.date)) return bad("date must be a UK date, YYYY-MM-DD.");
+      return Response.json({ times: await diary.availableTimes(env, { typeId, date: body.date }) });
+    }
+    if (route === "/blocks") {
+      const problem = range();
+      if (problem) return bad(problem);
+      return Response.json({ blocks: await diary.listBlocks(env, { from: body.from, to: body.to }) });
+    }
+    if (route === "/types") return Response.json({ types: diary.listTypes() });
+    if (route === "/clients") {
+      const search = typeof body?.search === "string" ? body.search.trim().slice(0, 100) : "";
+      if (search.length < 2) return bad("search: at least 2 letters of a name, email or phone.");
+      const { clients = [] } = await listClients(env, { search, limit: 25 });
+      return Response.json({
+        clients: clients.slice(0, 25).map((c) => {
+          const [firstName, ...rest] = String(c.name || "").split(/\s+/);
+          return { firstName: firstName || "", lastName: rest.join(" "), email: c.email || "", phone: c.phone || "", notes: c.notes || "" };
+        }),
+      });
+    }
+  } catch (err) {
+    // Google Calendar not answering (free times and blocked times read it)
+    console.log("Nova Agent: the diary couldn't be read:", err?.name || "error");
+    return Response.json({ error: "The studio's calendar couldn't be read just now. Try again in a minute.", unreachable: true }, { status: 503 });
+  }
+  return Response.json({ error: "Not found" }, { status: 404 });
+}
+
 // ===== BOOKINGS FROM ACUITY'S CALENDAR FEED (read only) =====
 // For Acuity plans without the API: the same diary Acuity gives Google Calendar.
 
@@ -271,6 +326,11 @@ async function bookingsFeed(env, body) {
   const days = daysBetween(body.from, body.to);
   if (days < 0) return Response.json({ error: "to is before from." }, { status: 400 });
   if (days + 1 > MAX_ACUITY_DAYS) return Response.json({ error: `That's more than ${MAX_ACUITY_DAYS} days: ask for less at a time.` }, { status: 400 });
+  // Nova's own bookings: the bookings table
+  if (await usesNova(env)) {
+    const list = await diary.listAppointments(env, { from: body.from, to: body.to });
+    return Response.json({ appointments: list.map((a) => ({ id: a.id, start: a.start, end: a.end, type: a.type, name: a.name })) });
+  }
   if (!env.ACUITY_CALENDAR_URL) return Response.json({ error: "Acuity's calendar feed isn't set up (the ACUITY_CALENDAR_URL secret)." }, { status: 409 });
   let bookings;
   try {

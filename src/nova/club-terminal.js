@@ -15,9 +15,14 @@
 // Pay by QR code (for phones Stripe won't use as a card reader): the app shows a QR code of a Stripe
 // payment page, and the client pays on their own phone (card, Apple Pay, Google Pay).
 //   GET  /club/terminal/sessions?mode=…&days=7                     -> { sessions: [{ id, name, type, start, end, pricePence, paidPence, duePence }] }
-//        today's and the coming days' Acuity sessions (studio phones only, as it has clients' names)
-//   POST /club/terminal/qr                  { mode, amount, note, appointment? } -> { id, url, qr_url, amount, livemode }
-//        with an Acuity session's id the payment carries its client, session and time (and the client's email)
+//        today's and the coming days' bookings (Nova's own, nova/bookings.js; studio phones only, as it
+//        has clients' names). id is the booking's number.
+//   POST /club/terminal/qr                  { mode, amount, note, booking? } -> { id, url, qr_url, amount, livemode }
+//        with a booking's number (`appointment` is read the same, for an app from before) the payment
+//        carries its client, session and time (and the client's email). In live mode it's also paid
+//        against the booking: Stripe's webhook adds it to what's paid, emails the receipt and tells
+//        staff (booking_id in its metadata, as the booking's own pay links have). A test-mode payment
+//        never touches a real booking (only nova_booking, for reference).
 //   GET  /club/terminal/go/<mode>/<id>                              the short link in the QR code: on to Stripe's page
 //   GET  /club/terminal/qr/<id>?mode=…                              -> { id, status, paid, amount, livemode, card }
 //   POST /club/terminal/qr/<id>/cancel      { mode }               -> { id, status }
@@ -27,7 +32,9 @@
 // (and found again after that by its metadata). Amounts are in pence, from 50p to £2,000.
 // The status routes only answer for payments made here (metadata nova=club-terminal / club-qr).
 
-import { getAppointment, listAppointments } from "../acuity/api.js";
+import { bookingsBetween, fullName, getBooking } from "./bookings.js";
+import { moneyState } from "./emails.js";
+import { ukToMs } from "./studio.js";
 import { fanPage } from "../fans.js";
 import { formEncode, StripeError, stripeTestKey } from "./stripe.js";
 
@@ -94,15 +101,15 @@ export async function handleClubTerminal(request, env, pathname) {
     if (pathname === "/club/terminal/sessions" && request.method === "GET") {
       if (!trusted(request, env)) return reply({ error: "The session list is only for the studio's phones (CLUB_TERMINAL_KEY)." }, 401);
       const days = Math.min(Math.max(Math.round(Number(url.searchParams.get("days") || SESSION_DAYS)), 1), 31);
-      const from = ukDay(0);
-      const list = await listAppointments(env, { from, to: ukDay(days - 1) });
-      const sessions = list
-        .filter((a) => !a.canceled)
-        .map((a) => {
-          const pricePence = toPence(a.price);
-          const paidPence = toPence(a.amountPaid);
-          return { id: a.id, name: a.name, type: a.type, start: a.start, end: a.end, pricePence, paidPence, duePence: Math.max(pricePence - paidPence, 0) };
-        });
+      // From the start of today (UK) to the end of the last day asked for; test bookings left out
+      const from = new Date(ukToMs(ukDay(0))).toISOString();
+      const until = new Date(ukToMs(ukDay(days))).toISOString();
+      const list = await bookingsBetween(env, from, until, ["booked"], { tests: false });
+      const sessions = list.map((b) => {
+        const { net } = moneyState(b);
+        const paidPence = Math.max(net, 0);
+        return { id: b.id, name: fullName(b), type: b.session, start: b.starts_at, end: b.ends_at, pricePence: b.price_pence, paidPence, duePence: Math.max(b.price_pence - paidPence, 0) };
+      });
       return reply({ sessions });
     }
     if (pathname === "/club/terminal/qr" && request.method === "POST") {
@@ -111,25 +118,27 @@ export async function handleClubTerminal(request, env, pathname) {
         return reply({ error: `Give amount in pence, from ${MIN_PENCE} to ${MAX_PENCE}.` }, 400);
       }
       let note = String(body.note || "").replace(/\s+/g, " ").trim().slice(0, 120);
-      // For an Acuity session: who and what it's for, on the payment (studio phones only: it has the client's details)
-      let appointment = null;
-      if (body.appointment != null && body.appointment !== "") {
+      // For a booking: who and what it's for, on the payment (studio phones only: it has the client's details)
+      let booking = null;
+      const asked = body.booking ?? body.appointment;
+      if (asked != null && asked !== "") {
         if (!trusted(request, env)) return reply({ error: "Linking a payment to a session is only for the studio's phones (CLUB_TERMINAL_KEY)." }, 401);
-        const a = await getAppointment(env, body.appointment);
-        if (!a || a.canceled) return reply({ error: "That session isn't in Acuity (or it's been cancelled)." }, 404);
-        appointment = a;
-        const name = `${a.firstName || ""} ${a.lastName || ""}`.trim();
-        note = [a.type, name, ukWhen(a.datetime)].filter(Boolean).join(", ").slice(0, 120);
+        const b = /^\d{1,12}$/.test(String(asked)) ? await getBooking(env, Number(asked)) : null;
+        if (!b || b.status !== "booked" || b.test) return reply({ error: "That booking isn't there (or it's been cancelled)." }, 404);
+        booking = b;
+        note = [b.session, fullName(b), ukWhen(b.starts_at)].filter(Boolean).join(", ").slice(0, 120);
       }
+      // Live money for a real booking is paid against it (the webhook); test money never is
+      const tags = { nova: QR_TAG, mode, ...(booking ? { nova_booking: String(booking.id), ...(mode === "live" ? { booking_id: String(booking.id), purpose: "club-qr" } : {}) } : {}) };
       const base = (env.PUBLIC_URL || url.origin).replace(/\/$/, "");
       const description = (mode === "test" ? "TEST " : "") + "Nova Club QR payment" + (note ? `: ${note}` : "");
       const session = await stripe(key, "POST", "/checkout/sessions", {
         mode: "payment",
         submit_type: "pay",
         line_items: [{ quantity: 1, price_data: { currency: "gbp", unit_amount: amount, product_data: { name: "Novacane Studios", ...(note ? { description: note } : {}) } } }],
-        metadata: { nova: QR_TAG, mode, ...(appointment ? { acuity_appointment: String(appointment.id) } : {}) },
-        payment_intent_data: { metadata: { nova: QR_TAG, mode, ...(appointment ? { acuity_appointment: String(appointment.id) } : {}) }, description },
-        ...(appointment && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(appointment.email || "") ? { customer_email: appointment.email } : {}),
+        metadata: tags,
+        payment_intent_data: { metadata: tags, description },
+        ...(booking && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(booking.email || "") ? { customer_email: booking.email } : {}),
         success_url: `${base}/club/terminal/paid`,
         cancel_url: `${base}/club/terminal/cancelled`,
         expires_at: Math.floor(Date.now() / 1000) + QR_MINUTES * 60 + 30,
@@ -173,8 +182,6 @@ export async function handleClubTerminal(request, env, pathname) {
     return reply({ error: "Not found" }, 404);
   } catch (err) {
     if (err instanceof StripeError) return reply({ error: err.message }, 502);
-    // Acuity saying no (its API needs Acuity's Powerhouse plan): said plainly, not a crash
-    if (/acuity/i.test(String(err?.message || ""))) return reply({ error: String(err.message).replace(/^Error:\s*/, "").slice(0, 300) }, 502);
     throw err;
   }
 }
@@ -184,15 +191,9 @@ function ukDay(days) {
   return new Date(Date.now() + days * 86_400_000).toLocaleDateString("en-CA", { timeZone: "Europe/London" });
 }
 
-// Acuity's "120.00" (or 120) -> 12000 pence
-function toPence(value) {
-  const n = Number.parseFloat(String(value ?? "0"));
-  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
-}
-
-// Acuity's time ("2026-10-31T17:00:00+0000") -> "Sat 31 Oct, 17:00" in the UK
-function ukWhen(datetime) {
-  const ms = Date.parse(String(datetime || "").replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
+// A booking's start (UTC ISO) -> "Sat 31 Oct, 17:00" in the UK
+function ukWhen(iso) {
+  const ms = Date.parse(String(iso || ""));
   if (!Number.isFinite(ms)) return "";
   const d = new Date(ms);
   const day = d.toLocaleDateString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short" });

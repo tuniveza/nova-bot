@@ -287,6 +287,18 @@ export async function listEvents(env, fromMs, untilMs, { max = 500 } = {}) {
   return events.slice(0, max);
 }
 
+// One event by its id, or null if there's no such event (or it's been deleted)
+export async function getEvent(env, id) {
+  if (offline(env) || !id) return null;
+  try {
+    const event = await google(env, "GET", cal(env, `/events/${encodeURIComponent(id)}`));
+    return event && event.status !== "cancelled" ? event : null;
+  } catch (err) {
+    if (err.status === 404 || err.status === 410) return null;
+    throw err;
+  }
+}
+
 export async function insertEvent(env, event) {
   if (offline(env)) return { id: "sandbox-" + crypto.randomUUID().slice(0, 8), htmlLink: "" };
   return google(env, "POST", cal(env, "/events"), event);

@@ -14,6 +14,7 @@ import { bookingChanged } from "./booking-pings.js";
 import { clientsAfterWebhook } from "./clients.js";
 import { calendarChanged } from "./club-calendar.js";
 import { markBookingsChanged } from "./booking-actions.js";
+import { usesNova } from "./mode.js";
 
 const ACUITY_API = "https://acuityscheduling.com/api/v1";
 const APPOINTMENT_ACTIONS = ["scheduled", "rescheduled", "canceled", "changed"];
@@ -236,7 +237,8 @@ async function webhookKeyMatches(request, env) {
 // hasn't arrived yet: the customer can get here within seconds of booking)
 async function findBooking(env, id, email) {
   let row = await env.DB.prepare("SELECT * FROM appointments WHERE id = ?").bind(Number(id)).first();
-  if (!row) {
+  // (Nova's own bookings are saved there as they're made: nova/bookings.js)
+  if (!row && !(await usesNova(env))) {
     try {
       const appt = await fetchAppointment(env, id);
       if (appt) {
