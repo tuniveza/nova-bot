@@ -53,6 +53,7 @@ import { tidyAcuityTests } from "./acuity-test-booking.js";
 import { dailyHealthCheck } from "./nova/health.js";
 import { googleReady } from "./nova/google.js";
 import { handleClubBusy as handleNovaClubBusy } from "./nova/club-calendar.js";
+import { handleClubTerminal } from "./nova/club-terminal.js";
 import * as novaForm from "./nova/booking-form.js";
 import * as novaBooking from "./nova/booking.js";
 import * as novaBookSession from "./nova/book-session.js";
@@ -820,6 +821,8 @@ export default {
     // Nova Club (the members' app): when the studio is booked, straight from
     // Acuity (or the studio's Google Calendar, with the switch on Nova)
     if (pathname === "/club/busy") return (await usesNova(env)) ? handleNovaClubBusy(request, env) : handleClubBusy(request, env);
+    // Nova Club's Tap to Pay: the studio phone takes a card payment through Stripe Terminal (src/nova/club-terminal.js)
+    if (pathname.startsWith("/club/terminal/")) return handleClubTerminal(request, env, pathname);
     if (pathname === "/referral") return handleReferral(request, env);
     if (pathname === "/admin" || pathname.startsWith("/admin/")) return handleAdmin(request, env);
     if (pathname === "/privacy") return privacyPage();
@@ -1651,8 +1654,10 @@ function novaAgentPage(request, env, pathname) {
 // a booking's page and pay link, and unsubscribing all went to Nova Agent when opened in a browser):
 // an invoice's page, its card payment (straight to Stripe), its PDF and its email; a booking's page and its pay
 // link; unsubscribing from a campaign; "don't email me again" (/no-thanks, one-to-one and funnel emails; 21 Oct 2026
-// it opened Nova Agent); and the test-invoice preview (invoice-preview/build.sh)
-const CUSTOMER_PAGES = /^\/(book(\/.*)?|booking\/[A-Za-z0-9_-]+|pay\/[A-Za-z0-9_-]+|referral|privacy|status(\.json)?|enquiry\/stop|join(\/confirm)?|unsubscribe|no-thanks|invoice\/[0-9a-f]{32}(\/(pay|pdf|email))?|invoice-preview\/.*)$/;
+// it opened Nova Agent); the test-invoice preview (invoice-preview/build.sh); and Nova Club's
+// pay-by-QR-code link with the pages the client lands on after (src/nova/club-terminal.js; 20 Oct 2026, a
+// scanned code opened Nova Agent's Portal instead of Stripe's payment page)
+const CUSTOMER_PAGES = /^\/(book(\/.*)?|booking\/[A-Za-z0-9_-]+|pay\/[A-Za-z0-9_-]+|referral|privacy|status(\.json)?|enquiry\/stop|join(\/confirm)?|unsubscribe|no-thanks|invoice\/[0-9a-f]{32}(\/(pay|pdf|email))?|invoice-preview\/.*|club\/terminal\/(go\/(test|live)\/cs_[A-Za-z0-9_]+|paid|cancelled))$/;
 function panelFor(pathname) {
   const place = placeFor(pathname);
   if (place && !(place.name === "portal" && !pathname.startsWith(AGENT))) return place.open;

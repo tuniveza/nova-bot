@@ -121,13 +121,61 @@ export function makeStripe() {
     if (u.pathname === "/v1/payment_intents" && init.method === "POST") {
       const id = `pi_test_${++s.n}`;
       s.intents.push({ id, form });
-      return Response.json({ id, object: "payment_intent", amount: Number(form.amount), currency: form.currency, status: "succeeded", livemode: false });
+      // Tap to Pay (card_present) waits for the card; test bookings' payments are paid straight away
+      const tapToPay = form["payment_method_types[0]"] === "card_present";
+      const metadata = { nova: form["metadata[nova]"], mode: form["metadata[mode]"] };
+      return Response.json({ id, object: "payment_intent", client_secret: `${id}_secret_x`, amount: Number(form.amount), currency: form.currency, status: tapToPay ? "requires_payment_method" : "succeeded", livemode: false, metadata });
+    }
+    // Tap to Pay (src/nova/club-terminal.js): the studio's Terminal Location, connection tokens, and
+    // reading a payment back (s.tapped marks one as paid by a card tapped on the phone)
+    if (u.pathname === "/v1/terminal/locations") {
+      s.locations ||= [];
+      if (init.method === "POST") {
+        const loc = { id: `tml_test_${++s.n}`, display_name: form.display_name, address: { postal_code: form["address[postal_code]"] }, metadata: { nova: form["metadata[nova]"] } };
+        s.locations.push(loc);
+        return Response.json(loc);
+      }
+      return Response.json({ object: "list", data: s.locations });
+    }
+    if (u.pathname === "/v1/terminal/connection_tokens" && init.method === "POST") {
+      s.tokens ||= [];
+      s.tokens.push({ location: form.location });
+      return Response.json({ object: "terminal.connection_token", secret: `pst_test_${++s.n}`, location: form.location });
+    }
+    const pi = u.pathname.match(/^\/v1\/payment_intents\/([^/]+)$/);
+    if (pi && (init.method || "GET") === "GET") {
+      const made = s.intents.find((i) => i.id === pi[1]);
+      if (!made) return Response.json({ error: { message: `No such payment_intent: '${pi[1]}'` } }, { status: 404 });
+      const paid = (s.tapped || []).includes(made.id);
+      return Response.json({
+        id: made.id, object: "payment_intent", amount: Number(made.form.amount), currency: made.form.currency, livemode: false,
+        status: paid ? "succeeded" : "requires_payment_method",
+        metadata: { nova: made.form["metadata[nova]"], mode: made.form["metadata[mode]"] },
+        latest_charge: paid ? { payment_method_details: { card_present: { brand: "visa", last4: "4242" } } } : null,
+      });
     }
     if (u.pathname === "/v1/checkout/sessions" && init.method === "POST") {
       const id = `cs_test_${++s.n}`;
       const session = { id, url: `https://checkout.stripe.com/c/pay/${id}`, form };
       s.sessions.push(session);
-      return Response.json({ id, url: session.url, object: "checkout.session" });
+      return Response.json({ id, url: session.url, object: "checkout.session", amount_total: Number(form["line_items[0][price_data][unit_amount]"]) || null, livemode: false });
+    }
+    // Reading a payment page back (Nova Club's QR payments): s.paidSessions marks one as paid by card
+    const cs = u.pathname.match(/^\/v1\/checkout\/sessions\/([^/]+)$/);
+    if (cs && (init.method || "GET") === "GET") {
+      const made = s.sessions.find((x) => x.id === cs[1]);
+      if (!made) return Response.json({ error: { message: `No such checkout.session: '${cs[1]}'` } }, { status: 404 });
+      const paid = (s.paidSessions || []).includes(made.id);
+      const expired = s.expired.includes(made.id);
+      return Response.json({
+        id: made.id, object: "checkout.session", livemode: false,
+        status: paid ? "complete" : expired ? "expired" : "open",
+        payment_status: paid ? "paid" : "unpaid",
+        amount_total: Number(made.form["line_items[0][price_data][unit_amount]"]),
+        metadata: { nova: made.form["metadata[nova]"], mode: made.form["metadata[mode]"] },
+        url: paid || expired ? null : made.url,
+        payment_intent: paid ? { id: `pi_for_${made.id}`, latest_charge: { payment_method_details: { card: { brand: "visa", last4: "4242", wallet: { type: "apple_pay" } } } } } : null,
+      });
     }
     const exp = u.pathname.match(/^\/v1\/checkout\/sessions\/([^/]+)\/expire$/);
     if (exp) {
@@ -177,11 +225,12 @@ export const says = (text) => ({ stop_reason: "end_turn", content: [{ type: "tex
 // ----- Everything together -----
 
 // Replace fetch with the fakes; anything else throws, so a test can't reach the internet
-export function installFakes({ google = makeGoogle(), stripe = makeStripe(), claude = makeClaude(), push = [] } = {}) {
+export function installFakes({ google = makeGoogle(), stripe = makeStripe(), claude = makeClaude(), push = [], extra = [] } = {}) {
   forgetSessionTypes();
   forgetGoogleToken();
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-    for (const fake of [google, stripe, claude]) {
+    // (extra: a spec's own fakes, e.g. Acuity's API, each with handle(url, init) like these)
+    for (const fake of [google, stripe, claude, ...extra]) {
       const res = await fake.handle(String(url), init || {});
       if (res) return res;
     }
