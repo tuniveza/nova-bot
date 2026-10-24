@@ -3,9 +3,8 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
-import { forgetSessionTypes } from "../src/booking.js";
+import { forgetSessionTypes } from "../src/nova/booking.js";
 import { asksForPerson, firstName, speakerOf } from "../src/livechat.js";
-import { BOOKING_PAGE_HTML } from "./acuity-page.js";
 import { STAFF_COOKIE } from "./sign-in.js";
 
 const BASE = "https://novacane-worker.test";
@@ -18,7 +17,6 @@ beforeEach(async () => {
 	claudeCalls = [];
 	forgetSessionTypes();
 	vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-		if (String(url).startsWith("https://app.acuityscheduling.com/schedule.php")) return new Response(BOOKING_PAGE_HTML, { headers: { "Content-Type": "text/html" } });
 		if (String(url) === "https://api.anthropic.com/v1/messages") {
 			claudeCalls.push(JSON.parse(init.body));
 			return Response.json({ stop_reason: "end_turn", content: [{ type: "text", text: "NovaBot here, happy to help." }] });

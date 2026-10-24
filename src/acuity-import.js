@@ -24,21 +24,75 @@
 // It does at most MAX_PER_RUN bookings per press (Google takes a moment per booking); press again
 // for the rest.
 
-import { feedTimeToIso, listBookings } from "./booking-calendar.js";
 import { createBooking } from "./nova/bookings.js";
 import { googleReady } from "./nova/google.js";
 import { SESSION_TYPES, money, msToUk, pence, whenInWords } from "./nova/studio.js";
+import { ukWallToUtc } from "./uk-time.js";
 
-// The name every Acuity test booking had (src/acuity-test-booking.js): never carried over
+// The name every Acuity test booking had (Portal's old Acuity test booking): never carried over
 export const ACUITY_TEST_NAME = "Nova TEST booking";
+
+// ===== READING ACUITY'S CALENDAR FEED (only what the carry-over needs; goes with this file) =====
+// The feed is the private link under Acuity → Sync with Other Calendars → 1-way Calendar Sync,
+// saved as ACUITY_CALENDAR_URL. Each booking in it has Acuity's number (UID "1782089433@scheduling"),
+// "Label: value" lines (name, phone, email, price, booking-form answers) and its times.
+
+// Every booking in the feed: [{ id, name, phone, email, session, price, start, end, extra }], or null if
+// the feed isn't set up. Throws if it couldn't be read.
+export async function listBookings(env) {
+  if (!env.ACUITY_CALENDAR_URL) return null;
+  const res = await fetch(env.ACUITY_CALENDAR_URL, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error("Acuity calendar feed answered " + res.status);
+  return parseCalendar(await res.text());
+}
+
+export function parseCalendar(ics) {
+  // Long lines are folded onto the next line starting with a space: join them back up
+  const text = String(ics).replace(/\r\n/g, "\n").replace(/\n[ \t]/g, "");
+  const unescape = (value) => value.replace(/\\([nN,;\\])/g, (_, c) => (c === "n" || c === "N" ? "\n" : c));
+  const out = [];
+  for (const block of text.split("BEGIN:VEVENT").slice(1)) {
+    const body = block.split("END:VEVENT")[0];
+    const field = (name) => unescape((body.match(new RegExp("^" + name + "(?:;[^:\\n]*)?:(.*)$", "m")) || [])[1] || "");
+    const uid = field("UID").match(/^(\d{5,15})@/);
+    // Not a booking (a blocked-off time, for example)
+    if (!uid) continue;
+    const pairs = field("DESCRIPTION")
+      .split("\n")
+      .map((line) => line.match(/^([^:]{1,80}):\s*(.*)$/))
+      .filter((m) => m && m[2].trim())
+      .map((m) => [m[1].trim(), m[2].trim().slice(0, 300)]);
+    const get = (label) => (pairs.find(([l]) => l.toLowerCase() === label) || [])[1] || null;
+    const name = get("name");
+    // The session: the summary without the name in front or the calendar name at the end
+    const session = field("SUMMARY").replace(name ? name + ": " : /^$/, "").replace(/\s*\(Novacane Studios\)$/i, "").trim();
+    out.push({
+      id: Number(uid[1]),
+      name,
+      phone: get("phone"),
+      email: get("email"),
+      session: session || null,
+      price: get("price"),
+      start: field("DTSTART") || null,
+      end: field("DTEND") || null,
+      extra: pairs.filter(([l]) => !["name", "phone", "email", "price", "client time zone"].includes(l.toLowerCase())).slice(0, 20),
+    });
+  }
+  return out;
+}
+
+// The feed's time ("20261022T131500Z", UTC; without the Z, a UK wall clock) -> ISO, or null
+export function feedTimeToIso(value) {
+  const m = String(value || "").match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z?)$/);
+  if (!m) return null;
+  if (!m[7]) return ukWallToUtc(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}`)?.toISOString() || null;
+  const date = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
 // How bookings brought over are marked (bookings.source, and bookings.sender = "acuity:<number>")
 export const IMPORT_SOURCE = "acuity";
+// (src/clients.js reads it back: bookingSessionKey)
 export const importKey = (acuityId) => `acuity:${acuityId}`;
-// Acuity's number for a booking brought over, or null
-export function acuityIdOf(b) {
-  const m = String(b?.sender || "").match(/^acuity:(\d{1,15})$/);
-  return b?.source === IMPORT_SOURCE && m ? Number(m[1]) : null;
-}
 
 const MAX_PER_RUN = 25;
 const LOCK_KEY = "acuity_import_running";

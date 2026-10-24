@@ -1,23 +1,13 @@
-// Booking notifications and referral tracking for Acuity bookings
+// Referral tracking: "Did anyone refer you?" after a booking, and the codes the studio hands out
 //
-//   POST /acuity/webhook  Acuity tells us about each booking; we save it
-//   GET  /referral        "Did anyone refer you?" page, linked from Acuity's
-//                         confirmation page (see README-REFERRALS.md)
+//   GET  /referral        the "Did anyone refer you?" page (?id=<booking number>&email=…; see
+//                         README-REFERRALS.md)
 //   POST /referral        that page saves the answer against the booking
 //
-// Booking notifications need the ACUITY_WEBHOOK_KEY secret, added to the end of
-// the webhook address in Acuity (…/acuity/webhook?key=…). Referral tracking
-// also needs ACUITY_USER_ID and ACUITY_API_KEY (Acuity's Powerhouse plan).
+// Each booking is a row in the appointments table (Nova's own booking system saves it as the
+// booking is made: src/nova/bookings.js), with its referral alongside. A code typed on the booking
+// page is checked and saved there too. The codes themselves are kept in Portal's admin pages.
 
-import { findAcuityTest } from "./acuity-test-booking.js";
-import { bookingChanged } from "./booking-pings.js";
-import { clientsAfterWebhook } from "./clients.js";
-import { calendarChanged } from "./club-calendar.js";
-import { markBookingsChanged } from "./booking-actions.js";
-import { usesNova } from "./mode.js";
-
-const ACUITY_API = "https://acuityscheduling.com/api/v1";
-const APPOINTMENT_ACTIONS = ["scheduled", "rescheduled", "canceled", "changed"];
 const MAX_WRONG_CODES = 5;
 const CODE_PATTERN = /^[A-Z0-9-]{3,32}$/;
 
@@ -28,92 +18,6 @@ export function normaliseCode(code) {
 
 export function isValidCodeFormat(code) {
   return CODE_PATTERN.test(code);
-}
-
-// ===== ACUITY =====
-
-// Acuity signs each webhook: base64 HMAC-SHA256 of the body, keyed with the API key
-async function verifySignature(bodyBytes, signature, apiKey) {
-  if (!signature) return false;
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(apiKey),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const mac = await crypto.subtle.sign("HMAC", key, bodyBytes);
-  const expected = new TextEncoder().encode(btoa(String.fromCharCode(...new Uint8Array(mac))));
-  const given = new TextEncoder().encode(signature);
-  return expected.byteLength === given.byteLength && crypto.subtle.timingSafeEqual(expected, given);
-}
-
-// Which Acuity account the saved secrets belong to (for the admin page's
-// "Check Acuity connection")
-export async function checkAcuity(env) {
-  if (!env.ACUITY_USER_ID || !env.ACUITY_API_KEY) {
-    return { ok: false, message: "The ACUITY_USER_ID and ACUITY_API_KEY secrets aren't set yet." };
-  }
-  try {
-    const res = await fetch(`${ACUITY_API}/me`, {
-      headers: { Authorization: "Basic " + btoa(`${env.ACUITY_USER_ID.trim()}:${env.ACUITY_API_KEY.trim()}`) },
-    });
-    if (res.status === 401) {
-      return { ok: false, message: "Acuity didn't accept the User ID and API key (401). One of them is wrong, or they're from different accounts." };
-    }
-    if (res.status === 403) {
-      return {
-        ok: false,
-        needsPlan: true,
-        message: "Acuity accepted the key but refused access (403): this Acuity plan doesn't include the API.",
-      };
-    }
-    if (!res.ok) return { ok: false, message: `Acuity answered with an error (${res.status}). Try again in a minute.` };
-    const me = await res.json();
-    return { ok: true, account: { id: me.id, name: me.name, email: me.email, plan: me.plan } };
-  } catch (err) {
-    return { ok: false, message: "Couldn't reach Acuity: " + err.message };
-  }
-}
-
-// The full appointment from Acuity, or null if it doesn't exist
-async function fetchAppointment(env, id) {
-  if (!env.ACUITY_USER_ID || !env.ACUITY_API_KEY) {
-    throw new Error("ACUITY_USER_ID / ACUITY_API_KEY secrets aren't set");
-  }
-  const res = await fetch(`${ACUITY_API}/appointments/${id}`, {
-    headers: { Authorization: "Basic " + btoa(`${env.ACUITY_USER_ID.trim()}:${env.ACUITY_API_KEY.trim()}`) },
-  });
-  if (res.status === 400 || res.status === 404) return null;
-  if (!res.ok) throw new Error("Acuity API error " + res.status);
-  return res.json();
-}
-
-async function saveAppointment(env, appt) {
-  const now = new Date().toISOString();
-  await env.DB.prepare(
-    `INSERT INTO appointments
-       (id, first_name, last_name, email, phone, appointment_type, starts_at, status, booked_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (id) DO UPDATE SET
-       first_name = excluded.first_name, last_name = excluded.last_name,
-       email = excluded.email, phone = excluded.phone,
-       appointment_type = excluded.appointment_type, starts_at = excluded.starts_at,
-       status = excluded.status, updated_at = excluded.updated_at`
-  )
-    .bind(
-      Number(appt.id),
-      appt.firstName || null,
-      appt.lastName || null,
-      appt.email || null,
-      appt.phone || null,
-      appt.type || null,
-      appt.datetime || null,
-      appt.canceled ? "canceled" : "scheduled",
-      appt.datetimeCreated || now,
-      now
-    )
-    .run();
 }
 
 async function findActiveCode(env, code) {
@@ -133,122 +37,11 @@ async function recordReferral(env, id, { answer, code = null, referrer = null, r
     .run();
 }
 
-// A referral code typed into the Acuity booking form (any field with
-// "referral" in its name) is checked and saved too, unless the customer has
-// already answered on the referral page.
-async function applyFormReferral(env, appt) {
-  let typed = "";
-  for (const form of appt.forms || []) {
-    for (const field of form.values || []) {
-      if (/referr/i.test(field.name || "") && String(field.value || "").trim()) typed = String(field.value).trim();
-    }
-  }
-  if (!typed) return;
-
-  const row = await env.DB.prepare("SELECT referral_answer FROM appointments WHERE id = ?").bind(Number(appt.id)).first();
-  if (!row || row.referral_answer) return;
-
-  const code = normaliseCode(typed);
-  const active = await findActiveCode(env, code);
-  if (active) {
-    await recordReferral(env, appt.id, { answer: "yes", code: active.code, referrer: active.referrer, source: "booking form" });
-  } else {
-    // Keep what they typed so the studio can see it in the report
-    await recordReferral(env, appt.id, { answer: "yes", invalidCode: typed.slice(0, 64), source: "booking form" });
-  }
-}
-
-export async function handleAcuityWebhook(request, env, ctx) {
-  // Acuity always sends POST; anything else isn't Acuity
-  if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
-
-  // Read the exact bytes Acuity sent (the signature check needs them untouched)
-  const bodyBytes = new Uint8Array(await request.arrayBuffer());
-  // Unpack the message: which booking, and what happened to it
-  const form = new URLSearchParams(new TextDecoder().decode(bodyBytes));
-
-  // Two ways to prove a message really came from Acuity, like two kinds of ID:
-  // 1. the secret key in the webhook address (works on every Acuity plan)
-  const keyOk = await webhookKeyMatches(request, env);
-  // 2. Acuity's signature, checked with the API key (needs the Powerhouse plan)
-  const signed = Boolean(env.ACUITY_API_KEY) && (await verifySignature(bodyBytes, request.headers.get("x-acuity-signature"), env.ACUITY_API_KEY.trim()));
-  // Neither: turn it away
-  if (!keyOk && !signed) {
-    // Note it in the logs (never the keys themselves), to help spot a wrong setup
-    console.log(`Acuity webhook refused: no valid key or signature (appointment ${form.get("id")}).`);
-    // Tell the sender no
-    return new Response("Bad signature", { status: 401 });
-  }
-
-  // What happened (scheduled, rescheduled, canceled) and to which booking
-  const action = form.get("action");
-  const id = form.get("id") || "";
-  // Orders (packages, gift certificates) aren't appointments; nothing to do
-  if (!APPOINTMENT_ACTIONS.includes(action) || !/^\d{1,15}$/.test(id)) {
-    return new Response("OK");
-  }
-
-  // Nova Club shows the change next time it checks (within a second or two)
-  await calendarChanged(env).catch((err) => console.log("Couldn't mark the Nova Club calendar as changed:", err));
-  // Nova Agent re-reads the bookings next time it checks in (/nova-agent/next's bookingsChanged)
-  await markBookingsChanged(env).catch((err) => console.log("Couldn't note that the bookings changed:", err.message));
-
-  // Referral tracking: looks the booking up with Acuity's API, so only when signed
-  // (never for a test booking from Portal: acuity-test-booking.js)
-  if (signed && !(await findAcuityTest(env, id))) {
-    try {
-      const appt = await fetchAppointment(env, id);
-      if (appt) {
-        await saveAppointment(env, appt);
-        await applyFormReferral(env, appt);
-      }
-    } catch (err) {
-      console.log("Acuity webhook failed:", err);
-      // A 500 makes Acuity retry for up to 24 hours (no notification yet, so no double ping)
-      return new Response("Error", { status: 500 });
-    }
-  }
-
-  // Ping staff phones about the booking (see booking-pings.js; it may wait for the details)
-  // then the client list notes the booking (src/clients.js; it never throws, so it can't break this)
-  const ping = bookingChanged(env, action, id, form.get("appointmentTypeID")).then(() => clientsAfterWebhook(env, action, id));
-  // Tell Acuity straight away and finish the ping afterwards, or (in tests) wait for it
-  if (ctx) ctx.waitUntil(ping);
-  else await ping;
-  // Tell Acuity we've got it
-  return new Response("OK");
-}
-
-// Does the webhook address carry our secret key (?key=...)?
-async function webhookKeyMatches(request, env) {
-  // No key set up: this way of proving it isn't available
-  if (!env.ACUITY_WEBHOOK_KEY) return false;
-  // The key in the address Acuity called
-  const given = new URL(request.url).searchParams.get("key") || "";
-  // Turn text into a fixed-length fingerprint, so the comparison takes the same time whatever was sent
-  const fingerprint = async (text) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-  // Compare the fingerprints
-  return crypto.subtle.timingSafeEqual(await fingerprint(given), await fingerprint(env.ACUITY_WEBHOOK_KEY));
-}
-
 // ===== THE CUSTOMER'S REFERRAL PAGE =====
 
-// The booking, if the ID and email match (fetched from Acuity if the webhook
-// hasn't arrived yet: the customer can get here within seconds of booking)
+// The booking, if the number and email match
 async function findBooking(env, id, email) {
-  let row = await env.DB.prepare("SELECT * FROM appointments WHERE id = ?").bind(Number(id)).first();
-  // (Nova's own bookings are saved there as they're made: nova/bookings.js)
-  if (!row && !(await usesNova(env))) {
-    try {
-      const appt = await fetchAppointment(env, id);
-      if (appt) {
-        await saveAppointment(env, appt);
-        row = await env.DB.prepare("SELECT * FROM appointments WHERE id = ?").bind(Number(id)).first();
-      }
-    } catch (err) {
-      console.log("Couldn't fetch appointment from Acuity:", err);
-    }
-  }
+  const row = await env.DB.prepare("SELECT * FROM appointments WHERE id = ?").bind(Number(id)).first();
   if (!row || !row.email || row.email.toLowerCase() !== email.toLowerCase()) return null;
   return row;
 }
@@ -277,8 +70,8 @@ async function saveReferralAnswer(request, env) {
   const booking = await findBooking(env, id, email);
   if (!booking) return json({ error: "We couldn't find that booking." }, 404);
 
-  // One answer per booking. The only exception: a code typed on the Acuity form
-  // that wasn't valid can be corrected here.
+  // One answer per booking. The only exception: a code typed when booking that
+  // wasn't valid can be corrected here.
   const onlyBadFormCode = booking.invalid_code && !booking.referral_code;
   if (booking.referral_answer && !onlyBadFormCode) {
     return json({ ok: true, message: "Thanks, we've already got your answer for this booking." });
@@ -325,7 +118,7 @@ export async function handleReferral(request, env) {
 
   const url = new URL(request.url);
   const id = url.searchParams.get("id") || "";
-  // A "+" in the email arrives as a space when Acuity doesn't encode it
+  // A "+" in the email arrives as a space when a link doesn't encode it
   const email = (url.searchParams.get("email") || "").replace(/ /g, "+");
   return new Response(referralPage(id, email), {
     headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },

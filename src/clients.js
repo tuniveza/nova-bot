@@ -1,30 +1,24 @@
 // The client list (Quest 2): everyone who has booked or enquired, in one place
 //
-// The studio's Acuity plan has no API, so the list is built from what Nova Bot can read:
-//   - Acuity's private calendar feed (booking-calendar.js): every booking in it, every 30
-//     minutes (the cron, index.js) and when an admin presses "Sync with Acuity now"
-//   - Acuity's webhook (referrals.js): each booking as it's made, moved or cancelled
+// Built from what Nova Bot already has:
+//   - Nova's own bookings (src/nova/bookings.js): each booking makes or finds its client and keeps
+//     its session up to date as it's made, moved, changed or cancelled (clientsAfterBooking), and
+//     the sync every 30 minutes (the cron, index.js; Portal's "Sync now") reads them all again
 //   - enquiries: each person who enquired becomes a client (with no sessions)
-//   - the appointments and clients spreadsheets (CSV) an admin downloads from Acuity's
-//     website and imports in Portal (for the history the feed no longer has)
+//   - the history from before (Acuity's diary, 2026), already in client_sessions
 //
 // One person is one client: the same email (any case), else the same mobile number, else
-// (with neither) the same exact name. Running a sync or an import twice changes nothing. A
+// (with neither) the same exact name. Running a sync twice changes nothing. A
 // sync only fills in contact details that are missing: what staff typed always wins.
 //
 // Marketing consent (UK GDPR) is NO for everyone until a yes is recorded with where it came
-// from; every change is written to client_consent_log. A yes comes from staff, or from a tick
-// in a "send me studio news" question on Acuity's booking form (formOptIn below: only for
-// someone with no yes or no recorded yet, so an unsubscribe or a staff "no" is never undone).
-// Imports never set it, and an enquiry's consent to be replied to isn't marketing consent.
+// from; every change is written to client_consent_log. A yes comes from staff (or the client).
+// A sync never sets it, and an enquiry's consent to be replied to isn't marketing consent.
 //
 // Logs say ids and counts only, never a client's details.
 
-import { feedTimeToIso, listBookings } from "./booking-calendar.js";
 import { dialNumber } from "./enquiries.js";
-import { TEST_NAME } from "./acuity-test-booking.js";
 import { isUkDate, ukWallToUtc } from "./uk-time.js";
-import { usesNova } from "./mode.js";
 
 // The most clients one list returns (Portal), and one search for Nova Agent
 const LIST_MAX = 500;
@@ -32,8 +26,6 @@ const FIND_MAX = 20;
 // The cron syncs this often (it runs every minute)
 const SYNC_EVERY_MINUTES = 30;
 const SYNC_STAMP = "clients_synced_at";
-// The biggest spreadsheet an import takes (characters)
-const MAX_CSV = 5_000_000;
 // Statements per database batch
 const BATCH = 100;
 // What an email address looks like
@@ -93,13 +85,13 @@ function ukDayStart(day) {
 
 class ClientBook {
   constructor(by) {
-    // Who a sync's changes are put down to ('acuity', 'enquiry' or 'import')
+    // Who a sync's changes are put down to ('booking', 'enquiry' or 'staff')
     this.by = by;
     this.byId = new Map();
     this.byEmail = new Map();
     this.byPhone = new Map();
     this.byName = new Map();
-    this.byAcuity = new Map();
+    this.byNumber = new Map();
     this.byKey = new Map();
     this.newClients = [];
     this.changedClients = new Set();
@@ -118,12 +110,12 @@ class ClientBook {
     if (scope) {
       clients = (
         await env.DB.prepare(`${CLIENT_COLS} WHERE email = ?1 OR phone_key = ?2 OR name = ?3 OR id IN (SELECT client_id FROM client_sessions WHERE acuity_id = ?4) ORDER BY id`)
-          .bind(scope.email, scope.phoneKey, scope.name || null, scope.acuityId)
+          .bind(scope.email, scope.phoneKey, scope.name || null, scope.number)
           .all()
       ).results;
       sessions = (
         await env.DB.prepare(`${SESSION_COLS} WHERE acuity_id = ?1 OR client_id IN (SELECT value FROM json_each(?2)) ORDER BY id`)
-          .bind(scope.acuityId, JSON.stringify(clients.map((c) => c.id)))
+          .bind(scope.number, JSON.stringify(clients.map((c) => c.id)))
           .all()
       ).results;
     } else {
@@ -144,7 +136,7 @@ class ClientBook {
   }
 
   indexSession(s) {
-    if (s.acuity_id) this.byAcuity.set(Number(s.acuity_id), s);
+    if (s.acuity_id) this.byNumber.set(Number(s.acuity_id), s);
     else this.byKey.set(sessionKey(s.client_id, s.starts_at, s.session), s);
   }
 
@@ -193,21 +185,21 @@ class ClientBook {
     return c;
   }
 
-  // A session of this client's: added, or what changed noted (cancelled stays cancelled: Acuity
-  // never brings a cancelled booking back, it makes a new one)
+  // A session of this client's: added, or what changed noted (cancelled stays cancelled: a
+  // cancelled booking never comes back, a new one is made)
   session(client, s, source) {
-    const acuityId = Number(s.acuityId) || null;
+    const number = Number(s.number) || null;
     const row = { session: s.session || null, starts_at: s.start, ends_at: s.end || null, price: s.price || null, status: s.status };
-    let found = acuityId ? this.byAcuity.get(acuityId) : null;
-    // The same booking imported earlier without its number: give it the number
+    let found = number ? this.byNumber.get(number) : null;
+    // The same booking stored earlier without its number: give it the number
     const unnumbered = !found ? this.byKey.get(sessionKey(client.id, row.starts_at, row.session)) : null;
     if (!found && unnumbered) found = unnumbered;
     if (found) {
       let changed = false;
-      if (acuityId && !found.acuity_id) {
+      if (number && !found.acuity_id) {
         this.byKey.delete(sessionKey(found.client_id, found.starts_at, found.session));
-        found.acuity_id = acuityId;
-        this.byAcuity.set(acuityId, found);
+        found.acuity_id = number;
+        this.byNumber.set(number, found);
         changed = true;
       }
       for (const field of ["session", "starts_at", "ends_at", "price"]) {
@@ -229,7 +221,7 @@ class ClientBook {
       }
       return found;
     }
-    const added = { id: null, acuity_id: acuityId, client_id: client.id, ...row, _source: source, _new: true, _client: client };
+    const added = { id: null, acuity_id: number, client_id: client.id, ...row, _source: source, _new: true, _client: client };
     this.indexSession(added);
     this.newSessions.push(added);
     return added;
@@ -302,21 +294,6 @@ async function runBatches(env, statements) {
   return changed;
 }
 
-// One booking from the feed (or the webhook's copy of it) into the book. -> true if it was used
-function addBooking(book, booking, source, status) {
-  // Portal's Acuity test bookings (acuity-test-booking.js) aren't clients
-  if (!booking || booking.name === TEST_NAME) return false;
-  const start = feedTimeToIso(booking.start);
-  if (!start) return false;
-  const acuityId = Number(booking.id) || null;
-  // A booking already stored stays with its client (even if staff changed their email since)
-  const known = acuityId ? book.byAcuity.get(acuityId) : null;
-  const client = book.person(booking, "booking", known ? book.byId.get(known.client_id) : null);
-  if (!client) return false;
-  book.session(client, { acuityId, session: booking.session, start, end: feedTimeToIso(booking.end), price: booking.price, status }, source);
-  return true;
-}
-
 // ===== NOVA'S OWN BOOKINGS (the bookings table, src/nova/bookings.js) =====
 // Each real booking (not a test, not an unpaid hold) is a session of its client. A session row is
 // known by client_sessions.acuity_id, which holds the booking's outside number: Acuity's own
@@ -339,11 +316,11 @@ function addNovaBooking(book, b) {
   if (!b || b.test || !["booked", "cancelled"].includes(b.status)) return false;
   const key = bookingSessionKey(b);
   // A booking already stored stays with its client (even if its email changed since)
-  const known = book.byAcuity.get(key);
+  const known = book.byNumber.get(key);
   const name = `${b.first_name || ""} ${b.last_name || ""}`.trim();
   const client = book.person({ name, email: b.email, phone: b.phone }, "booking", known ? book.byId.get(known.client_id) : null);
   if (!client) return false;
-  book.session(client, { acuityId: key, session: b.session, start: b.starts_at, end: b.ends_at, price: formatPence(b.price_pence), status: b.status }, null);
+  book.session(client, { number: key, session: b.session, start: b.starts_at, end: b.ends_at, price: formatPence(b.price_pence), status: b.status }, null);
   return true;
 }
 
@@ -362,7 +339,7 @@ export async function clientsAfterBooking(env, b) {
     const email = cleanEmail(b.email);
     const phone = cleanPhone(b.phone);
     const name = cleanName(`${b.first_name || ""} ${b.last_name || ""}`) || email || phone;
-    const book = await ClientBook.load(env, "booking", { email, phoneKey: phoneKey(phone), name, acuityId: bookingSessionKey(b) });
+    const book = await ClientBook.load(env, "booking", { email, phoneKey: phoneKey(phone), name, number: bookingSessionKey(b) });
     addNovaBooking(book, b);
     await book.save(env);
   } catch (err) {
@@ -370,59 +347,7 @@ export async function clientsAfterBooking(env, b) {
   }
 }
 
-// ===== THE BOOKING FORM'S "SEND ME STUDIO NEWS" TICK =====
-
-// A question on Acuity's booking form asking about news / offers / the mailing list, answered
-// with a tick (the feed shows it as "Question: yes"). -> the question, or null
-const OPT_IN_QUESTION = /\b(news|newsletters?|mailing list|marketing|offers|updates)\b/i;
-const TICKED = /^(yes|y|true|checked|on|ticked|agreed|i agree|✓|✔|x)\b/i;
-export function formOptIn(booking) {
-  for (const pair of Array.isArray(booking?.extra) ? booking.extra : []) {
-    const [label, value] = pair;
-    if (OPT_IN_QUESTION.test(String(label || "")) && TICKED.test(String(value || "").trim())) return String(label).trim();
-  }
-  return null;
-}
-
-// Record those ticks as a yes (by 'customer'), only for clients with nothing recorded yet.
-// -> how many were recorded
-async function applyFormOptIns(env, bookings) {
-  let recorded = 0;
-  for (const booking of bookings || []) {
-    const question = formOptIn(booking);
-    if (!question || booking.name === TEST_NAME) continue;
-    const email = cleanEmail(booking.email);
-    const key = phoneKey(booking.phone);
-    if (!email && !key) continue;
-    const client = await env.DB.prepare("SELECT id, marketing_consent FROM clients WHERE email = ? OR (? IS NOT NULL AND phone_key = ?) ORDER BY (email = ?) DESC LIMIT 1")
-      .bind(email, key, key, email)
-      .first();
-    if (!client || client.marketing_consent === 1) continue;
-    if (await env.DB.prepare("SELECT 1 FROM client_consent_log WHERE client_id = ? LIMIT 1").bind(client.id).first()) continue;
-    const now = nowIso();
-    const source = `Ticked "${question.slice(0, 120)}" on the Acuity booking form`;
-    await env.DB.batch([
-      env.DB.prepare("UPDATE clients SET marketing_consent = 1, consent_at = ?, consent_source = ?, consent_by = 'customer', updated_at = ? WHERE id = ? AND marketing_consent = 0").bind(now, source, now, client.id),
-      env.DB.prepare('INSERT INTO client_consent_log (client_id, consent, at, source, "by", recorded_at) VALUES (?, 1, ?, ?, \'customer\', ?)').bind(client.id, now, source, now),
-    ]);
-    recorded++;
-  }
-  if (recorded) console.log(`Client list: ${recorded} marketing yes(es) from the booking form.`);
-  return recorded;
-}
-
 // ===== SYNCS =====
-
-// Every booking in Acuity's calendar feed -> clients and sessions. null if the feed isn't set up.
-export async function syncClientsFromFeed(env) {
-  const bookings = await listBookings(env);
-  if (!bookings) return null;
-  const book = await ClientBook.load(env, "acuity");
-  for (const booking of bookings) addBooking(book, booking, "feed", "booked");
-  const saved = await book.save(env);
-  await applyFormOptIns(env, bookings);
-  return saved;
-}
 
 // Each enquiry's person -> a client (no sessions; marketing consent stays NO)
 export async function syncClientsFromEnquiries(env) {
@@ -435,23 +360,13 @@ export async function syncClientsFromEnquiries(env) {
 const readEnquiries = async (env) => (await env.DB.prepare("SELECT name, email, phone FROM enquiries WHERE status != 'spam' ORDER BY id").all()).results;
 const addEnquiries = (book, enquiries) => enquiries.forEach((e) => book.person(e, "enquiry"));
 
-// The feed (when it's set up) and the enquiries, together: Portal's "Sync now" and the cron.
-// -> { clients, sessions, feed: true | false }. Throws if the feed couldn't be read.
+// Every booking and every enquiry, together: Portal's "Sync now" and the cron.
+// -> { clients, sessions, feed: true } (feed: always true now; Portal read it to say the diary was read)
 export async function syncClients(env) {
-  // Nova's own booking system: its bookings table (Acuity's feed isn't read at all)
-  if (await usesNova(env)) {
-    const book = await ClientBook.load(env, "booking");
-    await addNovaBookings(env, book);
-    addEnquiries(book, await readEnquiries(env));
-    return { ...(await book.save(env)), feed: true };
-  }
-  const bookings = await listBookings(env);
-  const book = await ClientBook.load(env, "acuity");
-  for (const booking of bookings || []) addBooking(book, booking, "feed", "booked");
+  const book = await ClientBook.load(env, "booking");
+  await addNovaBookings(env, book);
   addEnquiries(book, await readEnquiries(env));
-  const saved = await book.save(env);
-  await applyFormOptIns(env, bookings);
-  return { ...saved, feed: Boolean(bookings) };
+  return { ...(await book.save(env)), feed: true };
 }
 
 // Every minute (index.js): a sync, if the last one was 30 minutes ago or more
@@ -469,190 +384,6 @@ export async function syncClientsOnSchedule(env, at = Date.now()) {
     console.log("Client list sync failed:", String(err?.message || err).slice(0, 120));
     return null;
   }
-}
-
-// Acuity's webhook, after bookingChanged has read the feed (referrals.js): this booking ->
-// its client and session. A cancellation marks the session cancelled. Never throws: the
-// webhook must always answer Acuity.
-export async function clientsAfterWebhook(env, action, id) {
-  try {
-    const acuityId = Number(id);
-    const status = action === "canceled" ? "cancelled" : "booked";
-    // What the feed said about it (booking-calendar.js saved it; kept after a cancellation)
-    const raw = await env.DB.prepare("SELECT calendar_info FROM booking_details WHERE id = ?").bind(acuityId).first("calendar_info");
-    const info = raw ? JSON.parse(raw) : null;
-    if (info && info.name !== TEST_NAME && feedTimeToIso(info.start)) {
-      const email = cleanEmail(info.email);
-      const key = phoneKey(info.phone);
-      const book = await ClientBook.load(env, "acuity", { email, phoneKey: key, name: cleanName(info.name) || email || cleanPhone(info.phone), acuityId });
-      addBooking(book, { ...info, id: acuityId }, "webhook", status);
-      await book.save(env);
-      if (status === "booked") await applyFormOptIns(env, [info]);
-    } else if (status === "cancelled") {
-      await env.DB.prepare("UPDATE client_sessions SET status = 'cancelled', source = 'webhook', updated_at = ? WHERE acuity_id = ? AND status != 'cancelled'")
-        .bind(nowIso(), acuityId)
-        .run();
-    }
-  } catch (err) {
-    console.log(`Client list: couldn't note booking #${id} from the webhook (${err?.name || "error"}).`);
-  }
-}
-
-// ===== IMPORTING ACUITY'S SPREADSHEETS (CSV) =====
-
-// CSV text -> rows of cells, each with the line it starts on. Handles quoted fields with
-// commas, quotes ("") and new lines in them, Windows line endings and a byte-order mark.
-export function parseCsv(text) {
-  const s = String(text || "").replace(/^﻿/, "");
-  const rows = [];
-  let cells = [];
-  let cell = "";
-  let quoted = false;
-  let line = 1;
-  let rowLine = 1;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (quoted) {
-      if (ch === '"') {
-        if (s[i + 1] === '"') {
-          cell += '"';
-          i++;
-        } else quoted = false;
-      } else {
-        if (ch === "\n") line++;
-        cell += ch;
-      }
-      continue;
-    }
-    // A quote opens a quoted field only at its start (5" vinyl stays as it is)
-    if (ch === '"' && cell === "") quoted = true;
-    else if (ch === ",") {
-      cells.push(cell);
-      cell = "";
-    } else if (ch === "\n" || ch === "\r") {
-      if (ch === "\r" && s[i + 1] === "\n") i++;
-      cells.push(cell);
-      rows.push({ line: rowLine, cells });
-      cells = [];
-      cell = "";
-      line++;
-      rowLine = line;
-    } else cell += ch;
-  }
-  if (cell !== "" || cells.length) {
-    cells.push(cell);
-    rows.push({ line: rowLine, cells });
-  }
-  return rows.map((r) => ({ line: r.line, cells: r.cells.map((c) => c.replace(/\r\n/g, "\n").trim()) })).filter((r) => r.cells.some((c) => c !== ""));
-}
-
-const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-const pad = (n) => String(n).padStart(2, "0");
-
-// A UK time as Acuity's spreadsheets write it -> UTC ISO (with the right BST/GMT offset), or null.
-// "October 22, 2026 2:15 pm", "2026-10-22 14:15", "22 October 2026 14:15", "22/10/2026 14:15"
-export function ukLocalToUtc(text) {
-  const t = String(text || "").trim().replace(/\s+/g, " ");
-  let m;
-  let y, mo, d, rest;
-  if ((m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](.+))?$/))) [y, mo, d, rest] = [+m[1], +m[2], +m[3], m[4]];
-  else if ((m = t.match(/^([A-Za-z]{3,})\.? (\d{1,2})(?:st|nd|rd|th)?,? (\d{4})(?:,? (?:at )?(.+))?$/))) [y, mo, d, rest] = [+m[3], MONTHS.indexOf(m[1].slice(0, 3).toLowerCase()) + 1, +m[2], m[4]];
-  else if ((m = t.match(/^(?:[A-Za-z]+,? )?(\d{1,2})(?:st|nd|rd|th)? ([A-Za-z]{3,})\.?,? (\d{4})(?:,? (?:at )?(.+))?$/))) [y, mo, d, rest] = [+m[3], MONTHS.indexOf(m[2].slice(0, 3).toLowerCase()) + 1, +m[1], m[4]];
-  else if ((m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:,? (.+))?$/))) [y, mo, d, rest] = [+m[3], +m[2], +m[1], m[4]];
-  else return null;
-  let h = 0;
-  let mi = 0;
-  if (rest) {
-    const twelve = rest.match(/^(\d{1,2})(?::(\d{2}))?(?::\d{2})? ?([ap])\.?m\.?$/i);
-    const clock = rest.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
-    if (twelve) {
-      [h, mi] = [+twelve[1], +(twelve[2] || 0)];
-      if (h < 1 || h > 12) return null;
-      h = (h % 12) + (twelve[3].toLowerCase() === "p" ? 12 : 0);
-    } else if (clock) [h, mi] = [+clock[1], +clock[2]];
-    else return null;
-  }
-  if (mo < 1 || mo > 12 || h > 23 || mi > 59 || d < 1 || new Date(Date.UTC(y, mo - 1, d)).getUTCDate() !== d) return null;
-  return ukWallToUtc(`${y}-${pad(mo)}-${pad(d)}T${pad(h)}:${pad(mi)}`)?.toISOString() || null;
-}
-
-// A header, for matching any spelling: "Appointment ID" -> "appointmentid", "Paid?" -> "paid"
-const headerKey = (h) => String(h).toLowerCase().replace(/[^a-z0-9]/g, "");
-
-// Which spreadsheet this is: the header row and its kind, or null
-function findHeader(rows) {
-  for (const [i, row] of rows.slice(0, 5).entries()) {
-    const keys = row.cells.map(headerKey);
-    const has = (k) => keys.includes(k);
-    const named = has("firstname") || has("lastname") || has("name");
-    if (has("starttime") && (named || has("email"))) return { index: i, kind: "appointments", keys };
-    if (named && (has("email") || has("phone"))) return { index: i, kind: "clients", keys };
-  }
-  return null;
-}
-
-// Import one of Acuity's spreadsheets (appointments or clients). Never sets marketing consent.
-// -> { kind, clients: { added, updated }, sessions: { added, updated }, skipped, problems } or { error, status }
-export async function importClientsCsv(env, csv) {
-  if (typeof csv !== "string" || !csv.trim()) return { error: "Paste the spreadsheet (CSV) from Acuity, or choose its file.", status: 400 };
-  if (csv.length > MAX_CSV) return { error: "That spreadsheet is too big to import in one go: download a shorter date range from Acuity.", status: 413 };
-  const rows = parseCsv(csv);
-  const header = findHeader(rows);
-  if (!header) return { error: "That doesn't look like Acuity's appointments or clients spreadsheet (no Start Time, First Name, Email or Phone columns).", status: 400 };
-  const { kind, keys } = header;
-  const book = await ClientBook.load(env, "import");
-  const problems = [];
-  let skipped = 0;
-  for (const { line, cells } of rows.slice(header.index + 1)) {
-    // A column's value by any of its names ("" if there isn't one)
-    const get = (...names) => {
-      for (const name of names) {
-        const i = keys.indexOf(name);
-        if (i >= 0 && cells[i]) return cells[i];
-      }
-      return "";
-    };
-    const person = {
-      name: [get("firstname"), get("lastname")].filter(Boolean).join(" ") || get("name", "clientname"),
-      email: get("email", "emailaddress"),
-      phone: get("phone", "phonenumber", "mobile"),
-      notes: kind === "clients" ? get("notes") : "",
-    };
-    const skip = (why) => {
-      skipped++;
-      if (why) problems.push(`Line ${line}: ${why}`);
-    };
-    if (!cleanName(person.name) && !cleanEmail(person.email) && !cleanPhone(person.phone)) {
-      skip("no name, email or phone, so it was left out.");
-      continue;
-    }
-    if (cleanName(person.name) === TEST_NAME) {
-      skip("");
-      continue;
-    }
-    if (kind === "clients") {
-      book.person(person, "import");
-      continue;
-    }
-    const startText = get("starttime");
-    const start = ukLocalToUtc(startText);
-    if (!start) {
-      skip(startText ? `the start time "${startText.slice(0, 40)}" isn't a UK date and time Nova Bot can read.` : "no start time, so it was left out.");
-      continue;
-    }
-    const acuityId = /^\d{1,15}$/.test(get("appointmentid", "id")) ? Number(get("appointmentid", "id")) : null;
-    const cancelled = /^(yes|y|true|1|canceled|cancelled)$/i.test(get("canceled", "cancelled"));
-    const known = acuityId ? book.byAcuity.get(acuityId) : null;
-    const client = book.person(person, "import", known ? book.byId.get(known.client_id) : null);
-    book.session(
-      client,
-      { acuityId, session: get("type", "appointmenttype").slice(0, 200), start, end: ukLocalToUtc(get("endtime")), price: get("appointmentprice", "price").slice(0, 40), status: cancelled ? "cancelled" : "booked" },
-      "import"
-    );
-  }
-  const counts = await book.save(env);
-  console.log(`Client list import (${kind}): clients +${counts.clients.added} ~${counts.clients.updated}, sessions +${counts.sessions.added} ~${counts.sessions.updated}, skipped ${skipped}.`);
-  return { kind, ...counts, skipped, problems: problems.slice(0, 10) };
 }
 
 // ===== READING THE LIST =====
@@ -679,8 +410,19 @@ function summary(row) {
 }
 
 // A session as Portal and Nova Agent see it
+// bookingId: the Nova booking it is, if it is one; acuityId: Acuity's number, for history from before
 function sessionShape(row) {
-  return { id: row.id, acuityId: row.acuity_id, session: row.session, start: row.starts_at, end: row.ends_at, price: row.price, status: row.status, source: row.source };
+  return {
+    id: row.id,
+    bookingId: row.booking_id || (row.acuity_id < 0 ? -row.acuity_id : null),
+    acuityId: row.acuity_id > 0 ? row.acuity_id : null,
+    session: row.session,
+    start: row.starts_at,
+    end: row.ends_at,
+    price: row.price,
+    status: row.status,
+    source: row.source,
+  };
 }
 
 // Each client with their last and next booked session and how many they've had (?1 = now)
@@ -739,7 +481,10 @@ export async function clientDetail(env, id) {
   const client = await getClient(env, id);
   if (!client) return null;
   const [sessions, log] = await env.DB.batch([
-    env.DB.prepare("SELECT * FROM client_sessions WHERE client_id = ? ORDER BY starts_at DESC, id DESC").bind(client.id),
+    // (a session brought over from Acuity is the Nova booking whose sender is "acuity:<its number>")
+    env.DB.prepare(
+      "SELECT s.*, b.id AS booking_id FROM client_sessions s LEFT JOIN bookings b ON s.acuity_id > 0 AND b.sender = 'acuity:' || s.acuity_id WHERE s.client_id = ? ORDER BY s.starts_at DESC, s.id DESC"
+    ).bind(client.id),
     env.DB.prepare('SELECT l.*, st.display_name AS by_name FROM client_consent_log l LEFT JOIN staff st ON st.id = l."by" WHERE l.client_id = ? ORDER BY l.id DESC').bind(client.id),
   ]);
   return {
@@ -757,7 +502,7 @@ export async function addClient(env, me, body) {
   if (!name) return { error: "A name, please.", status: 400 };
   const contact = readContact(body);
   if (contact.error) return contact;
-  const book = await ClientBook.load(env, "staff", { email: contact.email ?? null, phoneKey: contact.phone_key ?? null, name, acuityId: null });
+  const book = await ClientBook.load(env, "staff", { email: contact.email ?? null, phoneKey: contact.phone_key ?? null, name, number: null });
   const same = book.find({ email: contact.email, key: contact.phone_key, name });
   if (same) return { error: `${same.name} is already on the list.`, status: 409, existingId: same.id, id: same.id };
   const notes = typeof body?.notes === "string" ? body.notes.trim().slice(0, 4000) : "";
@@ -856,17 +601,15 @@ export async function handleClientsForStaff(request, env, me, route) {
     return answer(await listClients(env, { search: q.get("search") || "", filter: q.get("filter") || "all", since: q.get("since") || "" }));
   }
   if (route === "/clients" && request.method === "POST") return answer(await addClient(env, me, await readJson(request)));
-  if (route === "/clients/import" && request.method === "POST") {
-    if (!admin) return onlyAdmins();
-    return answer(await importClientsCsv(env, (await readJson(request)).csv));
-  }
+  // (Importing Acuity's spreadsheets went with Acuity: an old Portal still asking is told so)
+  if (route === "/clients/import" && request.method === "POST") return json({ error: "Importing Acuity's spreadsheets isn't needed any more: bookings come from Nova's own booking system." }, 410);
   if (route === "/clients/sync" && request.method === "POST") {
     if (!admin) return onlyAdmins();
     try {
       return json(await syncClients(env));
     } catch (err) {
       console.log("Client list sync failed:", String(err?.message || err).slice(0, 120));
-      return json({ error: "Acuity's calendar feed couldn't be read: " + String(err?.message || err).slice(0, 120), unreachable: true }, 503);
+      return json({ error: "The client list couldn't be synced just now. Try again in a minute." }, 503);
     }
   }
   const one = route.match(/^\/clients\/(\d{1,12})$/);

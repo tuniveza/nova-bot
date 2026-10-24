@@ -16,8 +16,8 @@ const setting = (key, value) =>
 	env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(key, value).run();
 const clearStatus = () => env.DB.prepare("DELETE FROM settings WHERE key IN ('status_cache','status_chat_test','status_laptop_off_test','cron_heartbeat_at')").run();
 
-// A stand-in for the outside world: the website chat answers, the VPS reports, Acuity's feed answers
-function world({ chat = true, vps = true, feed = true } = {}) {
+// A stand-in for the outside world: the website chat answers, the VPS reports
+function world({ chat = true, vps = true } = {}) {
 	const calls = [];
 	globalThis.fetch = vi.fn(async (url, init) => {
 		const u = String(url);
@@ -26,7 +26,6 @@ function world({ chat = true, vps = true, feed = true } = {}) {
 			return vps
 				? Response.json({ uptimeSeconds: 86400 * 3, memory: { total: 4e9, free: 2e9 }, disk: { total: 50e9, free: 30e9 }, lastBackup: new Date().toISOString(), mail: { sender: "active", postfix: "active", queue: 0, lastSent: new Date().toISOString() } })
 				: new Response("no", { status: 502 });
-		if (u.startsWith("https://acuity.test/")) return feed ? new Response("BEGIN:VCALENDAR\nEND:VCALENDAR") : new Response("gone", { status: 404 });
 		if (u === `${env.PUBLIC_URL}/`) return chat ? Response.json({ reply: "OK" }) : Response.json({ error: "Claude is down" }, { status: 500 });
 		return new Response("unexpected", { status: 599 });
 	});
@@ -36,12 +35,12 @@ function world({ chat = true, vps = true, feed = true } = {}) {
 const real = globalThis.fetch;
 beforeEach(async () => {
 	setTidyDelay(0);
-	env.ACUITY_CALENDAR_URL = "https://acuity.test/feed.ics";
 	await clearStatus();
+	// Google Calendar connected (the bookings go in it); Stripe's test key is in the test env
+	await setting("google_refresh_token", "rt-test");
 });
 afterEach(() => {
 	globalThis.fetch = real;
-	delete env.ACUITY_CALENDAR_URL;
 });
 
 describe("status page", () => {
@@ -60,11 +59,11 @@ describe("status page", () => {
 		const res = await call("/status.json");
 		const data = await res.json();
 		const ids = data.parts.map((p) => p.id);
-		expect(ids).toEqual(expect.arrayContaining(["chat", "portal", "signin", "email", "feed", "jobs", "backups", "server", "google", "pc"]));
+		expect(ids).toEqual(expect.arrayContaining(["chat", "portal", "signin", "email", "bookings", "jobs", "backups", "server", "google", "pc"]));
 		for (const p of data.parts) expect(["green", "amber", "red"]).toContain(p.state);
 		expect(data.parts.find((p) => p.id === "chat").state).toBe("green");
 		expect(data.parts.find((p) => p.id === "email").state).toBe("green");
-		expect(data.parts.find((p) => p.id === "feed").state).toBe("green");
+		expect(data.parts.find((p) => p.id === "bookings").state).toBe("green");
 		expect(data.parts.find((p) => p.id === "jobs").state).toBe("green");
 	});
 
@@ -76,7 +75,7 @@ describe("status page", () => {
 		expect(curl.headers.get("Content-Type") || "").not.toMatch(/text\/html/);
 	});
 
-	it("never shows anything personal: no emails, names, keys or the calendar link", async () => {
+	it("never shows anything personal: no emails, names or keys", async () => {
 		world();
 		await env.DB.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('google_account', 'owner@example.com')").run();
 		const text = await (await call("/status.json")).text();
@@ -84,7 +83,7 @@ describe("status page", () => {
 		for (const out of [text, html]) {
 			expect(out).not.toMatch(/[\w.+-]+@[a-z-]+(\.[a-z-]+)*\.[a-z]{2,}/i); // (the ssh line root@<IP> is fine)
 			expect(out).not.toContain(env.AGENT_NOVA_KEY);
-			expect(out).not.toContain("acuity.test");
+			expect(out).not.toContain("rt-test");
 		}
 	});
 
@@ -104,13 +103,14 @@ describe("status page", () => {
 	});
 
 	it("answers 503 when something is red, so an outside watchdog notices", async () => {
-		world({ feed: false });
+		world();
+		await env.DB.prepare("DELETE FROM settings WHERE key = 'google_refresh_token'").run();
 		const res = await call("/status.json");
 		expect(res.status).toBe(503);
 		const data = await res.json();
 		expect(data.ok).toBe(false);
 		expect(data.overall).toBe("Something needs attention");
-		expect(data.parts.find((p) => p.id === "feed").state).toBe("red");
+		expect(data.parts.find((p) => p.id === "bookings")).toMatchObject({ state: "red", text: "Google Calendar isn't connected, so bookings can't go in." });
 	});
 
 	it("keeps the answer for a minute, so refreshing costs nothing", async () => {

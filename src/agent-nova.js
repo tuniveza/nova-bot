@@ -1,23 +1,15 @@
-// Nova Agent: the browser helper that books and changes sessions in Acuity
+// Nova Agent's own addresses on Nova Bot: checking in, its alerts and plan, and read-only (or
+// propose-only) tools for its AI
 //
-// Nova Agent uses Acuity's admin pages in a hidden browser, on another
-// computer. It does two kinds of job:
-//   - 'book':   book a session a customer asked NovaBot to book for them
-//               (book-session.js)
-//   - 'change': change a booking's session type, price or paid status, which
-//               staff asked for in Portal (manage-bookings.js)
-//
-// Rather than this Worker calling it (which would need it to be reachable
-// from the internet), Nova Agent checks in here and asks for work, like a
-// courier calling the office for the next pickup. With `wait`, the call stays
-// open until a job comes in (up to 20 seconds), and Nova Agent calls straight
-// back, so a job is picked up within about a second:
+// Rather than this Worker calling Nova Agent (which would need it to be reachable from the
+// internet), Nova Agent checks in here, like a courier calling the office. With `wait`, the call
+// stays open (up to 20 seconds) until something happens, and Nova Agent calls straight back:
 //
 //   POST /nova-agent/next     { dryRun, bookingsPerVisitor, wait, bookingsSeen }
-//                            -> { job, questActions, bookingsChanged }: the oldest waiting job (or null), and
-//                            when Acuity last said a booking changed (its webhook, or an approved change). The
-//                            wait ends early when that's newer than bookingsSeen (ISO, or "" for never).
-//   POST /nova-agent/result   { id, ok, message }   -> staff phones get the result
+//                            -> { job: null, questActions, bookingsChanged }: Quests taps from Portal, and when
+//                            the bookings last changed (a booking made, moved or cancelled, or an approved change).
+//                            The wait ends early when that's newer than bookingsSeen (ISO, or "" for never).
+//                            (`job` is always null: the jobs it did on Acuity's pages went with Acuity.)
 //   POST /nova-agent/quests   { state }             -> Portal shows Nova Agent's quests;
 //                            replies with { actions } tapped in Portal since (also handed over with /next)
 //   POST /nova-agent/notify         { title, message, source?, kind?, tag?, ttl?, urgent?, keep? }
@@ -31,14 +23,15 @@
 //   POST /nova-agent/enquiries/:id/drafts { body } -> a DRAFT reply, for a person to approve in Portal
 //                            (the AI can only draft: nothing here approves or sends; see src/enquiry-replies.js)
 //
-//   POST /nova-agent/acuity/appointments { from, to }   -> { appointments } bookings on those UK days (max 62;
-//                            includeCanceled: true lists cancelled ones too). Times in UTC.
-//   POST /nova-agent/acuity/availability { typeId, date } -> { times: [{ start, label }] } free start times
-//   POST /nova-agent/acuity/blocks       { from, to }   -> { blocks } blocked-off times
-//   POST /nova-agent/acuity/types        {}             -> { types } session types
-//   POST /nova-agent/acuity/clients      { search }     -> { clients } (25 at most)
-//                            (read-only, through Acuity's API: src/acuity/api.js. Acuity down -> 503
-//                            { unreachable: true }, busy -> 429 { rateLimited: true }, not set up -> 409)
+//   POST /nova-agent/bookings/appointments { from, to } -> { appointments } bookings on those UK days (max 62;
+//                            includeCanceled: true lists cancelled ones too). Times in UTC; id is the booking's number.
+//   POST /nova-agent/bookings/availability { typeId, date } -> { times: [{ start, label }] } free start times
+//   POST /nova-agent/bookings/blocks       { from, to } -> { blocks } blocked-off times in the studio's calendar
+//   POST /nova-agent/bookings/types        {}           -> { types } session types
+//   POST /nova-agent/bookings/clients      { search }   -> { clients } (25 at most)
+//                            (read-only: Nova's own bookings and the studio's Google Calendar, src/nova/diary.js.
+//                            The calendar not answering -> 503 { unreachable: true }. /nova-agent/acuity/… is the
+//                            old address of the same five.)
 //
 //   POST /nova-agent/booking-actions/propose { kind, payload, reason } -> { action } a PROPOSED booking change,
 //                            for an admin to approve in Portal → Approvals
@@ -87,8 +80,7 @@
 //                            src/social.js)
 //
 //   POST /nova-agent/bookings-feed    { from, to } -> { appointments: [{ id, start, end, type, name }] } bookings on
-//                            those UK days (max 62) from Acuity's calendar feed, which works on every plan. Times in
-//                            UTC. Feed not set up -> 409; couldn't be read -> 503 { unreachable: true }
+//                            those UK days (max 62), in short. Times in UTC.
 //
 //   POST /nova-agent/me       { staff_id? }         -> who Nova Agent works for (its Nova Agent badge and memory);
 //                            without an id, the studio's first admin
@@ -104,10 +96,9 @@ import { notifyPhones, studioOwner } from "./push.js";
 import { syncFromAgent } from "./calendar/items.js";
 import { agentDraft, enquiryThread, listEnquiries } from "./enquiry-replies.js";
 import { handleInboxForAgent } from "./inbox.js";
-import { acuityFailure, availableTimes, daysBetween, isUkDate, listAppointments, listBlocks, listTypes, searchClients, ukWallToUtc } from "./acuity/api.js";
+import { daysBetween, isUkDate } from "./uk-time.js";
 import { bookingsChangedAt, listActions, proposeAction } from "./booking-actions.js";
 import { handleClientsForAgent, listClients } from "./clients.js";
-import { usesNova } from "./mode.js";
 import * as diary from "./nova/diary.js";
 import { handleCampaignsForAgent } from "./campaigns.js";
 import { handleOutreachForAgent } from "./outreach.js";
@@ -115,52 +106,15 @@ import { handleSocialForAgent } from "./social.js";
 import { handleMoneyForAgent } from "./money.js";
 import { handleGoogleForAgent } from "./google/index.js";
 import { tidyForAgent } from "./tidy.js";
-import { feedTimeToIso, listBookings } from "./booking-calendar.js";
 import { looksSession } from "./looks-account.js";
 import { fixerHealth } from "./fixer-health.js";
 
-// A job Nova Agent took but never reported on (e.g. it was restarted) is
-// offered again after this long
-const STUCK_AFTER_MINUTES = 15;
-// The longest Nova Agent's "any jobs?" call is held open, and how often the queue is looked at meanwhile
+// The longest Nova Agent's check-in is held open, and how often it looks for news meanwhile
 const MAX_WAIT_SECONDS = 20;
 const WAIT_CHECK_MS = 500;
 
 // Nova Agent counts as "online" if it checked in this recently
 const ONLINE_MINUTES = 5;
-
-// ===== QUEUEING =====
-
-// Add a job. Returns its number, or the number of the same job already waiting.
-export async function queueAgentJob(env, { kind = "change", appointmentId = null, clientName, changes, summary }) {
-  const changesJson = JSON.stringify(changes);
-  const same = await env.DB.prepare(
-    "SELECT id FROM agent_jobs WHERE kind = ? AND appointment_id IS ? AND changes = ? AND status IN ('waiting', 'working')"
-  )
-    .bind(kind, appointmentId, changesJson)
-    .first("id");
-  if (same) return same;
-  const { meta } = await env.DB.prepare(
-    "INSERT INTO agent_jobs (created_at, kind, appointment_id, client_name, changes, summary) VALUES (?, ?, ?, ?, ?, ?)"
-  )
-    .bind(new Date().toISOString(), kind, appointmentId, clientName, changesJson, summary)
-    .run();
-  return meta.last_row_id;
-}
-
-// Why Nova Agent can't take a job right now ("" if it can). With
-// needLive, it must also be in live mode (not rehearsing with DRY_RUN),
-// which matters for customers: a rehearsal books nothing.
-export async function agentNovaProblem(env, { needLive = false, now = Date.now() } = {}) {
-  if (!env.AGENT_NOVA_KEY) return "Nova Agent isn't connected (no AGENT_NOVA_KEY).";
-  const { results } = await env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('agent_nova_seen', 'agent_nova_mode')").all();
-  const setting = Object.fromEntries(results.map((row) => [row.key, row.value]));
-  if (!setting.agent_nova_seen) return "Nova Agent has never checked in, so it may not be set up yet.";
-  const minutes = Math.round((now - Date.parse(setting.agent_nova_seen)) / 60000);
-  if (minutes > ONLINE_MINUTES) return `Nova Agent last checked in ${minutes} minutes ago, so it may be switched off.`;
-  if (needLive && setting.agent_nova_mode !== "live") return "Nova Agent is in rehearsal mode (DRY_RUN), so it won't really book anything.";
-  return "";
-}
 
 // ===== ROUTES FOR NOVA AGENT =====
 
@@ -183,11 +137,10 @@ export async function handleAgentNova(request, env, pathname) {
   if (pathname.startsWith("/nova-agent/google/")) return handleGoogleForAgent(request, env, pathname, body);
 
   if (pathname === "/nova-agent/next") {
-    const job = await nextJob(env, body);
-    return Response.json({ job, questActions: await takeQuestActions(env), bookingsChanged: await bookingsChangedAt(env) });
+    await checkIn(env, body);
+    return Response.json({ job: null, questActions: await takeQuestActions(env), bookingsChanged: await bookingsChangedAt(env) });
   }
   if (pathname === "/nova-agent/quests") return saveQuests(env, body);
-  if (pathname === "/nova-agent/result") return reportResult(env, body);
   if (pathname === "/nova-agent/notify") return sendAlert(env, body);
   if (pathname === "/nova-agent/me") return agentStaff(env, body);
   // The Fixer's hourly check: Nova Bot's health, read-only (src/fixer-health.js)
@@ -201,13 +154,11 @@ export async function handleAgentNova(request, env, pathname) {
   // The inbox: sort an enquiry (or move it to Spam), read the saved replies (src/inbox.js)
   if (pathname.startsWith("/nova-agent/inbox/")) return handleInboxForAgent(env, pathname, body);
   // The diary (read only), and PROPOSE changes (never make them: an admin approves in Portal).
-  // /nova-agent/acuity/… is the old address of the same thing (Nova's own bookings once switched).
+  // /nova-agent/acuity/… is the old address of the same thing (a Nova Agent from before reads it).
   if (pathname.startsWith("/nova-agent/bookings/")) return agentDiary(env, pathname.replace("/nova-agent/bookings/", "/"), body);
-  if (pathname.startsWith("/nova-agent/acuity/")) {
-    return (await usesNova(env)) ? agentDiary(env, pathname.replace("/nova-agent/acuity/", "/"), body) : agentAcuity(env, pathname, body);
-  }
+  if (pathname.startsWith("/nova-agent/acuity/")) return agentDiary(env, pathname.replace("/nova-agent/acuity/", "/"), body);
   if (pathname === "/nova-agent/booking-actions" || pathname.startsWith("/nova-agent/booking-actions/")) return agentBookingActions(env, pathname, body);
-  // The client list (read-only) and the bookings in Acuity's calendar feed
+  // The client list (read-only) and the bookings in short
   if (pathname.startsWith("/nova-agent/clients/")) return handleClientsForAgent(env, pathname, body);
   if (pathname === "/nova-agent/bookings-feed") return bookingsFeed(env, body);
   // Email campaigns: read, write and edit (never approve or send: an admin approves in Portal)
@@ -224,53 +175,11 @@ export async function handleAgentNova(request, env, pathname) {
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
-// ===== ACUITY (read only) =====
+// ===== THE DIARY: NOVA'S OWN BOOKINGS (read only; src/nova/diary.js) =====
+// The bookings table and the studio's Google Calendar, in the shapes Nova Agent reads.
 
 // The most days one read covers
-const MAX_ACUITY_DAYS = 62;
-
-async function agentAcuity(env, pathname, body) {
-  const bad = (error) => Response.json({ error }, { status: 400 });
-  // { from, to }: UK days, inclusive
-  const range = () => {
-    if (!isUkDate(body?.from) || !isUkDate(body?.to)) return "from and to must be UK dates, YYYY-MM-DD.";
-    const days = daysBetween(body.from, body.to);
-    if (days < 0) return "to is before from.";
-    if (days + 1 > MAX_ACUITY_DAYS) return `That's more than ${MAX_ACUITY_DAYS} days: ask for less at a time.`;
-    return "";
-  };
-  try {
-    if (pathname === "/nova-agent/acuity/appointments") {
-      const problem = range();
-      if (problem) return bad(problem);
-      return Response.json({ appointments: await listAppointments(env, { from: body.from, to: body.to, includeCanceled: body.includeCanceled === true }) });
-    }
-    if (pathname === "/nova-agent/acuity/availability") {
-      const typeId = Number(body?.typeId);
-      if (!Number.isInteger(typeId) || typeId <= 0) return bad("typeId: which session type (its Acuity id)?");
-      if (!isUkDate(body?.date)) return bad("date must be a UK date, YYYY-MM-DD.");
-      return Response.json({ times: await availableTimes(env, { typeId, date: body.date }) });
-    }
-    if (pathname === "/nova-agent/acuity/blocks") {
-      const problem = range();
-      if (problem) return bad(problem);
-      return Response.json({ blocks: await listBlocks(env, { from: body.from, to: body.to }) });
-    }
-    if (pathname === "/nova-agent/acuity/types") return Response.json({ types: await listTypes(env) });
-    if (pathname === "/nova-agent/acuity/clients") {
-      const search = typeof body?.search === "string" ? body.search.trim().slice(0, 100) : "";
-      if (search.length < 2) return bad("search: at least 2 letters of a name, email or phone.");
-      return Response.json({ clients: await searchClients(env, search) });
-    }
-  } catch (err) {
-    const { status, body: answer } = acuityFailure(err);
-    return Response.json(answer, { status });
-  }
-  return Response.json({ error: "Not found" }, { status: 404 });
-}
-
-// ===== THE DIARY: NOVA'S OWN BOOKINGS (read only; src/nova/diary.js) =====
-// The same answers the Acuity reads gave, from the bookings table and the studio's Google Calendar.
+const MAX_DAYS = 62;
 
 async function agentDiary(env, route, body) {
   const bad = (error) => Response.json({ error }, { status: 400 });
@@ -278,7 +187,7 @@ async function agentDiary(env, route, body) {
     if (!isUkDate(body?.from) || !isUkDate(body?.to)) return "from and to must be UK dates, YYYY-MM-DD.";
     const days = daysBetween(body.from, body.to);
     if (days < 0) return "to is before from.";
-    if (days + 1 > MAX_ACUITY_DAYS) return `That's more than ${MAX_ACUITY_DAYS} days: ask for less at a time.`;
+    if (days + 1 > MAX_DAYS) return `That's more than ${MAX_DAYS} days: ask for less at a time.`;
     return "";
   };
   try {
@@ -318,35 +227,15 @@ async function agentDiary(env, route, body) {
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
-// ===== BOOKINGS FROM ACUITY'S CALENDAR FEED (read only) =====
-// For Acuity plans without the API: the same diary Acuity gives Google Calendar.
+// ===== THE BOOKINGS IN SHORT (read only) =====
 
 async function bookingsFeed(env, body) {
   if (!isUkDate(body?.from) || !isUkDate(body?.to)) return Response.json({ error: "from and to must be UK dates, YYYY-MM-DD." }, { status: 400 });
   const days = daysBetween(body.from, body.to);
   if (days < 0) return Response.json({ error: "to is before from." }, { status: 400 });
-  if (days + 1 > MAX_ACUITY_DAYS) return Response.json({ error: `That's more than ${MAX_ACUITY_DAYS} days: ask for less at a time.` }, { status: 400 });
-  // Nova's own bookings: the bookings table
-  if (await usesNova(env)) {
-    const list = await diary.listAppointments(env, { from: body.from, to: body.to });
-    return Response.json({ appointments: list.map((a) => ({ id: a.id, start: a.start, end: a.end, type: a.type, name: a.name })) });
-  }
-  if (!env.ACUITY_CALENDAR_URL) return Response.json({ error: "Acuity's calendar feed isn't set up (the ACUITY_CALENDAR_URL secret)." }, { status: 409 });
-  let bookings;
-  try {
-    bookings = await listBookings(env);
-  } catch (err) {
-    return Response.json({ error: "Acuity's calendar feed couldn't be read: " + String(err?.message || err).slice(0, 120), unreachable: true }, { status: 503 });
-  }
-  // From the start of the first UK day to the start of the day after the last
-  const from = ukWallToUtc(body.from + "T00:00").toISOString();
-  const after = new Date(Date.parse(body.to + "T00:00:00Z") + 86400000).toISOString().slice(0, 10);
-  const to = ukWallToUtc(after + "T00:00").toISOString();
-  const appointments = bookings
-    .map((b) => ({ id: b.id, start: feedTimeToIso(b.start), end: feedTimeToIso(b.end), type: b.session, name: b.name }))
-    .filter((a) => a.start && a.start >= from && a.start < to)
-    .sort((a, b) => a.start.localeCompare(b.start));
-  return Response.json({ appointments });
+  if (days + 1 > MAX_DAYS) return Response.json({ error: `That's more than ${MAX_DAYS} days: ask for less at a time.` }, { status: 400 });
+  const list = await diary.listAppointments(env, { from: body.from, to: body.to });
+  return Response.json({ appointments: list.map((a) => ({ id: a.id, start: a.start, end: a.end, type: a.type, name: a.name })) });
 }
 
 // ===== BOOKING CHANGES (propose and list only) =====
@@ -361,8 +250,9 @@ async function agentBookingActions(env, pathname, body) {
       const result = await proposeAction(env, { kind: body?.kind, payload: body?.payload, reason: body?.reason, proposedBy: "agent" });
       return result.error ? Response.json({ error: result.error }, { status: result.status || 400 }) : Response.json({ action: result.action, repeated: result.repeated === true });
     } catch (err) {
-      const { status, body: answer } = acuityFailure(err);
-      return Response.json(answer, { status });
+      // Google Calendar not answering (a blocked time is checked there)
+      console.log("Nova Agent: couldn't check a proposed booking change:", err?.name || "error");
+      return Response.json({ error: "The studio's calendar couldn't be read just now. Try again in a minute.", unreachable: true }, { status: 503 });
     }
   }
   // Nothing else: there is no approve, edit, reject or execute for the agent's key
@@ -398,57 +288,32 @@ async function agentEnquiries(env, pathname, body) {
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
-// Hand Nova Agent the oldest waiting job (and note that it checked in,
-// whether it's live or rehearsing, and the booking limit set in its .env)
-async function nextJob(env, body) {
+// Nova Agent checked in: note that (whether it's live or rehearsing, and the booking limit set in its
+// .env), then, with `wait`, hold on until there's news for it (a Quests tap, or a booking change it
+// hasn't seen), so it hears within a second
+async function checkIn(env, body) {
   const now = new Date();
   const mode = body?.dryRun === false ? "live" : "rehearsal";
   const limit = readBookingLimit(body?.bookingsPerVisitor);
   await env.DB.batch([
     env.DB.prepare("INSERT INTO settings (key, value) VALUES ('bookings_per_visitor', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(limit),
-    env.DB.prepare("INSERT INTO settings (key, value) VALUES ('agent_nova_seen', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(
-      now.toISOString()
-    ),
+    env.DB.prepare("INSERT INTO settings (key, value) VALUES ('agent_nova_seen', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(now.toISOString()),
     env.DB.prepare("INSERT INTO settings (key, value) VALUES ('agent_nova_mode', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(mode),
   ]);
-
-  // Jobs taken long ago but never finished go back in the queue
-  const stuck = new Date(now.getTime() - STUCK_AFTER_MINUTES * 60000).toISOString();
-  await env.DB.prepare("UPDATE agent_jobs SET status = 'waiting' WHERE status = 'working' AND picked_at < ?").bind(stuck).run();
-
-  // `wait` (seconds, up to MAX_WAIT_SECONDS): if there's no job yet, hold on
-  // and keep looking, so a new job is handed over within a second of being
-  // queued instead of at Nova Agent's next check-in
+  // `wait` (seconds, up to MAX_WAIT_SECONDS). Stop waiting early for a tap in Portal's Quests tab, or a
+  // booking change Nova Agent hasn't seen (only when it says what it's seen: an older Nova Agent never
+  // sends bookingsSeen)
   const waitSeconds = Math.min(Math.max(Number(body?.wait) || 0, 0), MAX_WAIT_SECONDS);
   const giveUpAt = Date.now() + waitSeconds * 1000;
-  let job = await takeJob(env);
-  // Stop waiting early for a job, a tap in Portal's Quests tab, or a booking change Nova Agent
-  // hasn't seen (only when it says what it's seen: an older Nova Agent never sends bookingsSeen)
   const seen = typeof body?.bookingsSeen === "string" ? body.bookingsSeen : null;
   const bookingsNews = async () => {
     if (seen === null) return false;
     const changed = await bookingsChangedAt(env);
     return Boolean(changed) && (!seen || Date.parse(changed) > (Date.parse(seen) || 0));
   };
-  while (!job && !(await hasQuestActions(env)) && !(await bookingsNews()) && Date.now() < giveUpAt) {
+  while (!(await hasQuestActions(env)) && !(await bookingsNews()) && Date.now() < giveUpAt) {
     await new Promise((resolve) => setTimeout(resolve, WAIT_CHECK_MS));
-    job = await takeJob(env);
   }
-  if (!job) return null;
-
-  if (job.kind === "book") return { id: job.id, kind: "book", clientName: job.client_name, details: JSON.parse(job.changes) };
-  return { id: job.id, kind: "change", appointmentId: job.appointment_id, clientName: job.client_name, changes: JSON.parse(job.changes) };
-}
-
-// The oldest waiting job, taken so nothing else gets it, or null
-async function takeJob(env) {
-  const job = await env.DB.prepare("SELECT id, kind, appointment_id, client_name, changes FROM agent_jobs WHERE status = 'waiting' ORDER BY id LIMIT 1").first();
-  if (!job) return null;
-  // Take it (only if nothing else just did)
-  const { meta } = await env.DB.prepare("UPDATE agent_jobs SET status = 'working', picked_at = ? WHERE id = ? AND status = 'waiting'")
-    .bind(new Date().toISOString(), job.id)
-    .run();
-  return meta.changes ? job : null;
 }
 
 // How many sessions NovaBot may book for one visitor a day: "unlimited", or a
@@ -468,31 +333,7 @@ export async function bookingsPerVisitor(env) {
   return value === "unlimited" ? Infinity : Number(value);
 }
 
-// Nova Agent reports how a job went; staff phones get told
-async function reportResult(env, body) {
-  const id = Number(body.id);
-  const ok = body.ok === true;
-  const message = typeof body.message === "string" ? body.message.trim().slice(0, 1000) : "";
-  const job = await env.DB.prepare("SELECT kind, summary, appointment_id, client_name FROM agent_jobs WHERE id = ? AND status = 'working'").bind(id).first();
-  if (!job) return Response.json({ error: "No such job in progress" }, { status: 404 });
-
-  await env.DB.prepare("UPDATE agent_jobs SET status = ?, result = ?, finished_at = ? WHERE id = ?")
-    .bind(ok ? "done" : "failed", message, new Date().toISOString(), id)
-    .run();
-
-  let title = ok ? "Nova Agent: done" : "Nova Agent: couldn't do it";
-  let lines = [job.summary, message];
-  if (job.kind === "book") {
-    title = ok ? "NovaBot booked: " + job.client_name : "NovaBot couldn't book: " + job.client_name;
-    lines = ok
-      ? [job.summary, "Deposit not paid yet", message]
-      : [job.summary, message, "They were told to book with the link if no confirmation email arrives. Please check with them."];
-  }
-  await notifyPhones(env, { title, body: lines.filter(Boolean).join("\n"), url: "https://secure.acuityscheduling.com/", appointmentId: job.appointment_id });
-  return Response.json({ ok: true });
-}
-
-// An alert from Nova Agent itself (e.g. "can't log in to Acuity")
+// An alert from Nova Agent itself
 // Which Nova app an alert is from, and the name shown in front of its title
 const ALERT_SOURCES = { agent: "Nova Agent", quest: "Quest", fixer: "Fixer" };
 
@@ -511,7 +352,7 @@ async function sendAlert(env, body) {
   // Quest reminders are someone's own: the phones the quest picked, or else its
   // owner's (`owner`, the staff id Nova Agent sends), never anyone else's. Without an owner (a Nova
   // Agent from before, or one that doesn't know who it works for yet): the studio owner's.
-  // Nova Agent's own alerts (Acuity problems) still go to every phone.
+  // Nova Agent's own alerts still go to every phone.
   let to = null;
   if (source === "quest") {
     const phones = Array.isArray(body.phones) ? body.phones.filter((x) => typeof x === "string" && /^[0-9a-f]{12}$/.test(x)).slice(0, 10) : [];
@@ -621,7 +462,7 @@ async function readActions(env) {
 async function hasQuestActions(env) {
   return (await readActions(env)).length > 0;
 }
-// Taken and cleared in one statement, so two collectors (the job check and the
+// Taken and cleared in one statement, so two collectors (the check-in and the
 // plan upload) never both get the same tap (the last 50, if many piled up)
 async function takeQuestActions(env) {
   const row = await env.DB.prepare("DELETE FROM settings WHERE key = ? RETURNING value").bind(ACTIONS_KEY).first();

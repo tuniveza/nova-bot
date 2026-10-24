@@ -27,7 +27,6 @@ import { deleteEvent, googleReady, listEvents, offline } from "./google.js";
 import { stripeTestKey, testModePayment } from "./stripe.js";
 import { getType, money, msToUk, whenInWords } from "./studio.js";
 import { notifyPhones } from "../push.js";
-import { bookingSystem } from "../mode.js";
 
 // Test bookings go after this long
 export const TEST_KEEP_HOURS = 24;
@@ -297,10 +296,9 @@ export async function removeOldTestBookings(env, now = Date.now()) {
 
 // What the test page needs to start: the live booking system, how payments would be faked
 export async function testBookingFacts(env) {
-  const system = await bookingSystem(env);
   const live = /^(sk|rk)_live_/.test(String(env.STRIPE_SECRET_KEY || ""));
   return {
-    system,
+    system: "nova",
     google: await googleReady(env),
     sandbox: offline(env),
     stripe: stripeTestKey(env) ? "test" : live ? "live-only" : env.STRIPE_SECRET_KEY ? "other" : "none",

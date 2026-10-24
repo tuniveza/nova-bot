@@ -2,15 +2,16 @@
 //
 //   Nova → Google   Nova's events and day cards go into a calendar of their own in the studio's
 //                   Google account, "Novacane Studio" (made on the first sync). Nova Agent's plan
-//                   (quests, music time) too, if that's switched on. Acuity's bookings are copied
-//                   in as well (read-only copies: bookings are made and changed in Acuity).
+//                   (quests, music time) too, if that's switched on. (Bookings are real events in
+//                   the studio's own calendar already: src/nova/bookings.js.)
 //   Google → Nova   events from the studio's own Google Calendar ("primary") and anything added
 //                   straight into the Novacane Studio calendar come into Nova's Calendar (ids
 //                   "gp-…" and "g-…"), and so count as busy time for quests on the PC.
 //   Both ways       a change or a deletion on either side is made on the other. The change made
 //                   last wins, as everywhere in Nova's Calendar.
 //
-// Nothing books, moves or cancels a booking from here: bookings only ever go Acuity → Google.
+// Nothing books, moves or cancels a booking from here: that's src/nova/bookings.js (Portal, the booking
+// page, Approvals). The copies of Acuity's bookings made here before (24 Oct 2026) are tidied away.
 //
 // How it keeps track: google_links ('event': a Nova item ⇄ a Google event, with the hash of what
 // was last synced, so an unchanged event isn't sent again and our own writes aren't echoed back),
@@ -24,8 +25,6 @@
 
 import { google } from "../nova/google.js";
 import { cleanItem, deleteItem, isAgentItem, saveItem } from "../calendar/items.js";
-import { listBookings, feedTimeToIso } from "../booking-calendar.js";
-import { usesNova } from "../mode.js";
 import { flush, forgetLink, keepLink, later, linkByGoogle, linkOf, links, low, partOn, prep, readSetting, sha, spendDb, writeSetting } from "./common.js";
 
 const API = "https://www.googleapis.com/calendar/v3";
@@ -35,7 +34,6 @@ const REV_KEY = "google_cal_rev";
 const syncKey = (which) => `google_cal_sync_${which}`;
 const pageKey = (which) => `google_cal_page_${which}`;
 const PULL_BACK_DAYS = 30; // the first pull reads from this long ago
-const BOOKING_DAYS = 60; // bookings copied this far ahead
 
 // Nova's colours ⇄ Google's event colours
 const COLOR_IDS = { rose: "4", violet: "3", blue: "9", teal: "7", green: "10", amber: "5", orange: "6", red: "11", grey: "8" };
@@ -390,7 +388,7 @@ export async function pullCalendar(env, budget, which, calId) {
 // already read (by id), so each event isn't another trip to the database.
 export async function takeEvent(env, which, calId, event, budget = prep({ left: 0 }), rows = new Map()) {
   const priv = event.extendedProperties?.private || {};
-  // A booking we copied in: Acuity's, not Google's (bookings never come back from Google)
+  // A booking (Nova's own, or an old copy of Acuity's): never comes back from Google
   if (priv.novaBooking) return 0;
   // One of Nova's own items (we put it there)
   if (priv.novaId) {
@@ -479,84 +477,6 @@ async function skipDay(env, id, day, budget) {
   if (link) keepLink(env, budget, "event", id, link.google_id, { extra: link.extra, hash: await itemHash(item) });
 }
 
-// ===== BOOKINGS: ACUITY → GOOGLE (copies only) =====
-
-// An online session (its type says so): a Google Meet link, if Meet links are switched on
-export const isOnlineSession = (b) => /\b(online|remote|zoom|video ?call|google meet|meet)\b/i.test(String(b?.session || ""));
-
-export function bookingEvent(b, { meet = false } = {}) {
-  const start = feedTimeToIso(b.start);
-  const end = feedTimeToIso(b.end) || start;
-  if (!start) return null;
-  const conference = meet && isOnlineSession(b) ? { conferenceData: { createRequest: { requestId: `nova-booking-${b.id}`.slice(0, 64), conferenceSolutionKey: { type: "hangoutsMeet" } } } } : {};
-  return {
-    ...conference,
-    summary: `Booking: ${b.session || "Session"}${b.name ? ` · ${b.name}` : ""}`,
-    description: "A copy of the booking in Acuity. Book, move or cancel it in Acuity (changes here are put back).",
-    start: { dateTime: start, timeZone: TZ },
-    end: { dateTime: end > start ? end : start, timeZone: TZ },
-    colorId: "6",
-    extendedProperties: { private: { novaBooking: String(b.id) } },
-  };
-}
-
-export async function pushBookings(env, budget) {
-  prep(budget);
-  const calId = await studioCalendar(env, budget);
-  budget.left--; // (the booking feed is a call too)
-  const all = (await listBookings(env)) || [];
-  const now = Date.now();
-  const wanted = all.filter((b) => {
-    const t = Date.parse(feedTimeToIso(b.start) || "");
-    return t > now - 7 * 86400000 && t < now + BOOKING_DAYS * 86400000;
-  });
-  const ids = new Set(wanted.map((b) => String(b.id)));
-  const L = await links(env, budget, "booking");
-  const meet = await partOn(env, "meet").catch(() => false);
-  let done = 0;
-  let stopped = false;
-  for (const b of wanted) {
-    if (low(budget)) {
-      stopped = true;
-      break;
-    }
-    const event = bookingEvent(b, { meet });
-    if (!event) continue;
-    const hash = await sha(JSON.stringify([event.summary, event.start, event.end, Boolean(event.conferenceData)]));
-    const link = L.byNova.get(String(b.id)) || null;
-    if (link && link.hash === hash) continue;
-    budget.left--;
-    if (link) {
-      try {
-        await google(env, "PATCH", withMeet(eventsUrl(calId, `/${encodeURIComponent(link.google_id)}`)), event);
-        keepLink(env, budget, "booking", b.id, link.google_id, { extra: calId, hash });
-      } catch (err) {
-        if (err.status !== 404 && err.status !== 410) throw err;
-        forgetLink(env, budget, "booking", b.id);
-      }
-    } else {
-      const made = await google(env, "POST", withMeet(eventsUrl(calId)), event);
-      keepLink(env, budget, "booking", b.id, made.id, { extra: calId, hash });
-    }
-    done++;
-  }
-  // Bookings no longer in the feed (cancelled), still ahead: their copies go
-  for (const l of [...L.byNova.values()]) {
-    if (ids.has(String(l.nova_id))) continue;
-    if (low(budget)) {
-      stopped = true;
-      break;
-    }
-    const b = all.find((x) => String(x.id) === String(l.nova_id));
-    if (b && Date.parse(feedTimeToIso(b.start) || "") < now) continue; // just in the past: leave it
-    budget.left--;
-    await deleteEvent(env, l.extra || calId, l.google_id);
-    forgetLink(env, budget, "booking", l.nova_id);
-    done++;
-  }
-  return { done, more: stopped };
-}
-
 // ===== THE OLD COPIES, ONCE BOOKINGS ARE NOVA'S OWN =====
 // With Nova's own booking system every booking is a real event in the studio's Google Calendar
 // (nova/bookings.js), so the copies of Acuity's bookings in the Novacane Studio calendar go: the
@@ -595,7 +515,7 @@ export async function removeBookingCopies(env, budget, now = Date.now()) {
 
 // ===== ONE RUN =====
 
-// Pull from Google, push to it, copy the bookings: as far as the budget goes. -> { note, more }
+// Pull from Google, push to it, tidy the old booking copies: as far as the budget goes. -> { note, more }
 export async function syncCalendar(env, budget) {
   prep(budget);
   try {
@@ -605,16 +525,8 @@ export async function syncCalendar(env, budget) {
     const studio = await pullCalendar(env, budget, "studio", calId);
     const pushed = await pushItems(env, budget, { plan });
     let bookings = { done: 0, more: false };
-    if ((await usesNova(env)) && !low(budget, 4)) {
-      // Nova's own bookings are real events already: the old copies of Acuity's go
-      bookings = await removeBookingCopies(env, budget);
-    } else if ((await partOn(env, "bookings")) && !low(budget, 4)) {
-      bookings = await pushBookings(env, budget).catch((err) => {
-        // The feed failing doesn't stop the calendar
-        if (err?.status) throw err;
-        return { done: 0, more: false };
-      });
-    }
+    // Bookings are real events already: the old copies of Acuity's go
+    if (!low(budget, 4)) bookings = await removeBookingCopies(env, budget);
     await flush(env, budget);
     const L = await links(env, budget, "event");
     const B = await links(env, budget, "booking");

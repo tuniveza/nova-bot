@@ -5,7 +5,6 @@
 // where copies go) and yes/no are shown: never a key or a secret's value.
 
 import { emailIsSetUp, emailRecipients, looksLikeKey, pickSender, sendEmail } from "./enquiries.js";
-import { bookingSystem } from "./mode.js";
 import { googleReady } from "./nova/google.js";
 import { stripeReady } from "./nova/stripe.js";
 import { campaignFrom, campaignsReady } from "./campaigns.js";
@@ -43,20 +42,18 @@ export async function servicesStatus(env) {
   const keyLike = wrong.some((k) => String(env[k]).split(",").some(looksLikeKey));
   const wrongNote = wrong.length ? ` ${wrong.join(" and ")} ${wrong.length > 1 ? "aren't email addresses" : "isn't an email address"}${keyLike ? ` (${wrong.length > 1 ? "they look like a key" : "it looks like a key"} put in the wrong setting)` : ""}, so ${wrong.length > 1 ? "they aren't" : "it isn't"} used: change ${wrong.length > 1 ? "them" : "it"} on the VPS with /srv/nova/bin/set-secrets.` : "";
   const copies = emailRecipients(env);
-  const [lastEmail, lastCampaign, lastPost, phones, system, google, pc] = await Promise.all([
+  const [lastEmail, lastCampaign, lastPost, phones, google, pc] = await Promise.all([
     latest(env, "SELECT MAX(sent_at) AS at FROM enquiry_messages WHERE channel = 'email' AND status = 'sent'"),
     latest(env, "SELECT MAX(sent_at) AS at FROM email_campaigns WHERE status = 'sent'"),
     latest(env, "SELECT MAX(posted_at) AS at FROM social_posts WHERE status = 'posted'"),
     env.DB.prepare("SELECT COUNT(*) AS n FROM push_subscriptions")
       .first("n")
       .catch(() => 0),
-    bookingSystem(env),
     googleReady(env).catch(() => false),
     pcConnected(env),
   ]);
   const stripeKey = String(env.STRIPE_SECRET_KEY || "");
   const stripeMode = stripeKey.startsWith("sk_live_") ? "live" : stripeKey ? "test mode" : "not set up";
-  const acuity = Boolean(env.ACUITY_USER_ID && env.ACUITY_API_KEY);
 
   return [
     {
@@ -103,16 +100,16 @@ export async function servicesStatus(env) {
     {
       id: "bookings",
       name: "Bookings",
-      tech: system === "nova" ? "Nova's own booking page, Google Calendar and Gmail" : "Acuity Scheduling",
-      ready: system === "nova" ? google : acuity,
-      detail: system === "nova" ? "Bookings go into the studio's Google Calendar; booking emails go from its Gmail." : "Bookings, their emails and the booking page are Acuity's.",
+      tech: "Nova's own booking page, Google Calendar and Gmail",
+      ready: google,
+      detail: "Bookings go into the studio's Google Calendar; booking emails go from its Gmail.",
     },
     {
       id: "payments",
       name: "Deposits",
       tech: "Stripe",
-      ready: system === "nova" ? stripeReady(env) : Boolean(stripeKey) || "partly",
-      detail: system === "nova" ? `Stripe is in ${stripeMode}.` : `Only used once bookings move to Nova's own system (Stripe is ${stripeMode}).`,
+      ready: stripeReady(env),
+      detail: `Stripe is in ${stripeMode}.`,
     },
     {
       id: "pc",

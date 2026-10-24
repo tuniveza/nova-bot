@@ -51,9 +51,10 @@ Cloudflare never gives secrets back, so they're typed in once on the VPS (`set-s
 `/srv/nova/secrets.env` (mode 600). The list: AGENT_NOVA_KEY (must be **the same** as Cloudflare's and
 the studio PC's `na/.env`, because Google's saved keys in the database are locked with it, and Computer
 uses it), ANTHROPIC_API_KEY, CAMPAIGN_FROM, ENQUIRY_EMAIL_FROM,
-ENQUIRY_EMAIL_TO, ACUITY_USER_ID, ACUITY_API_KEY, ACUITY_CALENDAR_URL, and optional Stripe, Meta and TURN keys.
-VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY, ACUITY_WEBHOOK_KEY and ACUITY_EMAIL_KEY are made by
-`switch-keys` at the switch-over (see below).
+ENQUIRY_EMAIL_TO, Stripe's keys, and optional Meta and TURN keys. (ACUITY_CALENDAR_URL only until
+Acuity's bookings are brought over: Admin → Booking system. Nova doesn't use Acuity any more, so the
+other ACUITY_ keys aren't needed.) VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY are made by `switch-keys`
+at the switch-over (see below).
 
 ## The switch-over (ready; nothing has been switched yet)
 
@@ -83,11 +84,10 @@ How the pieces fit:
   trusts it only when the signature is right and under 5 minutes old; then Nova Bot sees the
   workers.dev address and the visitor's IP, exactly as on Cloudflare. Anything else keeps Caddy's
   caller and the VPS's own address. The VPS always sees https (the runtime itself only hears http).
-- **Acuity: nothing to change.** Acuity's webhook (`/acuity/webhook?key=…`) and the Google script
-  (`/acuity/email`, `X-Nova-Key`) still send Cloudflare's old keys. The pass-through checks them
-  against Cloudflare's ACUITY_WEBHOOK_KEY / ACUITY_EMAIL_KEY and swaps in the VPS's, which are
-  made from AGENT_NOVA_KEY (`switch-keys`). ADMIN_PASSWORD isn't needed (only the first Portal
-  account setup used it).
+- **Acuity: not used any more (24 Oct 2026).** Its old addresses (`/acuity/webhook`, `/acuity/email`,
+  `/acuity/booked`) answer 410 Gone. (The pass-through still swaps the old Acuity keys for the VPS's,
+  so those calls reach the VPS and get that answer.) ADMIN_PASSWORD isn't needed (only the first
+  Portal account setup used it).
 - **Notifications:** Cloudflare can't give its VAPID keys back, so the VPS gets a new pair. The next
   time Portal opens on a phone, it notices the server's key changed and quietly signs the phone up
   again (it already said Allow); if the phone wants a tap, it says once, calmly, to turn

@@ -95,7 +95,7 @@ describe("findTestStuff", () => {
 		expect(items["chat:c-own"].reasons.map((r) => r.text)).toContain("Its enquiry looks like a test");
 	});
 
-	it("never flags a real Acuity client, even sharing a name with nothing odd", () => {
+	it("never flags a real client, even sharing a name with nothing odd", () => {
 		const items = findTestStuff(
 			base({
 				clients: [
@@ -128,7 +128,7 @@ describe("findTestStuff", () => {
 		expect(items["enquiry:5"].linked.map((l) => l.key)).toContain("client:12");
 	});
 
-	it("chat bookings that never reached Acuity, their jobs, and the same first message minutes apart", () => {
+	it("old chat bookings that never became a booking, their jobs, and the same first message minutes apart", () => {
 		const t = Date.now() - 3 * 86_400_000;
 		const at = (m) => new Date(t + m * 60_000).toISOString();
 		const items = byKey(
@@ -150,7 +150,7 @@ describe("findTestStuff", () => {
 		);
 		expect(items["booking:1"].confidence).toBe("likely");
 		expect(items["booking:1"].job).toBe(1);
-		expect(items["booking:13"].confidence).toBe("likely"); // never reached Acuity + its chat is gone
+		expect(items["booking:13"].confidence).toBe("likely"); // never became a booking + its chat is gone
 		expect(items["booking:20"]).toBeUndefined();
 		expect(items["chat:c1"].linked.map((l) => l.key)).toContain("booking:1");
 		expect(items["chat:a"].reasons.map((r) => r.text)).toContain("Starts the same way as 2 other chats minutes apart");

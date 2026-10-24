@@ -1,20 +1,15 @@
 // Booking changes an AI suggests and a person approves (migrations/0023_booking_actions.sql)
 //
 // Nova Agent's AI (AGENT_NOVA_KEY, src/agent-nova.js) and the AI in Portal's staff chat
-// (src/manage-bookings.js) can suggest a change in Acuity:
-//
-//   create        make a booking            { typeId, start, firstName, lastName, email, phone?, notes?, notifyClient }
-//   reschedule    move a booking            { appointmentId, start, notifyClient }
-//   cancel        cancel a booking          { appointmentId, notifyClient, note? }
-//   update        change a booking's client details or notes { appointmentId, firstName?, lastName?, email?, phone?, notes? }
-//   block_add     block off a time          { start, end, notes?, calendarId? }
-//   block_remove  remove a blocked-off time { blockId }
+// (src/nova/manage-bookings.js) can suggest a change to a booking in Nova's own booking system
+// (create, reschedule, cancel, update, extras, block_add, block_remove: the details of each are in
+// src/nova/booking-changes.js, which checks them and makes the change). This file is the queue.
 //
 // (start and end: UTC ISO, or the UK clock "YYYY-MM-DDTHH:MM"; saved in UTC.)
 //
 // Who can do what is decided here and in the routes, whatever any AI says:
 //
-//   - The AIs can only PROPOSE: proposeAction() checks the details against Acuity, writes its
+//   - The AIs can only PROPOSE: proposeAction() checks the details against the bookings, writes its
 //     own plain-English summary (never the AI's), saves it as 'pending' and pings the admins'
 //     phones. They can also list what's waiting. Nothing they can reach approves, edits or
 //     carries anything out.
@@ -27,33 +22,14 @@
 // Logs carry ids and statuses only, never anyone's details.
 
 import { notifyPhones } from "./push.js";
-import { queueAgentJob } from "./agent-nova.js";
 import { publicUrl } from "./nova/booking.js";
-import { usesNova } from "./mode.js";
-import { makeBookingChange, checkBookingChange } from "./nova/booking-changes.js";
-import {
-  AcuityError,
-  acuityMessage,
-  acuityRequest,
-  getAppointment,
-  getBlock,
-  listCalendars,
-  listTypes,
-  readTime,
-  toLondonIso,
-  ukClock,
-  ukShort,
-} from "./acuity/api.js";
+import { checkBookingChange, makeBookingChange } from "./nova/booking-changes.js";
 
 export const KINDS = ["create", "reschedule", "cancel", "update", "extras", "block_add", "block_remove"];
 export const PROPOSERS = ["agent", "staff-chat"];
 
 // Suggestions waiting at once, at most (stops a runaway AI filling the list)
 const MAX_PENDING = 50;
-// How far ahead a booking or blocked time can be
-const MAX_AHEAD_MS = 2 * 365 * 86400000;
-// The longest blocked-off time in one go
-const MAX_BLOCK_MS = 31 * 86400000;
 
 // An approved change still not finished after this long was cut off part-way (Nova Bot stopped)
 const STUCK_MS = 5 * 60 * 1000;
@@ -72,180 +48,9 @@ function positiveId(value) {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-const looksLikeEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-
-// A start or end time -> UTC ISO, or a problem
-function readWhen(value, label, { future = true } = {}) {
-  const date = readTime(value);
-  if (!date) return { problem: `${label} must be a UK time "YYYY-MM-DDTHH:MM" or a UTC time (ISO 8601).` };
-  if (future && date.getTime() < Date.now()) return { problem: `${label} (${ukShort(date)}) is in the past.` };
-  if (date.getTime() > Date.now() + MAX_AHEAD_MS) return { problem: `${label} is more than two years ahead.` };
-  return { iso: date.toISOString() };
-}
-
-const emailNote = (notify) => (notify ? "Acuity emails the client" : "no email to the client");
-const whose = (a) => `${`${a.firstName || ""} ${a.lastName || ""}`.trim() || "the client"}'s ${a.type || "booking"}`;
-const span = (start, end) => {
-  const a = ukShort(start);
-  const b = ukShort(end);
-  return a.slice(0, -5) === b.slice(0, -5) ? `${a}–${ukClock(end)}` : `${a} to ${b}`;
-};
-
-// A booking that exists and isn't cancelled (Acuity's shape), or a problem
-async function liveAppointment(env, id) {
-  const appt = await getAppointment(env, id);
-  if (!appt) return { problem: `There's no booking ${id} in Acuity.` };
-  if (appt.canceled) return { problem: `Booking ${id} is already cancelled.` };
-  return { appt };
-}
-
-// Check and tidy a proposal's details for its kind, and write the summary: Nova's own bookings
-// (nova/booking-changes.js), or Acuity's while the switch is on Acuity.
-// -> { payload, summary } or { status, error }.
-export async function checkProposal(env, kind, raw) {
-  if (await usesNova(env)) return checkBookingChange(env, kind, raw);
-  return checkAcuityProposal(env, kind, raw);
-}
-
-// Acuity's: reading Acuity where needed. Throws an AcuityError if Acuity is busy or down.
-async function checkAcuityProposal(env, kind, raw) {
-  const input = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-  const notifyClient = input.notifyClient !== false;
-
-  if (kind === "create") {
-    const typeId = positiveId(input.typeId);
-    if (!typeId) return fail(400, "typeId: which session type (its Acuity id)?");
-    const start = readWhen(input.start, "start");
-    if (start.problem) return fail(400, start.problem);
-    const firstName = text(input.firstName, 60);
-    const lastName = text(input.lastName, 60);
-    const email = text(input.email, 200).toLowerCase();
-    if (!firstName || !lastName) return fail(400, "The client's first and last name are needed.");
-    if (!looksLikeEmail(email)) return fail(400, "The client's email address is needed.");
-    const payload = { typeId, start: start.iso, firstName, lastName, email, notifyClient };
-    if (text(input.phone, 40)) payload.phone = text(input.phone, 40);
-    if (text(input.notes, 2000)) payload.notes = text(input.notes, 2000);
-    const type = (await listTypes(env)).find((t) => t.id === typeId);
-    if (!type) return fail(400, `There's no session type ${typeId} in Acuity.`);
-    const minutes = Number(type.duration) || 0;
-    const when = minutes ? span(start.iso, new Date(Date.parse(start.iso) + minutes * 60000)) : ukShort(start.iso);
-    return { payload, summary: `Book ${firstName} ${lastName} (${email}) for ${type.name} on ${when} (${emailNote(notifyClient)})` };
-  }
-
-  if (kind === "reschedule") {
-    const appointmentId = positiveId(input.appointmentId);
-    if (!appointmentId) return fail(400, "appointmentId: which booking (its Acuity id)?");
-    const start = readWhen(input.start, "start");
-    if (start.problem) return fail(400, start.problem);
-    const found = await liveAppointment(env, appointmentId);
-    if (found.problem) return fail(400, found.problem);
-    const was = readTime(String(found.appt.datetime || ""));
-    if (was && was.toISOString() === start.iso) return fail(400, `It's already at ${ukShort(start.iso)}.`);
-    return {
-      payload: { appointmentId, start: start.iso, notifyClient },
-      summary: `Move ${whose(found.appt)} from ${was ? ukShort(was) : "its current time"} to ${ukShort(start.iso)} (${emailNote(notifyClient)})`,
-    };
-  }
-
-  if (kind === "cancel") {
-    const appointmentId = positiveId(input.appointmentId);
-    if (!appointmentId) return fail(400, "appointmentId: which booking (its Acuity id)?");
-    const found = await liveAppointment(env, appointmentId);
-    if (found.problem) return fail(400, found.problem);
-    const note = text(input.note, 500);
-    const was = readTime(String(found.appt.datetime || ""));
-    const payload = { appointmentId, notifyClient };
-    if (note) payload.note = note;
-    return {
-      payload,
-      summary: `Cancel ${whose(found.appt)} on ${was ? ukShort(was) : "its day"} (${emailNote(notifyClient)}${note && notifyClient ? `, with the note "${note}"` : ""})`,
-    };
-  }
-
-  if (kind === "update") {
-    const appointmentId = positiveId(input.appointmentId);
-    if (!appointmentId) return fail(400, "appointmentId: which booking (its Acuity id)?");
-    const changes = {};
-    for (const [key, max] of [["firstName", 60], ["lastName", 60], ["email", 200], ["phone", 40]]) {
-      if (text(input[key], max)) changes[key] = key === "email" ? text(input[key], max).toLowerCase() : text(input[key], max);
-    }
-    if (typeof input.notes === "string") changes.notes = input.notes.slice(0, 2000);
-    if (changes.email && !looksLikeEmail(changes.email)) return fail(400, "That email address doesn't look right.");
-    const found = await liveAppointment(env, appointmentId);
-    if (found.problem) return fail(400, found.problem);
-    // Only what really changes
-    for (const key of Object.keys(changes)) if (String(found.appt[key] || "") === changes[key]) delete changes[key];
-    if (Object.keys(changes).length === 0) return fail(400, "Nothing to change: give at least one of firstName, lastName, email, phone, notes that's different.");
-    const NAMES = { firstName: "first name", lastName: "last name", email: "email", phone: "phone", notes: "notes" };
-    const list = Object.entries(changes).map(([key, value]) => `${NAMES[key]} "${String(found.appt[key] || "").slice(0, 100)}" → "${value.slice(0, 100)}"`);
-    const was = readTime(String(found.appt.datetime || ""));
-    return { payload: { appointmentId, ...changes }, summary: `Change ${whose(found.appt)} on ${was ? ukShort(was) : "its day"}: ${list.join(", ")}` };
-  }
-
-  // Session type, price, paid: Acuity's API can't change these, so once approved Nova Agent
-  // does it on Acuity's pages (a job, src/agent-nova.js)
-  if (kind === "extras") {
-    const appointmentId = positiveId(input.appointmentId);
-    if (!appointmentId) return fail(400, "appointmentId: which booking (its Acuity id)?");
-    const changes = {};
-    if (text(input.type, 150)) changes.type = text(input.type, 150);
-    if (input.price !== undefined && input.price !== null && input.price !== "") {
-      const price = String(input.price).replace(/[£\s,]/g, "");
-      if (!/^\d{1,5}(\.\d{1,2})?$/.test(price)) return fail(400, "price: the amount in pounds, e.g. 80.00.");
-      changes.price = Number(price).toFixed(2);
-    }
-    if (typeof input.paid === "boolean") changes.paid = input.paid;
-    if (Object.keys(changes).length === 0) return fail(400, "Nothing to change: give type, price or paid.");
-    const found = await liveAppointment(env, appointmentId);
-    if (found.problem) return fail(400, found.problem);
-    const list = [
-      changes.type ? `session type "${found.appt.type || "?"}" → "${changes.type}"` : "",
-      changes.price ? `price £${found.appt.price || "?"} → £${changes.price}` : "",
-      "paid" in changes ? `paid: ${changes.paid ? "yes" : "no"}` : "",
-    ].filter(Boolean);
-    const was = readTime(String(found.appt.datetime || ""));
-    const clientName = `${found.appt.firstName || ""} ${found.appt.lastName || ""}`.trim();
-    return {
-      payload: { appointmentId, clientName, ...changes },
-      summary: `Change ${whose(found.appt)} on ${was ? ukShort(was) : "its day"}: ${list.join(", ")} (Nova Agent does this on Acuity's pages)`,
-    };
-  }
-
-  if (kind === "block_add") {
-    const start = readWhen(input.start, "start");
-    if (start.problem) return fail(400, start.problem);
-    const end = readWhen(input.end, "end");
-    if (end.problem) return fail(400, end.problem);
-    const length = Date.parse(end.iso) - Date.parse(start.iso);
-    if (length <= 0) return fail(400, "end must be after start.");
-    if (length > MAX_BLOCK_MS) return fail(400, "That's more than a month: block it off in smaller pieces.");
-    const payload = { start: start.iso, end: end.iso };
-    const notes = text(input.notes, 500);
-    if (notes) payload.notes = notes;
-    let calendar = "";
-    if (input.calendarId !== undefined && input.calendarId !== null && input.calendarId !== "") {
-      const calendarId = positiveId(input.calendarId);
-      const found = calendarId && (await listCalendars(env)).find((c) => c.id === calendarId);
-      if (!found) return fail(400, `There's no calendar ${input.calendarId} in Acuity.`);
-      payload.calendarId = calendarId;
-      calendar = found.name;
-    }
-    return { payload, summary: `Block off ${span(start.iso, end.iso)}${calendar ? ` in ${calendar}` : ""}${notes ? ` ("${notes}")` : ""}` };
-  }
-
-  if (kind === "block_remove") {
-    const blockId = positiveId(input.blockId);
-    if (!blockId) return fail(400, "blockId: which blocked time (its Acuity id)?");
-    const block = await getBlock(env, blockId);
-    if (!block) return fail(400, `There's no blocked time ${blockId} in Acuity.`);
-    const start = readTime(String(block.start || ""));
-    const end = readTime(String(block.end || ""));
-    const notes = text(block.notes || block.description, 100);
-    return { payload: { blockId }, summary: `Remove the blocked-off time ${start && end ? span(start, end) : `#${blockId}`}${notes ? ` ("${notes}")` : ""}` };
-  }
-
-  return fail(400, `kind must be one of: ${KINDS.join(", ")}.`);
-}
+// Check and tidy a proposal's details for its kind, and write the summary (nova/booking-changes.js).
+// -> { payload, summary } or { status, error }
+export const checkProposal = (env, kind, raw) => checkBookingChange(env, kind, raw);
 
 // ===== READING =====
 
@@ -276,7 +81,7 @@ function publicAction(env, row) {
     note: row.decision_note || null,
     executedAt: row.executed_at || null,
     result: parse(row.result),
-    error: stuck ? "It didn't finish (Nova Bot stopped part-way). Check Acuity before doing it again." : row.error || null,
+    error: stuck ? "It didn't finish (Nova Bot stopped part-way). Check the booking before doing it again." : row.error || null,
     portalUrl: `${publicUrl(env)}/portal/?view=approvals&action=${row.id}`,
   };
 }
@@ -299,7 +104,7 @@ export async function listActions(env, { status = "pending" } = {}) {
 // ===== THE AIs: propose only =====
 
 // Save a suggestion as 'pending' and ping the admins. It's never carried out from here.
-// -> { action } or { status, error }. Throws an AcuityError if Acuity is busy or down.
+// -> { action } or { status, error }. Throws if Google Calendar can't be read (a blocked time's check).
 export async function proposeAction(env, { kind, payload, reason, proposedBy }) {
   if (!KINDS.includes(kind)) return fail(400, `kind must be one of: ${KINDS.join(", ")}.`);
   if (!PROPOSERS.includes(proposedBy)) return fail(400, "Who's proposing it?");
@@ -421,7 +226,7 @@ export async function rejectAction(env, me, { id, note }) {
 
 // Carry out an approved action, once. Only status 'approved' runs (a person pressed Approve);
 // anything else is handed back untouched. started_at is claimed first, so even two calls at the
-// same moment make the change in Acuity once.
+// same moment make the change once.
 export async function executeApproved(env, id) {
   const now = nowIso();
   const { meta } = await env.DB.prepare("UPDATE booking_actions SET started_at = ?, updated_at = ? WHERE id = ? AND status = 'approved' AND started_at IS NULL")
@@ -431,89 +236,28 @@ export async function executeApproved(env, id) {
   const row = await env.DB.prepare("SELECT kind, payload FROM booking_actions WHERE id = ? AND status = 'approved'").bind(id).first();
   let outcome;
   try {
-    outcome = (await usesNova(env)) ? await makeBookingChange(env, row.kind, JSON.parse(row.payload)) : await carryOut(env, row.kind, JSON.parse(row.payload));
+    outcome = await makeBookingChange(env, row.kind, JSON.parse(row.payload));
   } catch (err) {
-    const unsure = err instanceof AcuityError && err.kind === "unreachable" && ["create", "block_add"].includes(row.kind);
     // Google or Stripe not answering: their own words (they never hold anyone's details)
-    const outside = !(err instanceof AcuityError) && /^(Google|Stripe)\b/.test(String(err?.message || ""));
-    outcome = {
-      ok: false,
-      error:
-        err instanceof AcuityError
-          ? err.message + (unsure ? " It may or may not have been made: check Acuity before trying again." : "")
-          : outside
-            ? `${String(err.message).slice(0, 200)}. Check the booking before trying again.`
-            : "Something went wrong carrying it out.",
-    };
-    if (!(err instanceof AcuityError)) console.log(`Booking action ${id}: carrying it out failed (${err?.name || "error"})`);
+    const outside = /^(Google|Stripe)\b/.test(String(err?.message || ""));
+    outcome = { ok: false, error: outside ? `${String(err.message).slice(0, 200)}. Check the booking before trying again.` : "Something went wrong carrying it out. Check the booking before trying again." };
+    console.log(`Booking action ${id}: carrying it out failed (${err?.name || "error"})`);
   }
   const done = nowIso();
   await env.DB.prepare("UPDATE booking_actions SET status = ?, executed_at = ?, result = ?, error = ?, updated_at = ? WHERE id = ? AND status = 'approved'")
     .bind(outcome.ok ? "executed" : "failed", done, outcome.ok ? JSON.stringify(outcome.result || {}) : null, outcome.ok ? null : outcome.error, done, id)
     .run();
   console.log(`Booking action ${id} (${row.kind}): ${outcome.ok ? "executed" : "failed"}`);
-  // Nova Agent re-reads the bookings (blocked times never get a webhook from Acuity)
+  // Nova Agent re-reads the bookings (a blocked time doesn't go through the booking engine)
   if (outcome.ok) await markBookingsChanged(env).catch(() => {});
   return getAction(env, id);
-}
-
-// The change itself, in Acuity. -> { ok, result } or { ok: false, error }
-async function carryOut(env, kind, p) {
-  const quiet = p.notifyClient === false ? "&noEmail=true" : "";
-  const said = (data) => ({ ok: false, error: `Acuity said "${acuityMessage(data)}".` });
-
-  if (kind === "create") {
-    const body = { appointmentTypeID: p.typeId, datetime: toLondonIso(p.start), firstName: p.firstName, lastName: p.lastName, email: p.email };
-    if (p.phone) body.phone = p.phone;
-    if (p.notes) body.notes = p.notes;
-    const { ok, data } = await acuityRequest(env, "POST", `/appointments?admin=true${quiet}`, body);
-    return ok ? { ok: true, result: { appointmentId: data?.id ?? null } } : said(data);
-  }
-  if (kind === "reschedule") {
-    const { ok, data } = await acuityRequest(env, "PUT", `/appointments/${p.appointmentId}/reschedule?admin=true${quiet}`, { datetime: toLondonIso(p.start) });
-    return ok ? { ok: true, result: { appointmentId: p.appointmentId, start: p.start } } : said(data);
-  }
-  if (kind === "cancel") {
-    const { ok, data } = await acuityRequest(env, "PUT", `/appointments/${p.appointmentId}/cancel?admin=true${quiet}`, p.note ? { cancelNote: p.note } : {});
-    return ok ? { ok: true, result: { appointmentId: p.appointmentId } } : said(data);
-  }
-  if (kind === "update") {
-    const changes = {};
-    for (const key of ["firstName", "lastName", "email", "phone", "notes"]) if (key in p) changes[key] = p[key];
-    const { ok, data } = await acuityRequest(env, "PUT", `/appointments/${p.appointmentId}?admin=true`, changes);
-    return ok ? { ok: true, result: { appointmentId: p.appointmentId } } : said(data);
-  }
-  if (kind === "extras") {
-    if (!env.AGENT_NOVA_KEY) return { ok: false, error: "Nova Agent isn't connected (no AGENT_NOVA_KEY), so it can't change this. Change it in Acuity." };
-    const changes = {};
-    for (const key of ["type", "price", "paid"]) if (key in p) changes[key] = p[key];
-    const summary = `${p.clientName || "Booking"} #${p.appointmentId}: ${Object.entries(changes).map(([k, v]) => `${k} → ${v}`).join(", ")}`;
-    const job = await queueAgentJob(env, { appointmentId: p.appointmentId, clientName: p.clientName || "", changes, summary });
-    return { ok: true, result: { appointmentId: p.appointmentId, job, note: "Queued for Nova Agent: it makes the change on Acuity's pages within a few minutes, and staff phones get a notification when it's done." } };
-  }
-  if (kind === "block_add") {
-    let calendarID = p.calendarId;
-    if (!calendarID) {
-      calendarID = (await listCalendars(env))[0]?.id;
-      if (!calendarID) return { ok: false, error: "Acuity has no calendar to block the time off in." };
-    }
-    const body = { start: toLondonIso(p.start), end: toLondonIso(p.end), calendarID };
-    if (p.notes) body.notes = p.notes;
-    const { ok, data } = await acuityRequest(env, "POST", "/blocks", body);
-    return ok ? { ok: true, result: { blockId: data?.id ?? null, calendarId: calendarID } } : said(data);
-  }
-  if (kind === "block_remove") {
-    const { ok, status, data } = await acuityRequest(env, "DELETE", `/blocks/${p.blockId}`);
-    return ok || status === 204 ? { ok: true, result: { blockId: p.blockId } } : said(data);
-  }
-  return { ok: false, error: `Unknown kind ${kind}.` };
 }
 
 // ===== "BOOKINGS CHANGED" (for Nova Agent's /next) =====
 
 export const BOOKINGS_CHANGED_KEY = "bookings_changed_at";
 
-// Something changed in Acuity's diary (its webhook, or an approved change): note when
+// Something changed in the diary (a booking made, moved or cancelled, or an approved change): note when
 export async function markBookingsChanged(env, at = nowIso()) {
   await env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(BOOKINGS_CHANGED_KEY, at).run();
 }

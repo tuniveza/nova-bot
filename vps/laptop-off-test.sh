@@ -67,7 +67,7 @@ curl -s -m 30 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" -H 
 REMOTE
 }
 check "Email sends (VPS mail server)" mail_ok
-check "Bookings feed answers" test "$(part feed)" = green
+check "Bookings (Google Calendar, Stripe) ready" test "$(part bookings)" = green
 check "Timed jobs run" test "$(part jobs)" = green
 on_for=$(( $(date +%s) - $(date -d "$off_at" +%s) ))
 

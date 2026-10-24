@@ -132,41 +132,34 @@ Anthropic Claude for the AI, Stripe…) with a green dot when it's set up
 (`GET /app/api/services`, `src/services.js`; only yes/no and plain addresses, never a key).
 **Send me a test email** emails whoever pressed it through the studio's mail server, at most once a minute.
 
-## Booking links (getting bookings into Acuity)
+## Booking links
 
-Acuity's API needs its Powerhouse plan, so NovaBot can't write to the calendar
-itself. Instead it sends people a direct link to book:
+NovaBot books on Nova Bot's own booking page (`/book`: the studio's Google Calendar,
+Gmail and a Stripe deposit). It sends people a direct link to book:
 
 - **In the chat:** when someone wants a standard session, NovaBot gives them a
-  "Book this session" link. It opens the Acuity booking calendar straight on the
-  right package (e.g. Rap Package, 2 songs), with their name and email filled in
-  if they gave them. They pick a time and pay the deposit, and the booking goes
-  into Acuity like any other.
+  "Book this session" link, or opens the booking card. It opens the booking page
+  straight on the right package (e.g. Rap Package, 2 songs), with their name and
+  email filled in if they gave them. They pick a time and pay the deposit, and the
+  booking goes into the studio's calendar.
 - **For enquiries:** on the Enquiries tab, open **Booking link** on an enquiry,
   choose the session you've agreed with them and click **Make link**. Copy the
   link or click **Email it to them** (opens a ready-written email), and they book
   it themselves.
 
-The session list is read from the public booking calendar every hour, so new or
-renamed packages in Acuity show up on their own. Private and inactive packages
-are left out. The studio's Acuity account number (`ACUITY_OWNER`) is at the top
-of `src/booking.js`.
+The sessions and prices are in `src/nova/studio.js`.
 
 ### Free times in the chat
 
 NovaBot can answer "is next Tuesday free?" or "what's your soonest slot?". It
-reads the same free times your public booking calendar shows any visitor (no
-login, no password stored, read-only), then gives the booking link.
+reads the free times from the studio's Google Calendar (opening hours, the time a
+session takes and its changeover, minimum notice), then gives the booking link.
 
 - It only ever says a time "shows as free right now", and never promises or
   holds one: a time is only theirs once they book it and pay the deposit.
-- It can look at up to 14 days at a time, up to 6 months ahead. Lookups are
-  remembered for 2 minutes so Acuity isn't asked over and over.
-- This uses the address Acuity's own booking page uses behind the scenes, not
-  an official Acuity feature, so Acuity could change it. If it stops working,
-  NovaBot doesn't guess: it says to check the calendar and gives the link.
-- The calendar's own rules (opening hours, minimum notice, how far ahead people
-  can book) decide what shows as free, so change those in Acuity as usual.
+- Anything in the studio's Google Calendar that isn't marked "free" blocks the time.
+- The rules (opening hours, minimum notice, how far ahead people can book) are in
+  `src/nova/studio.js`.
 
 ## The chat log
 

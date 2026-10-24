@@ -9,10 +9,8 @@
 
 // The library that seals messages the way Apple accepts (version 2)
 import { buildPushPayload } from "@block65/webcrypto-web-push";
-// Booking details, for the Alerts tab
-import { bookingInfo, describeBooking } from "./booking-details.js";
-// Bookings made with Nova Bot's own booking system (src/nova/, behind the switch in mode.js)
-import { bookingInfo as novaBookingInfo, describeBooking as novaDescribeBooking } from "./nova/booking-details.js";
+// Booking details, for the Alerts tab (Nova Bot's own booking system, src/nova/)
+import { bookingInfo, describeBooking } from "./nova/booking-details.js";
 
 // Save a phone's delivery address (or update it if it's already saved). `owner` says who
 // turned it on (`staffId`) and what it is (`name`, from phoneName), so reminders can pick it.
@@ -192,7 +190,7 @@ export async function listAlerts(env) {
     `SELECT n.id, n.created_at, n.title, n.body, n.url, n.phones, n.appointment_id, n.enquiry_id, q.name, q.email, q.phone
      FROM notifications n LEFT JOIN enquiries q ON q.id = n.enquiry_id ORDER BY n.id DESC LIMIT 100`
   ).all();
-  // Shape each one for the app, saying what kind of alert it is (and which booking, so the app can check it with Acuity)
+  // Shape each one for the app, saying what kind of alert it is (and which booking)
   return Promise.all(
     results.map(async (n) => ({ ...(await shapeAlert(env, n)), kind: alertKind(n), appointmentId: n.appointment_id || null }))
   );
@@ -205,98 +203,29 @@ export function alertKind(n) {
   if (n.title.startsWith("Quest: ") || n.title.startsWith("Mission: ")) return "quest";
   // A test notification
   if (/\btest\b/i.test(n.title)) return "test";
-  // A booking made in Acuity, or with Nova Bot's own booking system
-  if (n.appointment_id) return /acuityscheduling\.com/.test(n.url) ? "booking" : "nova-booking";
-  if (/^NovaBot (booked|couldn't book)/.test(n.title)) return "booking";
+  // A booking (Nova Bot's own booking system; an old alert from Acuity's days is shown the same)
+  if (n.appointment_id || /^NovaBot (booked|couldn't book)/.test(n.title)) return "nova-booking";
   if (n.title.startsWith("Nova Agent")) return "agent";
   // A customer's enquiry
   if (n.enquiry_id) return "enquiry";
-  // A problem with the connection to Acuity
-  if (/can't reach Acuity|Acuity/i.test(n.title)) return "health";
+  // A problem with the booking system (nova/health.js: Google or Stripe; an old one about Acuity)
+  if (/^Bookings need attention|can't reach Acuity/i.test(n.title)) return "health";
   return "other";
 }
 
 // One alert, with the latest booking or enquiry details
 async function shapeAlert(env, n) {
-  // A Nova Bot booking (its alerts link to Google Calendar or Portal, never Acuity): shown as it is now
-  if (n.appointment_id && !/acuityscheduling\.com/.test(n.url)) return novaAlert(env, n);
-  // Booking details, if the confirmation page sent them after the notification went out
-  const info = n.appointment_id ? await bookingInfo(env, n.appointment_id) : null;
-  // The customer's contact details, from the enquiry or the booking
-  const contact = { name: n.name || info?.name || null, email: n.email || info?.email || null, phone: n.phone || info?.phone || null };
-  // The booking's details as they are now
-  const now = info ? describeBooking(info) : [];
-  // A new-booking alert sent before all the details arrived, but more have arrived since
-  const late = n.title.startsWith("New booking") && now.length > n.body.split("\n").length;
-  // Then show the details now (and the name, if we know it)
-  const title = late && info.name ? "New booking: " + info.name : n.title;
-  // The text: the details, or what the notification said
-  const body = late ? now.join("\n") : n.body;
-  // The latest details about this booking from Acuity (always up to date)
-  const email = info && info.source !== "page"
-    ? {
-        // Where they came from: Acuity's calendar, or Acuity's email
-        source: info.source,
-        // What the email was about (scheduled, rescheduled, canceled)
-        kind: info.emailKind,
-        // When we got them
-        at: info.sourceAt,
-        // Every detail in it
-        lines: now,
-        // Already shown in the alert's own text, so no need to repeat it
-        same: now.join("\n") === body,
-        // A link that opens it in Gmail
-        gmail: info.gmail,
-      }
-    : null;
-  // What the app needs for this alert
-  return { id: n.id, created_at: n.created_at, title, body, url: n.url, phones: n.phones, contact, email };
+  if (n.appointment_id) return novaAlert(env, n);
+  const contact = { name: n.name || null, email: n.email || null, phone: n.phone || null };
+  return { id: n.id, created_at: n.created_at, title: n.title, body: n.body, url: n.url, phones: n.phones, contact, email: null };
 }
 
-// Check a booking with Acuity itself, so staff can tell a real booking from a test or a fake:
-// it exists, who it's for, when it was made, whether it's been cancelled, and what's been paid
-const ACUITY_API = "https://acuityscheduling.com/api/v1";
-export async function verifyBooking(env, id) {
-  // Booking numbers are whole numbers
-  if (!/^\d{1,12}$/.test(String(id || ""))) return { status: "unknown", title: "No booking number", lines: [] };
-  // Can't ask Acuity without its keys
-  if (!env.ACUITY_USER_ID || !env.ACUITY_API_KEY) return { status: "unknown", title: "Can't check: Acuity isn't connected", lines: [] };
-  let res;
-  try {
-    // Ask Acuity for this booking (cancelled ones too)
-    res = await fetch(`${ACUITY_API}/appointments/${id}?pastFormAnswers=false`, {
-      headers: { Authorization: "Basic " + btoa(`${env.ACUITY_USER_ID.trim()}:${env.ACUITY_API_KEY.trim()}`) },
-      signal: AbortSignal.timeout(10000),
-    });
-  } catch {
-    return { status: "unknown", title: "Couldn't reach Acuity just now", lines: [] };
-  }
-  // Acuity has never heard of it
-  if (res.status === 404) return { status: "missing", title: "Not found in Acuity", lines: [`Acuity #${id}`, "This may be a test, or not a real booking"] };
-  if (!res.ok) return { status: "unknown", title: `Acuity answered ${res.status}`, lines: [] };
-  const a = await res.json();
-  // "Tue 6 Oct, 20:14" in UK time
-  const uk = (iso) => (iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
-  const money = (v) => (v === undefined || v === null || v === "" ? "" : "£" + Number(v).toFixed(2));
-  const paid = Number(a.amountPaid || 0);
-  const price = Number(a.priceSold || a.price || 0);
-  const lines = [
-    `Acuity #${a.id}${a.calendar ? " · " + a.calendar : ""}`,
-    [a.firstName, a.lastName].filter(Boolean).join(" ") + (a.email ? " · " + a.email : ""),
-    `${a.type || "Session"} · ${uk(a.datetime)}`,
-    `Booked ${uk(a.datetimeCreated)}`,
-    price ? `${a.paid === "yes" ? "Paid in full" : paid ? `Deposit ${money(paid)} of ${money(price)} paid` : `Nothing paid yet of ${money(price)}`}` : paid ? `${money(paid)} paid` : "",
-    a.noShow ? "Marked as a no-show" : "",
-  ].filter(Boolean);
-  if (a.canceled) return { status: "cancelled", title: "Cancelled in Acuity", lines };
-  return { status: "real", title: "Real booking: confirmed in Acuity", lines, checkedAt: new Date().toISOString() };
-}
-
-// One alert about a Nova Bot booking, with the booking as it is now (it may have moved, been paid or cancelled since)
+// One alert about a booking, with the booking as it is now (it may have moved, been paid or cancelled since).
+// (An old alert from Acuity's days has an Acuity number that's no booking here: it's shown as it was.)
 async function novaAlert(env, n) {
-  const info = await novaBookingInfo(env, n.appointment_id).catch(() => null);
+  const info = await bookingInfo(env, n.appointment_id).catch(() => null);
   const contact = { name: n.name || info?.name || null, email: n.email || info?.email || null, phone: n.phone || info?.phone || null };
-  const now = info ? novaDescribeBooking(info) : [];
+  const now = info ? describeBooking(info) : [];
   const email = info ? { source: "booking", kind: null, at: info.sourceAt, lines: now, same: n.body.includes(now.join("\n")), link: info.link } : null;
   return { id: n.id, created_at: n.created_at, title: n.title, body: n.body, url: n.url, phones: n.phones, contact, email };
 }

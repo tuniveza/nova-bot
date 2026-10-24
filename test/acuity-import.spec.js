@@ -184,3 +184,16 @@ describe("bringing them over", () => {
     expect(await bookings()).toHaveLength(0);
   });
 });
+
+describe("Acuity's old addresses", () => {
+  it("the webhook, the confirmation page's beacon and the email forwarder are told Nova doesn't use Acuity any more", async () => {
+    for (const [path, method] of [["/acuity/webhook?key=x", "POST"], ["/acuity/email", "POST"], ["/acuity/booked?id=1", "GET"]]) {
+      const ctx = createExecutionContext();
+      const res = await worker.fetch(new Request(BASE + path, { method, body: method === "POST" ? "action=scheduled&id=1" : undefined }), env, ctx);
+      await waitOnExecutionContext(ctx);
+      expect(res.status).toBe(410);
+      expect(await res.text()).toBe("Nova doesn't use Acuity any more.");
+    }
+    expect(await bookings()).toHaveLength(0);
+  });
+});

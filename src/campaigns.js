@@ -41,7 +41,7 @@
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
 import { emailRecipients, mailReady, pickSender, sendEmail } from "./enquiries.js";
-import { readTime } from "./acuity/api.js";
+import { readTime } from "./uk-time.js";
 import { fanPage } from "./fans.js";
 
 export const AUDIENCES = ["fans", "clients", "everyone"];

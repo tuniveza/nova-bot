@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/media/banner.jpg" alt="Portal on three phones: Quests, the smart calendar with this week at a glance, and Alerts with a booking checked in Acuity" width="900">
+<img src="docs/media/banner.jpg" alt="Portal on three phones: Quests, the smart calendar with this week at a glance, and Alerts with a booking" width="900">
 
 # Nova Bot
 
@@ -45,7 +45,7 @@ any accounts.
 - [Run it locally (sandbox)](#run-it-locally-sandbox)
 - [The build step](#the-build-step)
 - [Configuration](#configuration)
-- [Nova Bot's own booking system](#nova-bots-own-booking-system-behind-a-switch)
+- [Bookings](#bookings-nova-bots-own-booking-system)
 - [Tests](#tests)
 - [Deploying your own copy](#deploying-your-own-copy)
 - [Project layout](#project-layout)
@@ -63,18 +63,18 @@ any accounts.
 - **It answers questions** (`src/index.js`). Claude answers from the studio's own
   information: prices, policies and booking rules. Every link it gives is checked, and
   anything made up is replaced with a real one.
-- **Bookings always take the deposit.** Nothing NovaBot does puts a session into Acuity
-  unpaid (`src/book-session.js`). It works out the session, checks the time is still free
-  and fills in the customer's details, then hands them Acuity's own booking page with
-  everything ready. Paying the deposit there is what books it; the time isn't held until
-  they pay. The same rule covers the staff chat and Nova Agent.
+- **Bookings** (`src/nova/`): Nova Bot's own booking system. The booking page (`/book`), the
+  studio's Google Calendar as the diary, emails from the studio's Gmail, and a 50% deposit
+  through Stripe. On the website, the customer books by paying the deposit; in Portal's
+  staff chat NovaBot books for them and emails the deposit link. Changes to a booking that
+  an AI suggests wait for an admin's Approve in Portal → Approvals.
 - **The chat widget** (`public/novabot.js`, `public/novabot.css`): opens after the page
   loads, keeps out of the way of buttons and forms, remembers the conversation across
   pages, and has a "Keep chat closed" switch. Optional voice: speak to it (Whisper on
   Workers AI) and hear replies (the browser's voice or MeloTTS).
-- **Booking links and free times** (`src/booking.js`): reads session types and free start
-  times from the studio's *public* Acuity booking page (no login, read-only).
-- **The booking card** (`src/booking-form.js`): "Book a session" opens a card in the chat
+- **Booking links and free times** (`src/nova/booking.js`): the sessions and prices in
+  `src/nova/studio.js`, and the free start times in the studio's Google Calendar.
+- **The booking card** (`src/nova/booking-form.js`): "Book a session" opens a card in the chat
   with the session, a strip of days, that day's free times and the visitor's details. The
   Worker checks the time again before anything happens.
 - **Enquiries** (`src/enquiries.js`): NovaBot can take an enquiry, show the visitor a
@@ -105,7 +105,7 @@ it sends you to Portal and back.
 | **Enquiries** | Every enquiry, mark done, and a test email |
 | **Conversations** | Recent chats (kept 90 days), one in full with `?chat=ID` |
 | **Feedback** | What visitors said about NovaBot, good and bad |
-| **Booking system** (`/admin/connections`) | The Acuity / Nova switch, plus Google and Stripe |
+| **Booking system** (`/admin/connections`) | Google and Stripe for bookings, recent booking emails, and **Bring Acuity's bookings over** (`/admin/import-acuity`, a one-off) |
 | **Links** (`/admin/links`) | The master list: every address with a live check, **What's changed**, and **everything the suite can do**. Edited here as JSON |
 
 <p align="center">
@@ -245,25 +245,22 @@ flowchart LR
       R --> MEM[Memory engine<br/>src/memory]
       R --> PO[Sign-in<br/>src/portal]
     end
-    W -->|public booking page,<br/>API, calendar feed| A[Acuity Scheduling]
-    NA[Nova Agent<br/>studio PC] -->|jobs, quests,<br/>memory| W
-    NA -->|admin pages| A
+    NA[Nova Agent<br/>studio PC] -->|quests,<br/>memory| W
     W -->|Web Push| S
-    W -.->|behind the switch| G[Google Calendar · Gmail · Stripe]
+    W -->|bookings| G[Google Calendar · Gmail · Stripe]
 ```
 
 - **One Worker** serves the widget, the chat API, Portal, Index, the
-  admin pages, webhooks and a once-a-minute cron (booking pings, and reading website chats
-  for memory).
+  admin pages, webhooks and a once-a-minute cron (holds let go, reminders, Google, and
+  reading website chats for memory).
 - **D1** holds enquiries, chat logs (90 days), referral codes, notifications, settings,
-  Nova Agent's job queue, the memory files, staff accounts and sessions and, when switched
-  on, Nova Bot's own bookings (`migrations/`).
+  the memory files, staff accounts and sessions, and the bookings (`migrations/`).
 - **Secrets** live in Cloudflare (`wrangler secret put`), never in the code.
 
 ## Run it locally (sandbox)
 
-You need [Node.js](https://nodejs.org) 20 or newer. No Cloudflare, Claude or Acuity
-account is needed.
+You need [Node.js](https://nodejs.org) 20 or newer. No Cloudflare, Claude, Google or
+Stripe account is needed.
 
 ```sh
 git clone https://github.com/tuniveza/nova-bot.git
@@ -289,10 +286,8 @@ Open <http://localhost:8787>: a pretend website with the chat widget on it.
   `ANTHROPIC_API_KEY=...` and restart. That uses your own Anthropic account.
 - **Admin pages and Portal**: <http://localhost:8787/admin> and
   <http://localhost:8787/portal/>; set up the first admin with the password in `.dev.vars` (`sandbox`).
-- **The booking card** needs a booking system it can check times against. To try it
-  offline, start the sandbox with Nova Bot's own system switched on:
-  `npx wrangler dev --env sandbox --var BOOKING_SYSTEM:nova` (no Google key means the
-  "calendar" is the local bookings table; no Stripe key means a local stand-in checkout).
+- **The booking card** works offline in the sandbox: no Google key means the "calendar"
+  is the local bookings table; no Stripe key means a local stand-in checkout.
 - **Voice**: speech uses your browser's own voice; the microphone needs Workers AI, so
   it isn't available in the sandbox.
 
@@ -332,19 +327,15 @@ Everything secret is a **Wrangler secret** (`npx wrangler secret put NAME`), or 
 |---|---|
 | `ANTHROPIC_API_KEY` | Claude answers and memory (required live) |
 | `ADMIN_PASSWORD` | Only proves it's you when setting up the very first Portal admin |
-| `ACUITY_USER_ID`, `ACUITY_API_KEY` | Referral tracking, real-booking checks and managing bookings from Portal (Acuity's Powerhouse plan) |
-| `ACUITY_WEBHOOK_KEY` | Accepting Acuity's webhook (`/acuity/webhook?key=…`) |
-| `ACUITY_CALENDAR_URL` | Acuity's private calendar feed: booking details, the Calendar tab and Nova Club's busy times |
-| `ACUITY_EMAIL_KEY` | The Google Apps Script that forwards Acuity's emails (`tools/acuity-email-forwarder.gs`) |
+| `ACUITY_CALENDAR_URL` | Only for bringing Acuity's future bookings over, once (`/admin/import-acuity`); not needed after |
 | `AGENT_NOVA_KEY` | Nova Agent's routes (`/nova-agent/*`; `/memory/*`), and its online link (`/nova-agent/link`, the AgentLink Durable Object in `src/agent-relay.js`: Nova Agent's chat, Missions, Quests, Calendar and Visualizer online, through the studio PC) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Phone notifications (Web Push) |
 | `MAIL_API_URL`, `MAIL_KEY`, `ENQUIRY_EMAIL_TO`, `ENQUIRY_EMAIL_FROM` | Emailing (the studio's own mail server on the VPS; enquiries, replies, invoices, newsletters) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Optional: Admin → Google keeps the same key without them (Notes' Google Docs, Calendar and Gmail for bookings; Google is never a way to sign in, Portal is) |
 | `GOOGLE_REFRESH_TOKEN`, `GOOGLE_CALENDAR_ID`, `GOOGLE_ACCOUNT` | Optional overrides; normally set by "Connect Google" on `/admin/connections` |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Nova Bot's own booking system: deposits (optional) |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Bookings: deposits and payments |
 
-Plain variables (in `wrangler.jsonc` or `--var`): `BOOKING_SYSTEM` (`acuity` or `nova`, the
-fallback for the switch), `PUBLIC_URL`, `SANDBOX`, `BOOKING_DETAILS_WAIT_SECONDS`.
+Plain variables (in `wrangler.jsonc` or `--var`): `PUBLIC_URL`, `SANDBOX`.
 
 Bindings in `wrangler.jsonc`: `DB` (D1), `AI` (Workers AI), `CHAT_LIMIT`, `VOICE_LIMIT` and
 `CLUB_LIMIT` (rate limits), static assets from `public/`, the build step, and a cron
@@ -352,58 +343,26 @@ trigger every minute.
 
 More detail lives alongside this file:
 [README-ENQUIRIES.md](README-ENQUIRIES.md) (enquiries, booking links, free times, chat log),
-[README-REFERRALS.md](README-REFERRALS.md) (referral codes and Acuity's webhook),
+[README-REFERRALS.md](README-REFERRALS.md) (referral codes),
 [README-SQUARESPACE.md](README-SQUARESPACE.md) (adding the widget to a Squarespace site) and
 [PRIVACY-POLICY-NOVABOT.md](PRIVACY-POLICY-NOVABOT.md) (privacy policy wording).
 
-<details>
-<summary><b>Booking details from Acuity's confirmation page</b> (optional back-up)</summary>
+## Bookings: Nova Bot's own booking system
 
-Paste this into Acuity → Integrations → Custom conversion tracking, under anything already
-there, replacing `YOUR-WORKER` with your Worker's address:
-
-```html
-<!-- Portal: sends this booking's details to the staff notification -->
-<div id="nv-booked" hidden><i>%type%</i><i>%id%</i><i>%appointmentType%</i><i>%clientDate%</i><i>%clientTime%</i><i>%price%</i><i>%email%</i><i>%calendar%</i></div>
-<script>
-(function () {
-  var names = ["type", "id", "session", "date", "time", "price", "email", "calendar"];
-  var values = document.querySelectorAll("#nv-booked i");
-  var query = names.map(function (name, i) { return name + "=" + encodeURIComponent(values[i].textContent.trim()); }).join("&");
-  new Image().src = "https://YOUR-WORKER/acuity/booked?" + query;
-})();
-</script>
-```
-
-The main source of booking details is Acuity's private calendar feed (Acuity → Sync with
-Other Calendars → 1-way Calendar Sync, saved as `ACUITY_CALENDAR_URL`), which works on every
-Acuity plan and for bookings staff add themselves. Acuity's own booking emails are a second
-back-up: `tools/acuity-email-forwarder.gs` runs in the mailbox Acuity emails and passes each
-one to `/acuity/email`. Once emails are coming through, notifications wait for them (up to
-3 minutes, then the once-a-minute cron sends them anyway).
-
-</details>
-
-## Nova Bot's own booking system (behind a switch)
-
-Bookings go through **Acuity** by default. Alongside it, `src/nova/` holds Nova Bot's own
-booking system, switched **off** until you choose otherwise:
+`src/nova/` is the booking system (Acuity isn't used any more, 24 Oct 2026):
 
 - **Booking page** at `/book`, with the studio's **Google Calendar** as the diary,
   confirmation emails from the studio's **Gmail**, and deposits through **Stripe**.
 - **Customer pages**: each customer gets a page to pay, move or cancel.
-- **Staff tools** in Portal: cancel, move, refund and send payment links.
-
-**The switch** is on `/admin/connections`, under "Booking system". It's stored in the
-`settings` table as `booking_system` (`acuity` or `nova`), and falls back to the
-`BOOKING_SYSTEM` variable, then to Acuity (`src/mode.js`).
-
-- It takes effect straight away, with no redeploy.
-- Nova can only be switched on once Google and Stripe both work. Switching back to Acuity
-  is always one click.
-- On Acuity, everything behaves exactly as before, and the original tests prove it.
-- Either way, a booking made with Nova keeps working (its page, payment links and Stripe's
-  webhook), and Acuity's webhook is still listened to.
+- **Staff tools** in Portal: cancel, move, refund and send payment links. A change an AI
+  suggests (Nova Agent, or Portal's staff chat) waits in Portal → Approvals
+  (`src/booking-actions.js`, `src/nova/booking-changes.js`).
+- **The client list** follows every booking (`src/clients.js`), and Nova Club's Tap to Pay
+  can take a payment for a booking (`src/nova/club-terminal.js`).
+- **Bringing Acuity's bookings over** (a one-off): `/admin/import-acuity` lists every future
+  booking in Acuity's calendar feed and what would happen to it; **Bring them over** puts them
+  in, with no emails and no charges, and is safe to press again (`src/acuity-import.js`, to be
+  removed once that's done).
 
 <details>
 <summary><b>Setting it up</b></summary>
@@ -418,8 +377,8 @@ booking system, switched **off** until you choose otherwise:
    `checkout.session.completed`, `checkout.session.async_payment_succeeded` and
    `checkout.session.expired`, and save its signing secret as `STRIPE_WEBHOOK_SECRET`.
 3. **Database:** `npx wrangler d1 migrations apply novabot --remote`.
-4. **Deploy,** then on `/admin/connections`: press **Send a test email**, and flip the switch
-   to try it.
+4. **Deploy,** then on `/admin/connections`: press **Send a test email**, and try a booking
+   in Admin → Test booking.
 
 Sessions, prices and rules (opening hours, 50% deposit, 48-hour cancellation) are in
 `src/nova/studio.js`.
@@ -433,12 +392,11 @@ npm test            # watch mode
 npx vitest run      # once
 ```
 
-388 tests across 27 files, fully offline: they run inside the Workers runtime
-(`@cloudflare/vitest-plugin`) with a local database and fake versions of Claude, Acuity,
-Google, Stripe and the mail server (`test/fakes.js`). Every key in `vitest.config.mjs` is a
-test-only stand-in. The original Acuity tests run against the default; `test/*-nova.spec.js`
-run with the switch on Nova, and `test/switch.spec.js` tests the switch itself. The memory
-engine and Portal have their own (`test/memory.spec.js`, `test/portal.spec.js`).
+About 850 tests across 61 files, fully offline: they run inside the Workers runtime
+(`@cloudflare/vitest-plugin`) with a local database and fake versions of Claude, Google,
+Stripe and the mail server (`test/fakes.js`). Every key in `vitest.config.mjs` is a
+test-only stand-in. `test/switch.spec.js` tests the VPS pass-through. The memory engine and
+Portal have their own (`test/memory.spec.js`, `test/portal.spec.js`).
 
 ## Deploying your own copy
 
@@ -450,9 +408,7 @@ engine and Portal have their own (`test/memory.spec.js`, `test/portal.spec.js`).
 4. Swap Novacane's details for your own:
    - `src/index.js`: `BOOKING_LINK`, `ENQUIRY_LINK`, `WHATSAPP_NUMBER`, `WHATSAPP_LINK`,
      `ALLOWED_ORIGINS`, and the studio information in `STUDIO_INFO`
-   - `src/booking.js`: `ACUITY_OWNER` (the number after `owner=` in your Acuity booking
-     page's address)
-   - `src/nova/studio.js` and `src/nova/booking.js` (`LIVE_URL`) for the Nova system
+   - `src/nova/studio.js` and `src/nova/booking.js` (`LIVE_URL`) for bookings
    - `public/novabot.js`: `LIVE_WORKER_URL`, `BOOKING_LINK`, `PRIVACY_LINK`
 5. Deploy with `npm run deploy` (the build step copies Index and Portal in), then
    add the widget to your website (see [README-SQUARESPACE.md](README-SQUARESPACE.md)).
@@ -477,27 +433,20 @@ src/admin.js                     the admin pages
 src/links.js                     the master list: links, features, changelog
 src/memory/                      the memory engine (store, extract, routes)
 src/portal/                      Portal: sign-in, sessions, staff, planets
-src/booking.js                   session types, booking links, free times (public Acuity page)
-src/booking-form.js              the booking card's API
-src/book-session.js              booking checks (deposit first)
-src/manage-bookings.js           staff finding, cancelling, moving and changing bookings
-src/agent-nova.js                jobs, quests and alerts for Nova Agent
+src/booking-actions.js           Approvals: booking changes an AI suggests and an admin approves
+src/acuity-import.js             bringing Acuity's future bookings over (one-off)
+src/agent-nova.js                check-ins, quests, alerts and read-only tools for Nova Agent
 src/enquiries.js                 enquiries, enquiry emails, chat log
-src/push.js                      notifications, the Alerts tab, real-booking checks
-src/booking-calendar.js          booking details from Acuity's calendar feed
-src/booking-details.js           booking details from Acuity's confirmation page
-src/booking-emails.js            booking details from Acuity's emails
-src/booking-pings.js             when booking notifications go out
-src/club-calendar.js             busy times for Nova Club
-src/referrals.js                 referral tracking (Acuity API)
+src/push.js                      notifications and the Alerts tab
+src/clients.js                   the client list
+src/referrals.js                 referral codes and the "Did anyone refer you?" page
 src/feedback.js                  what visitors said about NovaBot
-src/health.js                    daily Acuity API check
-src/mode.js                      the booking-system switch
-src/nova/                        Nova Bot's own booking system (Google, Gmail, Stripe)
+src/uk-time.js                   UK time helpers
+src/nova/                        the booking system (Google Calendar, Gmail, Stripe), Nova Club's
+                                 busy times and Tap to Pay
 src/fonts/                       Saira, Geist Mono and Source Code Pro (SIL OFL)
 migrations/                      D1 tables
 test/                            Vitest tests and fakes
-tools/acuity-email-forwarder.gs  Google Apps Script that forwards Acuity's emails
 scripts/sync-apps.mjs            the build step: copies Index and Portal in
 scripts/sandbox-setup.mjs        sandbox setup
 docs/media/                      README images (all sample data)

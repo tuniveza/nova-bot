@@ -9,50 +9,29 @@
  */
 // NovaBot: the Novacane Studios chatbot backend
 // The website sends the chat here. This asks Claude and sends the reply back.
-// It also tracks referrals for Acuity bookings (referrals.js, admin.js).
+// It also books sessions (Nova Bot's own booking system, src/nova/) and tracks referrals
+// (referrals.js, admin.js).
 
 import { handleMemoryApi, learnFromWebsiteChats, readForStaff, readForWebsite } from "./memory/routes.js";
 import { memoryPrompt } from "./memory/store.js";
 import { handlePortal } from "./portal/routes.js";
-import { handleAcuityWebhook, handleReferral } from "./referrals.js";
-import { handleClubBusy } from "./club-calendar.js";
-import { handleBookedPixel } from "./booking-details.js";
-import { handleAcuityEmail } from "./booking-emails.js";
-import { sendOverduePings } from "./booking-pings.js";
+import { handleReferral } from "./referrals.js";
 import { deleteOldAlerts } from "./push.js";
 import { handleAdmin } from "./admin.js";
 import { handleStop } from "./enquiry-replies.js";
 import { handleApp } from "./app-page.js";
 import { ENQUIRY_TOOL, logChat, sendEnquiry } from "./enquiries.js";
 import { asksForPerson, staffMode, visitorAskedForPerson, visitorPoll, visitorWroteToStaff } from "./livechat.js";
-import {
-  ACUITY_OWNER,
-  AVAILABILITY_TOOL,
-  BOOKING_TOOL,
-  bookingLink,
-  checkAvailability,
-  getSessionTypes,
-  makeBookingLink,
-  sessionList,
-  ukTodayInWords,
-  upcomingDates,
-} from "./booking.js";
-import { BOOK_SESSION_RULES, BOOK_SESSION_TOOL, bookSession, canBookSessions } from "./book-session.js";
-import { BOOKING_FORM_RULES, BOOKING_FORM_TOOL, formFor, handleBookingForm } from "./booking-form.js";
 import { handleFeedback } from "./feedback.js";
-import { dailyAcuityCheck } from "./health.js";
 import { handleAgentNova } from "./agent-nova.js";
-import { MANAGE_BOOKINGS_RULES, MANAGE_BOOKING_TOOLS, isManageBookingTool, runManageBookingTool } from "./manage-bookings.js";
-// The behind-the-scenes switch between Acuity (the default) and Nova Bot's own
-// booking system (src/nova/: Google Calendar, Gmail, Stripe). See mode.js.
-import { usesNova } from "./mode.js";
+// Nova Bot's own booking system (src/nova/: its booking page, the studio's Google Calendar,
+// Gmail and Stripe deposits). Acuity is no longer used (24 Oct 2026).
 import { handleBookingPages } from "./nova/book-page.js";
 import { expireHolds, sendReminders } from "./nova/bookings.js";
 import { removeOldTestBookings } from "./nova/test-booking.js";
-import { tidyAcuityTests } from "./acuity-test-booking.js";
 import { dailyHealthCheck } from "./nova/health.js";
 import { googleReady } from "./nova/google.js";
-import { handleClubBusy as handleNovaClubBusy } from "./nova/club-calendar.js";
+import { handleClubBusy } from "./nova/club-calendar.js";
 import { handleClubTerminal } from "./nova/club-terminal.js";
 import * as novaForm from "./nova/booking-form.js";
 import * as novaBooking from "./nova/booking.js";
@@ -708,34 +687,27 @@ const STAFF_VOICE = `YOU ARE TALKING TO STAFF. This chat is inside Portal, the s
 - When you take an action (booking, moving, cancelling, changing), say exactly what you did, in one line.`;
 
 export default {
-  // Every minute (see "triggers" in wrangler.jsonc): send booking notifications
-  // that have waited long enough for Acuity's email
-  // (and delete alerts the auto-delete switch says are too old).
-  // Nova Bot's own booking system has timers too (let go of unpaid holds,
-  // day-before reminders, a 06:00 Google/Stripe check, removing day-old test
-  // bookings); they run whichever
-  // system is switched on, and do nothing until it has bookings or keys.
+  // Every minute (see "triggers" in wrangler.jsonc): delete alerts the auto-delete switch says
+  // are too old, and the booking system's timers (let go of unpaid holds, day-before reminders,
+  // a 06:00 Google/Stripe check, removing day-old test bookings), which do nothing until there
+  // are bookings or keys.
   async scheduled(controller, env, ctx) {
     const at = controller?.scheduledTime || Date.now();
     ctx.waitUntil(
       Promise.all([
         // A heartbeat for the status page: the timed jobs ran (src/status.js)
         cronHeartbeat(env, at),
-        sendOverduePings(env),
         deleteOldAlerts(env),
-        dailyAcuityCheck(env, new Date(at)),
         expireHolds(env, at).catch((err) => console.log("Nova hold check failed:", err)),
         sendReminders(env, at).catch((err) => console.log("Nova reminders failed:", err)),
         // Test bookings (Portal → Admin → Test booking) remove themselves after 24 hours
         removeOldTestBookings(env, at).catch((err) => console.log("Removing old test bookings failed:", err)),
-        // Acuity test bookings cancel themselves within 15 minutes (src/acuity-test-booking.js)
-        tidyAcuityTests(env, at).catch((err) => console.log("Acuity test booking check failed:", err)),
         // Calendar reminders on phones (src/calendar/reminders.js)
         sendCalendarReminders(env, at).catch((err) => console.log("Calendar reminders failed:", err)),
         dailyHealthCheck(env, new Date(at)).catch((err) => console.log("Nova health check failed:", err)),
         // Read quiet website chats for facts worth remembering (they wait for approval in Index)
         learnFromWebsiteChats(env).catch((err) => console.log("Memory from website chats failed:", err)),
-        // The client list: Acuity's calendar feed and the enquiries, every 30 minutes (src/clients.js)
+        // The client list: the bookings and the enquiries, every 30 minutes (src/clients.js)
         syncClientsOnSchedule(env, at).catch((err) => console.log("Client list sync failed:", err?.name)),
         // Email campaigns (src/campaigns.js): the next small batch of each one going out, through the
         // studio's own mail server
@@ -795,19 +767,14 @@ export default {
     // Observatory's projects and media (the studio's own work) are for signed-in staff
     if (pathname.startsWith("/observatory/data/") || pathname.startsWith("/observatory/media/")) return observatoryFiles(request, env, pathname);
 
-    // Referral tracking: these aren't called from the chat widget, so they
-    // skip the chat's website check below
-    if (pathname === "/acuity/webhook") return handleAcuityWebhook(request, env, ctx);
-    if (pathname === "/acuity/booked") return handleBookedPixel(request, env);
-    if (pathname === "/acuity/email") return handleAcuityEmail(request, env);
-    // Nova Bot's own booking system (src/nova/). A booking made with it can always
-    // be paid for, moved or cancelled, and Stripe can always reach it; the booking
-    // page itself only opens while the switch is on Nova (otherwise it goes to
-    // the usual Acuity booking page).
-    if (pathname === "/stripe/webhook" || pathname.startsWith("/booking/") || pathname.startsWith("/pay/")) return handleBookingPages(request, env, ctx);
-    if (pathname === "/book" || pathname.startsWith("/book/")) {
-      const opens = pathname === "/book" || pathname.startsWith("/book/api/");
-      if (opens && !(await usesNova(env))) return Response.redirect(BOOKING_LINK, 302);
+    // Acuity's old addresses (its webhook, the confirmation page's beacon, the email forwarder):
+    // Nova doesn't use Acuity any more, so they're told it's gone (410) and nothing is kept
+    if (pathname === "/acuity/webhook" || pathname === "/acuity/booked" || pathname === "/acuity/email") {
+      return new Response("Nova doesn't use Acuity any more.", { status: 410, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+    }
+    // Nova Bot's own booking system (src/nova/): the booking page, a booking's page and pay
+    // link, and Stripe's webhook
+    if (pathname === "/stripe/webhook" || pathname.startsWith("/booking/") || pathname.startsWith("/pay/") || pathname === "/book" || pathname.startsWith("/book/")) {
       return handleBookingPages(request, env, ctx);
     }
     // Nova Agent on the studio PC: collecting jobs, sending alerts and its plan, with its own key.
@@ -818,9 +785,8 @@ export default {
     if (pathname.startsWith("/memory/")) return handleMemoryApi(request, env, ctx, pathname);
     // Portal: one sign-in for the suite, staff and their planets (src/portal/)
     if (pathname.startsWith("/auth/") || pathname === "/staff" || pathname.startsWith("/staff/")) return handlePortal(request, env, ctx, pathname);
-    // Nova Club (the members' app): when the studio is booked, straight from
-    // Acuity (or the studio's Google Calendar, with the switch on Nova)
-    if (pathname === "/club/busy") return (await usesNova(env)) ? handleNovaClubBusy(request, env) : handleClubBusy(request, env);
+    // Nova Club (the members' app): when the studio is booked, from the studio's Google Calendar
+    if (pathname === "/club/busy") return handleClubBusy(request, env);
     // Nova Club's Tap to Pay: the studio phone takes a card payment through Stripe Terminal (src/nova/club-terminal.js)
     if (pathname.startsWith("/club/terminal/")) return handleClubTerminal(request, env, pathname);
     if (pathname === "/referral") return handleReferral(request, env);
@@ -893,9 +859,7 @@ export default {
 
     // The booking card in the chat (booking-form.js): free times, and booking it
     if (isForm) {
-      const { status, data } = (await usesNova(env))
-        ? await novaForm.handleBookingForm(request, env, pathname, { chatId: null, ip })
-        : await handleBookingForm(request, env, pathname, { chatId: null, ip });
+      const { status, data } = await novaForm.handleBookingForm(request, env, pathname, { chatId: null, ip });
       return reply(data, status, cors);
     }
 
@@ -1002,8 +966,7 @@ async function answer(messages, env, visitor, waitUntil, { staff = false } = {})
   let checkedAsk = false; // already told Claude to use the card instead of asking for details
   let lastLookup = null; // the session and day NovaBot last checked (to fill in the card if it forgets to open it)
   let checkedClaim = false; // already told Claude off for claiming a booking it didn't make
-  // The booking system the switch picks (Acuity unless it's on Nova): can it
-  // book for people, the session list, and its tools
+  // The booking system: can it book for people, the session list, and its tools
   const kit = await bookingKit(env, staff);
   const { canBook, types: typesFound, canManage } = kit;
   // On the website, the booking card does the booking; Portal's staff chat books in the chat
@@ -1019,8 +982,8 @@ async function answer(messages, env, visitor, waitUntil, { staff = false } = {})
   const types = typesFound || [];
   if (typesFound) sessions = kit.sessionList(types);
   sessions +=
-    `\n\nTODAY is ${ukTodayInWords()} (UK time).` +
-    `\nDates for the next three weeks: ${upcomingDates()}.` +
+    `\n\nTODAY is ${novaBooking.ukTodayInWords()} (UK time).` +
+    `\nDates for the next three weeks: ${novaBooking.upcomingDates()}.` +
     `\nUse this list to work out dates like "next Friday" or "this weekend", and always say the exact date you mean (e.g. "Friday 9 October") so there's no mix-up.`;
   if (canBook && types.length) sessions += "\n\n" + (staff ? kit.rules.bookSession : kit.rules.form);
   if (canManage) sessions += "\n\n" + kit.manage.rules;
@@ -1100,7 +1063,7 @@ async function answer(messages, env, visitor, waitUntil, { staff = false } = {})
             choice = outcome.choice ? { link: outcome.url } : null;
           } else if (call.name === kit.tools.bookSession.name && canBook && staff) {
             outcome = await kit.book(call.input, visitor, waitUntil);
-            // With Acuity it's only ready to pay for (nothing is booked until the deposit's paid)
+            // (payFirst: only ready to pay for, nothing booked until the deposit's paid)
             if (outcome.ok && !outcome.payFirst) sessionBooked = true;
             // Whether it's booked (deposit link) or not (a link to finish it), they need the link
             if (outcome.url) links.push(outcome.url);
@@ -1131,7 +1094,7 @@ async function answer(messages, env, visitor, waitUntil, { staff = false } = {})
           outcome = {
             ok: false,
             message:
-              call.name === AVAILABILITY_TOOL.name
+              call.name === novaBooking.AVAILABILITY_TOOL.name
                 ? "Couldn't check the calendar just now. Don't say whether anything is free: give the booking link (booking_link) so they can see the free times themselves."
                 : "That didn't work. Give them the booking page or enquiry form link instead.",
           };
@@ -1148,69 +1111,39 @@ async function answer(messages, env, visitor, waitUntil, { staff = false } = {})
   return finish(enquirySent ? ENQUIRY_SENT : sessionBooked ? kit.sessionBooked : links.length ? LINK_READY : fallback(kit.bookingPage));
 }
 
-// ===== THE BOOKING SYSTEM (Acuity, or Nova Bot's own behind the switch) =====
+// ===== THE BOOKING SYSTEM (Nova Bot's own: src/nova/) =====
 
 // Nova Bot's own booking page, and what NovaBot says once it has booked with it
 const NOVA_BOOKING_LINK = `${novaBooking.LIVE_URL}/book`;
 const NOVA_SESSION_BOOKED = "Done, your session's booked and in the calendar. A confirmation with a link to pay the deposit is on its way to your email.";
-// The studio info with Nova Bot's booking page in place of Acuity's
-const NOVA_STUDIO_INFO = STUDIO_INFO.split(BOOKING_LINK).join(NOVA_BOOKING_LINK);
+// The studio info with Nova Bot's booking page in place of the website's booking page (the enquiry
+// form, the same page with #enquiry, stays the website's)
+const NOVA_STUDIO_INFO = STUDIO_INFO.split(ENQUIRY_LINK).join("\u0000enquiry").split(BOOKING_LINK).join(NOVA_BOOKING_LINK).split("\u0000enquiry").join(ENQUIRY_LINK);
 
-// Everything answer() needs from the booking system the switch picks. With the
-// switch on Acuity (the default) this is exactly what NovaBot has always used.
+// Everything answer() needs from the booking system
 async function bookingKit(env, staff) {
-  if (await usesNova(env)) {
-    return {
-      system: "nova",
-      canBook: await novaBookSession.canBookSessions(env),
-      types: novaBooking.getSessionTypes(),
-      canManage: staff && (await googleReady(env).catch(() => false)), // never on the website
-      sessionList: novaBooking.sessionList,
-      tools: { booking: novaBooking.BOOKING_TOOL, availability: novaBooking.AVAILABILITY_TOOL, bookSession: novaBookSession.BOOK_SESSION_TOOL, form: novaForm.BOOKING_FORM_TOOL },
-      rules: { bookSession: novaBookSession.BOOK_SESSION_RULES, form: novaForm.BOOKING_FORM_RULES },
-      manage: {
-        tools: novaManage.MANAGE_BOOKING_TOOLS,
-        rules: novaManage.MANAGE_BOOKINGS_RULES,
-        is: novaManage.isManageBookingTool,
-        run: (name, input) => novaManage.runManageBookingTool(env, name, input),
-      },
-      formFor: novaForm.formFor,
-      makeLink: (input) => novaBooking.makeBookingLink(env, input, undefined, false),
-      book: (input, visitor) => novaBookSession.bookSession(env, input, { ...visitor, staff }),
-      check: (input) => novaBooking.checkAvailability(env, input),
-      link: (typeId, person) => novaBooking.bookingLink(env, typeId, person),
-      bookingPage: NOVA_BOOKING_LINK,
-      sessionBooked: NOVA_SESSION_BOOKED,
-      studioInfo: NOVA_STUDIO_INFO,
-    };
-  }
-  // Nova Agent online and live? And the live session list. Both at once, to save time.
-  // (Nothing is booked until the deposit's paid: the booking card, and book_session
-  // in Portal's staff chat, only check the time and give Acuity's booking page.)
-  const [canBook, types] = await Promise.all([
-    canBookSessions(env),
-    getSessionTypes(ACUITY_OWNER).catch((err) => {
-      console.log("Couldn't read the session types:", err);
-      return null;
-    }),
-  ]);
   return {
-    system: "acuity",
-    canBook,
-    types,
-    canManage: staff && Boolean(env.ACUITY_USER_ID && env.ACUITY_API_KEY), // never on the website
-    sessionList,
-    tools: { booking: BOOKING_TOOL, availability: AVAILABILITY_TOOL, bookSession: BOOK_SESSION_TOOL, form: BOOKING_FORM_TOOL },
-    rules: { bookSession: BOOK_SESSION_RULES, form: BOOKING_FORM_RULES },
-    manage: { tools: MANAGE_BOOKING_TOOLS, rules: MANAGE_BOOKINGS_RULES, is: isManageBookingTool, run: (name, input) => runManageBookingTool(env, name, input) },
-    formFor,
-    makeLink: (input) => makeBookingLink(ACUITY_OWNER, input, undefined, false),
-    book: (input, visitor, waitUntil) => bookSession(env, ACUITY_OWNER, input, visitor, waitUntil),
-    check: (input) => checkAvailability(ACUITY_OWNER, input),
-    link: (typeId, person) => bookingLink(ACUITY_OWNER, typeId, person),
-    bookingPage: BOOKING_LINK,
-    sessionBooked: SESSION_BOOKED,
-    studioInfo: STUDIO_INFO,
+    system: "nova",
+    canBook: await novaBookSession.canBookSessions(env),
+    types: novaBooking.getSessionTypes(),
+    canManage: staff && (await googleReady(env).catch(() => false)), // never on the website
+    sessionList: novaBooking.sessionList,
+    tools: { booking: novaBooking.BOOKING_TOOL, availability: novaBooking.AVAILABILITY_TOOL, bookSession: novaBookSession.BOOK_SESSION_TOOL, form: novaForm.BOOKING_FORM_TOOL },
+    rules: { bookSession: novaBookSession.BOOK_SESSION_RULES, form: novaForm.BOOKING_FORM_RULES },
+    manage: {
+      tools: novaManage.MANAGE_BOOKING_TOOLS,
+      rules: novaManage.MANAGE_BOOKINGS_RULES,
+      is: novaManage.isManageBookingTool,
+      run: (name, input) => novaManage.runManageBookingTool(env, name, input),
+    },
+    formFor: novaForm.formFor,
+    makeLink: (input) => novaBooking.makeBookingLink(env, input, undefined, false),
+    book: (input, visitor) => novaBookSession.bookSession(env, input, { ...visitor, staff }),
+    check: (input) => novaBooking.checkAvailability(env, input),
+    link: (typeId, person) => novaBooking.bookingLink(env, typeId, person),
+    bookingPage: NOVA_BOOKING_LINK,
+    sessionBooked: NOVA_SESSION_BOOKED,
+    studioInfo: NOVA_STUDIO_INFO,
   };
 }
 
@@ -1251,7 +1184,7 @@ function checkLinks(text, madeLinks, types, kit) {
   });
 }
 
-async function askClaude(messages, env, sessions, tools, studioInfo = STUDIO_INFO) {
+async function askClaude(messages, env, sessions, tools, studioInfo = NOVA_STUDIO_INFO) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -1305,8 +1238,6 @@ const CARD_OPENED = "Your booking card is open below 🎙️ Pick a time, add yo
 const CLAIM_CHECK_CARD =
   "[Automatic check, not from the customer: your last message says a session is booked or being booked, but only the booking card books sessions, so NOTHING has been booked by you. Rewrite your reply without saying it's booked. If they want to book, open the card with open_booking_form.]";
 
-const SESSION_BOOKED =
-  "Done, your session's being booked now and Acuity will email you a confirmation in the next few minutes. The Novacane team will be in touch about the deposit.";
 
 const ENQUIRY_SENT =
   "Done, your enquiry is with the Novacane team. They'll get back to you by email.";
@@ -1370,7 +1301,7 @@ function privacyPage() {
 <p>Nova Agent is the staff-only app for Novacane Studios. It displays customer enquiries and chat conversations submitted through the novacane.co.uk chatbot, and lets staff chat with the Novabot assistant.</p>
 <p>Data handled: names, contact details and messages customers submit. This data is stored on Novacane Studios' own server (a private server the studio rents from VPSdime, which only the studio runs and looks after). Messages are processed by Anthropic (the Claude AI) solely to run the chatbot and to answer staff questions in Nova Agent. When staff use Google features (Calendar, Gmail, Drive, Docs and Contacts), the details involved are handled by Google under the studio's own Google account. Emails from Nova are sent by the studio's own mail server (or, if it's ever down, by the studio's Gmail).</p>
 <p>Memory: to give better help over time, short notes may be kept from chats, such as a preferred session time or what a customer is working on. Notes about customers are only kept after a member of the Novacane team has approved each one. Card, bank and ID details are never kept. To see or delete any notes about you, contact Novacane Studios via novacane.co.uk.</p>
-<p>For bookings made through Acuity, the booking confirmation page sends the session, date, time, price and the customer's email to Novacane Studios' own server, and the booking's details (name, contact details, booking details and booking form answers) are read from Acuity's private calendar feed and Acuity's booking emails to the studio, so staff are notified of the booking. Staff notifications on registered staff phones are delivered through Apple's or Google's push service, encrypted so only the staff phone can read them. Booking details and notifications are kept for 90 days.</p>
+<p>Bookings: the session, its time, the customer's name, contact details and notes are kept on Novacane Studios' own server and in the studio's Google Calendar, so staff can see and manage them. Booking emails are sent from the studio's own mail server or its Gmail. Deposits and other payments are taken by Stripe; card details go to Stripe only and are never seen or kept by Novacane Studios. Staff notifications on registered staff phones are delivered through Apple's or Google's push service, encrypted so only the staff phone can read them. Notifications are kept for 90 days.</p>
 <p>Data is never sold, shared for advertising, or used for any other purpose. To request deletion, contact Novacane Studios via novacane.co.uk.</p>
 </body>
 </html>`,

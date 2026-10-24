@@ -46,7 +46,7 @@
 		{ "name": "VOICE_LIMIT", "namespace_id": "1002", "simple": { "limit": 40, "period": 60 } },
 		{ "name": "CLUB_LIMIT", "namespace_id": "1003", "simple": { "limit": 300, "period": 60 } }
 	],
-	// Every minute: send booking notifications that waited long enough for Acuity's email (booking-pings.js)
+	// Every minute: the timed jobs (holds let go, reminders, Google, campaigns...: scheduled() in src/index.js)
 	"triggers": { "crons": ["* * * * *"] },
 	// A sandbox for testing on your own computer: npm run sandbox (see README.md).
 	// Local database only, no Workers AI (voice uses the browser's own voice),

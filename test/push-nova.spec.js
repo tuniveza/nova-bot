@@ -194,10 +194,10 @@ describe("Portal: the Alerts tab", () => {
 		// A phone signs up: now they go through and are listed
 		await savePhone(env, await phone("https://web.push.apple.com/phone-1"));
 		await notifyPhones({ ...env, ...keys }, { title: "New enquiry", body: "Jordan: Album", url: "/app/" });
-		await notifyPhones({ ...env, ...keys }, { title: "New booking", body: "Rap Package", url: "https://secure.acuityscheduling.com/" });
+		await notifyPhones({ ...env, ...keys }, { title: "New booking", body: "Rap Package", url: "/portal/" });
 		const list = await alerts(cookie);
 		expect(list.map((n) => n.title)).toEqual(["New booking", "New enquiry"]);
-		expect(list[0]).toMatchObject({ body: "Rap Package", url: "https://secure.acuityscheduling.com/", phones: 1 });
+		expect(list[0]).toMatchObject({ body: "Rap Package", url: "/portal/", phones: 1 });
 	});
 
 	it("leaves out notifications Apple refused, and test notifications", async () => {

@@ -10,7 +10,7 @@ import { executeApproved, getAction } from "../src/booking-actions.js";
 import { bookSession } from "../src/nova/book-session.js";
 import { getBooking, paymentReceived } from "../src/nova/bookings.js";
 import { sha256 } from "../src/portal/auth.js";
-import { ukWallToUtc } from "../src/uk-time.js";
+import { readTime, ukShort, ukWallToUtc } from "../src/uk-time.js";
 import { STAFF_COOKIE } from "./sign-in.js";
 import { BASE, clearTables, connectGoogle, installFakes, ukDay, ukEvent } from "./fakes.js";
 
@@ -301,6 +301,56 @@ describe("a change cut off part-way", () => {
 			.run();
 		const action = await getAction(env, meta.last_row_id);
 		expect(action.status).toBe("failed");
-		expect(action.error).toMatch(/Check (the booking|Acuity)/);
+		expect(action.error).toMatch(/Check the booking/);
+	});
+});
+
+describe("UK time", () => {
+	it("turns a UK wall clock into UTC, in summer (BST) and winter (GMT)", () => {
+		expect(ukWallToUtc("2026-07-01T17:00").toISOString()).toBe("2026-07-01T16:00:00.000Z");
+		expect(ukWallToUtc("2026-12-01T17:00").toISOString()).toBe("2026-12-01T17:00:00.000Z");
+		// The hour the clocks skip doesn't exist
+		expect(ukWallToUtc("2027-03-28T01:30")).toBeNull();
+		expect(readTime("2026-07-01T16:00:00Z").toISOString()).toBe("2026-07-01T16:00:00.000Z");
+		expect(readTime("2026-07-01T17:00:00+0100").toISOString()).toBe("2026-07-01T16:00:00.000Z");
+		expect(readTime("soon")).toBeNull();
+		expect(ukShort("2026-07-01T16:00:00Z")).toBe("Wed 1 Jul 17:00");
+	});
+});
+
+describe("an admin's edits", () => {
+	it("can send just what changed: the rest of the proposal is kept", async () => {
+		const action = await propose("block_add", { start: `${ukDay(30)}T10:00`, end: `${ukDay(30)}T12:00`, notes: "Gear service" });
+		const { editAction } = await import("../src/booking-actions.js");
+		const out = await editAction(env, { id: "test-admin", role: "admin", session_kind: "cookie" }, { id: action.id, payload: { end: `${ukDay(30)}T13:00` } });
+		expect(out.error).toBeUndefined();
+		expect(out.action.payload).toMatchObject({ start: utc(`${ukDay(30)}T10:00`), end: utc(`${ukDay(30)}T13:00`), notes: "Gear service" });
+		expect(out.action.status).toBe("pending");
+	});
+});
+
+describe("bookings changed (Nova Agent's /next)", () => {
+	it("a booking made, moved or cancelled sets bookingsChanged; /next returns early when it's newer than bookingsSeen", async () => {
+		expect((await agent("/nova-agent/next", { wait: 0, bookingsSeen: "" })).data.bookingsChanged).toBeNull();
+		const seen = new Date(Date.now() - 60000).toISOString();
+		const b = await makeBooking();
+		let started = Date.now();
+		const early = await agent("/nova-agent/next", { wait: 5, bookingsSeen: seen });
+		expect(Date.now() - started).toBeLessThan(2000);
+		expect(early.data.job).toBeNull();
+		expect(Date.parse(early.data.bookingsChanged)).toBeGreaterThan(Date.parse(seen));
+
+		// Already seen: it waits the whole time
+		started = Date.now();
+		await agent("/nova-agent/next", { wait: 1, bookingsSeen: early.data.bookingsChanged });
+		expect(Date.now() - started).toBeGreaterThanOrEqual(900);
+
+		// A change while it waits ends the wait
+		const { cancelBooking } = await import("../src/nova/bookings.js");
+		started = Date.now();
+		setTimeout(() => void cancelBooking(env, b, { by: "staff", notify: false }), 300);
+		const woken = await agent("/nova-agent/next", { wait: 5, bookingsSeen: early.data.bookingsChanged });
+		expect(Date.now() - started).toBeLessThan(3000);
+		expect(Date.parse(woken.data.bookingsChanged)).toBeGreaterThan(Date.parse(early.data.bookingsChanged));
 	});
 });

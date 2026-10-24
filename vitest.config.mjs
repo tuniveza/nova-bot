@@ -10,12 +10,8 @@ export default defineConfig({
 			miniflare: {
 				bindings: {
 					TEST_MIGRATIONS: await readD1Migrations("./migrations"),
-					ACUITY_USER_ID: "12345",
-					ACUITY_API_KEY: "test-acuity-key",
 					ADMIN_PASSWORD: "test-admin-password",
 					AGENT_NOVA_KEY: "agent-nova-test-key",
-					// Tests don't wait for booking details from the confirmation page
-					BOOKING_DETAILS_WAIT_SECONDS: "0",
 					// Tests don't ask the real Google whether a pasted key is right (test/google-keys.spec.js fakes it)
 					GOOGLE_KEY_CHECK: "off",
 					// Fake Google and Stripe keys for the Nova booking system tests (test/fakes.js stands in for both)

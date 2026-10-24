@@ -206,7 +206,7 @@ describe("Nova Quests' reminders reach their own phones too", () => {
 		expect(delivered).toEqual(["https://web.push.apple.com/owner"]);
 	});
 
-	it("Nova Agent's own alerts (Acuity problems) still reach every phone", async () => {
+	it("Nova Agent's own alerts (its own problems) still reach every phone", async () => {
 		await notify({ title: "Can't log in", message: "Run npm run login" });
 		expect(delivered.sort()).toEqual(["https://web.push.apple.com/owner", "https://web.push.apple.com/staff"]);
 	});

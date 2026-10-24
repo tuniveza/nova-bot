@@ -19,7 +19,7 @@
 //   sign-in        the staff accounts can be read
 //   emails         the VPS's own mail sender, its queue and the last email that went (from the VPS's
 //                  status service), and whether Gmail is connected as the backup
-//   bookings feed  the Acuity calendar link answers with a calendar
+//   bookings       Google Calendar is connected (the bookings go in it) and Stripe is set up (deposits)
 //   timed jobs     the every-minute jobs ran in the last few minutes (a heartbeat they leave)
 //   backups        the last nightly backup's age
 //   Google         each part's last run
@@ -33,7 +33,6 @@
 import { publicUrl } from "./nova/booking.js";
 import { googleReady } from "./nova/google.js";
 import { stripeReady } from "./nova/stripe.js";
-import { usesNova } from "./mode.js";
 import { deskToken, vpsUrl } from "./desk.js";
 
 const CACHE_KEY = "status_cache";
@@ -159,19 +158,6 @@ async function bookingsCheck(env) {
   return part("bookings", "Bookings", "green", "Google Calendar and Stripe are connected, so bookings come in and deposits can be paid.");
 }
 
-async function feedCheck(env) {
-  if (await usesNova(env)) return { nova: await bookingsCheck(env) };
-  const url = env.ACUITY_CALENDAR_URL;
-  if (!url) return { ok: false, reason: "no calendar link is set" };
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-    const text = res.ok ? (await res.text()).slice(0, 4000) : "";
-    return res.ok && text.includes("BEGIN:VCALENDAR") ? { ok: true } : { ok: false, reason: `answered ${res.status}` };
-  } catch {
-    return { ok: false, reason: "couldn't be reached" };
-  }
-}
-
 async function portalCheck(env) {
   try {
     const res = await env.ASSETS.fetch(new Request("https://status.local/portal/"));
@@ -194,10 +180,10 @@ const gb = (bytes) => `${(bytes / 1024 ** 3).toFixed(bytes > 10 * 1024 ** 3 ? 0 
 
 // Work out every part. `now` and `fetcher` are for tests.
 export async function computeStatus(env, { now = Date.now(), fetcher = fetch, forceChat = false } = {}) {
-  const [vps, link, feed, portal, signIn, heartbeat, googleRaw, chatRaw, laptopRaw, gmailAccount] = await Promise.all([
+  const [vps, link, bookings, portal, signIn, heartbeat, googleRaw, chatRaw, laptopRaw, gmailAccount] = await Promise.all([
     vpsStatus(env),
     pcLink(env),
-    feedCheck(env),
+    bookingsCheck(env),
     portalCheck(env),
     signInCheck(env),
     readSetting(env, HEARTBEAT_KEY),
@@ -237,8 +223,7 @@ export async function computeStatus(env, { now = Date.now(), fetcher = fetch, fo
     parts.push(part("email", "Emails", "amber", `The mail server's details weren't in the server's status. ${gmail}`));
   }
 
-  if (feed.nova) parts.push(feed.nova);
-  else parts.push(feed.ok ? part("feed", "Bookings feed", "green", "Acuity's calendar answers, so bookings come in.") : part("feed", "Bookings feed", "red", `Acuity's calendar ${feed.reason}.`));
+  parts.push(bookings);
 
   const beatAge = heartbeat ? now - Date.parse(heartbeat) : Infinity;
   parts.push(

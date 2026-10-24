@@ -233,7 +233,7 @@ export function installFakes({ google = makeGoogle(), stripe = makeStripe(), cla
   forgetSessionTypes();
   forgetGoogleToken();
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-    // (extra: a spec's own fakes, e.g. Acuity's API, each with handle(url, init) like these)
+    // (extra: a spec's own fakes, e.g. a calendar feed, each with handle(url, init) like these)
     for (const fake of [google, stripe, claude, ...extra]) {
       const res = await fake.handle(String(url), init || {});
       if (res) return res;
@@ -248,19 +248,12 @@ export function installFakes({ google = makeGoogle(), stripe = makeStripe(), cla
   return { google, stripe, claude, push };
 }
 
-// Google counts as connected once a refresh token is saved. Nova specs also
-// turn the booking system switch to Nova (mode.js); `nova: false` leaves it.
-export async function connectGoogle(e = env, { nova = true } = {}) {
-  if (nova) await useNova(e);
+// Google counts as connected once a refresh token is saved
+export async function connectGoogle(e = env) {
   await e.DB.batch([
     e.DB.prepare("INSERT INTO settings (key, value) VALUES ('google_refresh_token', 'rt-test') ON CONFLICT (key) DO UPDATE SET value = excluded.value"),
     e.DB.prepare("INSERT INTO settings (key, value) VALUES ('google_account', 'studio@novacane.test') ON CONFLICT (key) DO UPDATE SET value = excluded.value"),
   ]);
-}
-
-// The behind-the-scenes switch, set to Nova Bot's own booking system
-export async function useNova(e = env) {
-  await e.DB.prepare("INSERT INTO settings (key, value) VALUES ('booking_system', 'nova') ON CONFLICT (key) DO UPDATE SET value = excluded.value").run();
 }
 
 export async function clearTables(e = env) {

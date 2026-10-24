@@ -42,11 +42,11 @@
 //   POST /app/api/notifications/delete  { id } or { all: true } -> deletes alerts
 //   POST /app/api/notifications/settings { days } -> alerts delete themselves after this many days (0 = off)
 //   POST /app/api/voice                 a recording (WAV) -> { text } (for voice commands)
-//   GET  /app/api/calendar              every booking in Acuity's diary (the Calendar tab)
+//   GET  /app/api/calendar              every booking in the studio diary (the Calendar tab)
 //   GET|PUT|DELETE /app/api/calendar/items[/:id]  the studio's events and day cards (src/calendar/items.js)
 //   POST /app/api/ask                   { question, history } -> { answer } (questions about bookings, enquiries, alerts)
 //   GET  /app/api/booking-actions?status=pending|all -> { actions, canDecide } booking changes the AIs proposed
-//   POST /app/api/booking-actions/approve { id, payload? } -> approves it and makes the change in Acuity
+//   POST /app/api/booking-actions/approve { id, payload? } -> approves it and makes the change
 //   POST /app/api/booking-actions/edit    { id, payload }  -> changes a pending one's details (still pending)
 //   POST /app/api/booking-actions/reject  { id, note? }
 //     (Approve, edit and reject need an admin with Portal open in a browser, the cookie: never an
@@ -59,8 +59,7 @@
 //                                       every consent change is logged with who)
 //   POST /app/api/clients               { name, email?, phone?, notes? } -> { client } added by hand
 //                                       (a duplicate is refused with the existing one's id)
-//   POST /app/api/clients/import        { csv } -> Acuity's appointments or clients spreadsheet (admins only)
-//   POST /app/api/clients/sync          -> reads Acuity's calendar feed and the enquiries now (admins only)
+//   POST /app/api/clients/sync          -> reads the bookings and the enquiries now (admins only)
 //   GET  /app/api/campaigns?status=waiting|all|<status>
 //                                       -> { campaigns, canDecide, audiences: { fans, clients, everyone }, signupUrl }
 //                                       email campaigns (opted-in counts per audience; see src/campaigns.js)
@@ -132,7 +131,6 @@
 //   POST /app/api/funnel/approve        { items: [{ id, updatedAt }] } -> into the warm-up queue (admin, cookie)
 //   POST /app/api/funnel/settings       { cap?, rampStart?, rampStep?, rampEvery?, gapMin?, gapMax?, fromHour?, toHour?, weekdaysOnly?, signoff?, pitch? } (admin, cookie)
 
-import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { askPortal } from "./portal-ask.js";
 import { questsForPortal, queueQuestAction } from "./agent-nova.js";
 import { handleMemoryForStaff, learnFromStaffChat } from "./memory/routes.js";
@@ -140,10 +138,8 @@ import { clearCookie, endSession, requireStaff } from "./portal/auth.js";
 import { checkedLinks } from "./links.js";
 import * as replies from "./enquiry-replies.js";
 import * as bookingActions from "./booking-actions.js";
-import { acuityFailure } from "./acuity/api.js";
 import { servicesStatus, testEmailToMe } from "./services.js";
 import { publicUrl } from "./nova/booking.js";
-import { listBookings } from "./booking-calendar.js";
 import { handleClientsForStaff } from "./clients.js";
 import { handleCampaignsForStaff } from "./campaigns.js";
 import { handleOutreachForStaff } from "./outreach.js";
@@ -155,12 +151,11 @@ import { handleMoneyForStaff } from "./money.js";
 import { handleGoogleForStaff } from "./google/index.js";
 import { handleDeskForStaff } from "./desk.js";
 import { handleTidyForStaff } from "./tidy.js";
-// With the switch on Nova Bot's own booking system (mode.js), these come from src/nova/
-import { usesNova } from "./mode.js";
+// Bookings: Nova Bot's own booking system (src/nova/)
 import { handleCalendarItems } from "./calendar/items.js";
-import { bookingLink as novaBookingLink, getSessionTypes as novaSessionTypes } from "./nova/booking.js";
-import { listBookings as novaListBookings } from "./nova/booking-calendar.js";
-import { AUTO_DELETE_CHOICES, autoDeleteDays, deleteAlerts, forgetPhone, listAlerts, listPhones, notifyPhones, phoneName, savePhone, setAutoDelete, verifyBooking } from "./push.js";
+import { bookingLink, getSessionTypes } from "./nova/booking.js";
+import { listBookings } from "./nova/booking-calendar.js";
+import { AUTO_DELETE_CHOICES, autoDeleteDays, deleteAlerts, forgetPhone, listAlerts, listPhones, notifyPhones, phoneName, savePhone, setAutoDelete } from "./push.js";
 import { LOOKS_ID } from "./looks-account.js";
 
 // The old shared-password cookie: only ever cleared now (Portal is the one sign-in)
@@ -261,7 +256,6 @@ export async function handleApp(request, env, ctx, answer) {
   if (route === "/push/unsubscribe" && request.method === "POST") return unsubscribe(request, env);
   if (route === "/push/test" && request.method === "POST") return testNotification(env);
   if (route === "/notifications" && request.method === "GET") return alerts(env);
-  if (route === "/verify-booking" && request.method === "GET") return json(await verifyBooking(env, url.searchParams.get("id")));
   if (route === "/notifications/delete" && request.method === "POST") return removeAlerts(request, env);
   if (route === "/notifications/settings" && request.method === "POST") return alertSettings(request, env);
   if (route === "/voice" && request.method === "POST") return voice(request, env);
@@ -271,7 +265,7 @@ export async function handleApp(request, env, ctx, answer) {
     if (request.method !== "GET" && !app && request.headers.get("Origin") !== url.origin) return json({ error: "Forbidden" }, 403);
     return handleCalendarItems(request, env, route);
   }
-  if (route === "/calendar" && request.method === "GET") return calendar(env, ctx);
+  if (route === "/calendar" && request.method === "GET") return calendar(env);
   // Your own quests (admins: ?who=everyone for everyone's)
   if (route === "/quests" && request.method === "GET") return json(await questsForPortal(env, me, url.searchParams.get("who") === "everyone" ? "everyone" : "mine"));
   // Index: the suite's memory (browse, edit, approve)
@@ -390,8 +384,9 @@ async function approvals(request, env, me, route) {
   try {
     return done(await ACTIONS[route](env, me, body));
   } catch (err) {
-    const { status, body: answer } = acuityFailure(err);
-    return json(answer, status);
+    // Google Calendar not answering (a change is checked against it)
+    console.log("Approvals: couldn't check a booking change:", err?.name || "error");
+    return json({ error: "The studio's calendar couldn't be read just now. Try again in a minute.", unreachable: true }, 503);
   }
 }
 
@@ -404,34 +399,16 @@ function done(result) {
 // ===== BOOKING LINKS =====
 
 async function listSessions(env) {
-  if (await usesNova(env)) return json({ sessions: novaSessionTypes().map(({ id, name, price }) => ({ id, name, price })) });
-  try {
-    const types = await getSessionTypes(ACUITY_OWNER);
-    return json({ sessions: types.map(({ id, name, price }) => ({ id, name, price })) });
-  } catch (err) {
-    console.log("App couldn't read the session types:", err);
-    return json({ error: "Couldn't read the sessions from the Acuity booking page just now." }, 502);
-  }
+  return json({ sessions: getSessionTypes().map(({ id, name, price }) => ({ id, name, price })) });
 }
 
 async function makeLink(request, env) {
   const { enquiryId, typeId } = await readJson(request);
   const enquiry = await env.DB.prepare("SELECT name, email, phone FROM enquiries WHERE id = ?").bind(Number(enquiryId)).first();
   if (!enquiry) return json({ error: "That enquiry doesn't exist." }, 404);
-  if (await usesNova(env)) {
-    const type = novaSessionTypes().find((t) => t.id === Number(typeId));
-    if (!type) return json({ error: "That session isn't bookable." }, 400);
-    return json({ url: novaBookingLink(env, type.id, enquiry), session: type.name });
-  }
-  let types;
-  try {
-    types = await getSessionTypes(ACUITY_OWNER);
-  } catch {
-    return json({ error: "Couldn't read the sessions from the Acuity booking page just now." }, 502);
-  }
-  const type = types.find((t) => t.id === Number(typeId));
+  const type = getSessionTypes().find((t) => t.id === Number(typeId));
   if (!type) return json({ error: "That session isn't bookable." }, 400);
-  return json({ url: bookingLink(ACUITY_OWNER, type.id, enquiry), session: type.name });
+  return json({ url: bookingLink(env, type.id, enquiry), session: type.name });
 }
 
 // ===== CONVERSATIONS =====
@@ -516,20 +493,16 @@ async function testNotification(env) {
 
 // ===== CALENDAR =====
 
-// Every booking in Acuity's diary (from its private calendar feed)
-async function calendar(env, ctx) {
-  // Try it
+// Every booking in the studio diary (Nova's own bookings, and anything else in the studio's Google Calendar)
+async function calendar(env) {
   try {
-    // Read the diary (Acuity's: the last few minutes' copy at once, a fresh one read behind it)
-    const bookings = (await usesNova(env)) ? await novaListBookings(env) : await listBookings(env, { recent: true, ctx });
-    // The feed isn't set up
+    const bookings = await listBookings(env);
+    // Google Calendar isn't connected yet
     if (!bookings) return json({ bookings: [], setUp: false });
-    // The bookings
     return json({ bookings, setUp: true });
   } catch (err) {
-    // The feed couldn't be read
-    console.log("Calendar: couldn't read the Acuity feed:", err);
-    return json({ error: "Couldn't read the Acuity calendar just now." }, 502);
+    console.log("Calendar: couldn't read the studio calendar:", err?.name || "error");
+    return json({ error: "Couldn't read the studio calendar just now." }, 502);
   }
 }
 

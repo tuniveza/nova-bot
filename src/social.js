@@ -43,7 +43,7 @@ import { channelStats, uploadVideo, videoStats, youtubeReadable, youtubeReady } 
 import { GoogleError } from "./nova/google.js";
 import { notifyPhones } from "./push.js";
 import { publicUrl } from "./nova/booking.js";
-import { readTime } from "./acuity/api.js";
+import { readTime } from "./uk-time.js";
 import { askPC } from "./agent-relay.js";
 
 export const PLATFORMS = ["facebook", "instagram", "youtube"];

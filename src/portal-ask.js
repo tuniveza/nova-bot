@@ -5,13 +5,10 @@
 //
 // Like asking a receptionist who has the diary, the enquiries folder and the
 // message pad in front of them: each question is sent to Claude together with
-// the latest bookings (Acuity's calendar feed), enquiries and alerts.
+// the latest bookings (Nova's own bookings and the studio's Google Calendar), enquiries and alerts.
 
-// The latest bookings from Acuity's calendar feed
-import { listBookings } from "./booking-calendar.js";
-// With the switch on Nova Bot's own booking system, the diary is the studio's Google Calendar
-import { usesNova } from "./mode.js";
-import { listBookings as novaListBookings } from "./nova/booking-calendar.js";
+// The studio diary: Nova's own bookings and the studio's Google Calendar
+import { listBookings } from "./nova/booking-calendar.js";
 import { readForStaff } from "./memory/routes.js";
 import { memoryPrompt } from "./memory/store.js";
 
@@ -28,7 +25,7 @@ Staff ask you about the studio's own bookings, enquiries and alerts. Answer usin
 - Times are UK time. Say days like "Thursday 22 October" and times like "2:15pm".
 - Match names loosely (people may say a first name only, or speech-to-text may spell it slightly wrong). If more than one person could match, say so.
 - If the answer isn't in the data, say you can't see it in Portal. Never make up bookings, times or contact details.
-- BOOKINGS are the current Acuity diary (cancelled bookings aren't in it; recent cancellations and moves are in ALERTS).`;
+- BOOKINGS are the current studio diary (cancelled bookings aren't in it; recent cancellations and moves are in ALERTS).`;
 
 // Answer one question
 export async function askPortal(request, env) {
@@ -92,14 +89,12 @@ async function snapshot(env) {
   // The parts of the text
   const parts = [`NOW: ${today} (UK time).`];
 
-  // Bookings from Acuity's calendar feed (from a week ago onwards)
+  // The studio diary (from a week ago onwards)
   try {
-    // Read the diary (Acuity's, or the studio's Google Calendar with the switch on Nova)
-    const nova = await usesNova(env);
     // (test bookings left out: they aren't real and mustn't be counted)
-    const bookings = nova ? await novaListBookings(env, Date.now(), { tests: false }) : await listBookings(env);
+    const bookings = await listBookings(env, Date.now(), { tests: false });
     // Not set up
-    if (!bookings) parts.push(nova ? "BOOKINGS: not available (Google Calendar isn't connected yet)." : "BOOKINGS: not available (the Acuity calendar feed isn't set up).");
+    if (!bookings) parts.push("BOOKINGS: not available (Google Calendar isn't connected yet).");
     // One line per booking
     else {
       // A week ago, in the feed's date format ("20261022T131500Z")
@@ -109,7 +104,7 @@ async function snapshot(env) {
         .filter((b) => !b.start || b.start >= weekAgo)
         .map((b) => "- " + [b.when, b.session, b.name, b.phone && "phone " + b.phone, b.email && "email " + b.email, b.price && "price " + b.price, ...(b.extra || []).map(([l, v]) => l + ": " + v)].filter(Boolean).join(" | "));
       // Add them
-      parts.push(`BOOKINGS (${nova ? "studio diary in Google Calendar" : "Acuity diary"}, soonest first):\n` + (lines.join("\n") || "none"));
+      parts.push("BOOKINGS (studio diary in Google Calendar, soonest first):\n" + (lines.join("\n") || "none"));
     }
   } catch (err) {
     // The feed couldn't be read

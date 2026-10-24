@@ -9,9 +9,7 @@
 //   POST /admin/enquiries/test-email   send a test enquiry email
 //   GET  /admin/conversations      recent chats (?chat=ID shows one in full)
 //   GET  /admin/feedback           what visitors said about NovaBot (?show=good / bad)
-//   GET  /admin/acuity             checks which Acuity account the secrets belong to
-//   GET  /admin/connections        the booking system switch (Acuity / Nova), plus Google and Stripe for Nova
-//   POST /admin/booking-system     flip the switch { system: "acuity" | "nova" }
+//   GET  /admin/connections        the booking system: Google (calendar and email) and Stripe (payments)
 //   GET  /admin/google             "Connect Google": off to Google's consent page
 //   GET  /admin/google/callback    Google sends the browser back here with access
 //   POST /admin/google/disconnect  forget the Google connection
@@ -24,17 +22,15 @@
 //
 // For Portal admins: anyone else is sent to Portal to sign in (the one sign-in).
 
-import { checkAcuity, escapeHtml, isValidCodeFormat, normaliseCode } from "./referrals.js";
+import { escapeHtml, isValidCodeFormat, normaliseCode } from "./referrals.js";
 import { checkedLinks, readLinks, saveLinks } from "./links.js";
 import { requireStaff } from "./portal/auth.js";
 import { emailIsSetUp, emailRecipients, sendTestEmail } from "./enquiries.js";
-import { ACUITY_OWNER, bookingLink, getSessionTypes } from "./booking.js";
 import { feedbackCounts, recentFeedback } from "./feedback.js";
-// Nova Bot's own booking system, behind the switch (mode.js, src/nova/)
-import { bookingSystem, setBookingSystem } from "./mode.js";
-import { bookingLink as novaBookingLink, getSessionTypes as novaSessionTypes, publicUrl } from "./nova/booking.js";
-import { calendarId, connectedAccount, consentUrl, disconnect, finishConnecting, googleProblem, googleReady, offline, sendEmail } from "./nova/google.js";
-import { stripeOffline, stripeProblem, stripeReady } from "./nova/stripe.js";
+// Nova Bot's own booking system (src/nova/)
+import { bookingLink, getSessionTypes, publicUrl } from "./nova/booking.js";
+import { calendarId, connectedAccount, consentUrl, disconnect, finishConnecting, googleProblem, offline, sendEmail } from "./nova/google.js";
+import { stripeOffline, stripeProblem } from "./nova/stripe.js";
 import { googleClient } from "./nova/google-keys.js";
 import { googleSetupPage, removeClient, saveGoogleSetup } from "./admin-google.js";
 import { handleTestBooking } from "./admin-test-booking.js";
@@ -82,7 +78,6 @@ export async function handleAdmin(request, env) {
     if (url.pathname === "/admin/enquiries/test-email") {
       return back((await sendTestEmail(env)).message, "/admin/enquiries");
     }
-    if (url.pathname === "/admin/booking-system") return switchBookingSystem(env, form);
     if (url.pathname === "/admin/google/disconnect") {
       await disconnect(env);
       return back("Google disconnected.", "/admin/connections");
@@ -105,7 +100,6 @@ export async function handleAdmin(request, env) {
   if (url.pathname === "/admin/enquiries") return enquiriesPage(env, url);
   if (url.pathname === "/admin/conversations") return conversationsPage(env, url);
   if (url.pathname === "/admin/feedback") return feedbackPage(env, url);
-  if (url.pathname === "/admin/acuity") return acuityPage(env, url);
   if (url.pathname === "/admin/connections") return connectionsPage(env, url);
   if (url.pathname === "/admin/import-acuity") return handleAcuityImport(request, env, url, { page, back, escapeHtml });
   if (url.pathname === "/admin/links") return linksPage(env, url);
@@ -282,13 +276,12 @@ async function adminPage(env, url) {
     <a href="/admin" class="${referredOnly ? "" : "current"}">All</a>
     <a href="/admin?show=referred" class="${referredOnly ? "current" : ""}">Referred only</a>
     <a href="/admin/report.csv">Download CSV</a>
-    <a href="/admin/acuity">Check Acuity connection</a>
     <a href="/admin/connections">Booking system</a>
   </p>
   <div class="card">
     <table>
       <thead><tr><th>Date</th><th>Client</th><th>Session</th><th>Status</th><th>Referred?</th><th>Code</th><th>Referred by</th><th>Source</th></tr></thead>
-      <tbody>${appointmentRows || '<tr><td colspan="8" class="dim">No appointments yet. They appear here as Acuity bookings come in.</td></tr>'}</tbody>
+      <tbody>${appointmentRows || '<tr><td colspan="8" class="dim">No appointments yet. They appear here as bookings come in.</td></tr>'}</tbody>
     </table>
     ${appointments.length === 500 ? '<p class="dim">Showing the latest 500. Download the CSV for everything.</p>' : ""}
   </div>
@@ -313,26 +306,19 @@ async function enquiriesPage(env, url) {
   ).all();
   const e = escapeHtml;
 
-  // For the "Booking link" on each enquiry (from the booking system the switch picks)
-  const nova = (await bookingSystem(env)) === "nova";
-  let types = [];
-  try {
-    types = nova ? novaSessionTypes() : await getSessionTypes(ACUITY_OWNER);
-  } catch (err) {
-    console.log("Couldn't read the session types:", err);
-  }
+  // For the "Booking link" on each enquiry (Nova Bot's booking page)
+  const types = getSessionTypes();
   const linkFor = Number(url.searchParams.get("link"));
   const chosenType = types.find((t) => t.id === Number(url.searchParams.get("type")));
 
   const bookingSection = (q) => {
-    if (types.length === 0) return `<p class="dim small">Booking links aren't available right now (couldn't read the Acuity booking page).</p>`;
     const chosen = linkFor === q.id ? chosenType : null;
     const options = types
       .map((t) => `<option value="${t.id}" ${chosen && chosen.id === t.id ? "selected" : ""}>${e(t.name)}${t.price ? ` (${e(t.price)})` : ""}</option>`)
       .join("");
     let made = "";
     if (chosen) {
-      const link = nova ? novaBookingLink(env, chosen.id, q) : bookingLink(ACUITY_OWNER, chosen.id, q);
+      const link = bookingLink(env, chosen.id, q);
       const first = q.name.split(/\s+/)[0];
       const body = `Hi ${first},\n\nThanks for your enquiry. You can book your session here: pick a time on the calendar and pay the deposit to confirm.\n\n${chosen.name}\n${link}\n\nNovacane Studios`;
       const mailto = `mailto:${encodeURIComponent(q.email)}?subject=${encodeURIComponent("Booking your session at Novacane")}&body=${encodeURIComponent(body)}`;
@@ -341,7 +327,7 @@ async function enquiriesPage(env, url) {
           <button type="button" class="btn ghost small" onclick="navigator.clipboard.writeText(this.previousElementSibling.value).then(() => (this.textContent = 'Copied'))">Copy</button>
           <a class="btn small" href="${e(mailto)}">Email it to them</a>
         </div>
-        <p class="dim small">The link opens the booking calendar on ${e(chosen.name)} with their details filled in. They pick a time and pay, and it goes into Acuity.</p>`;
+        <p class="dim small">The link opens the booking calendar on ${e(chosen.name)} with their details filled in. They pick a time and pay the deposit, and it goes into the studio's calendar.</p>`;
     }
     return `<details class="booklink" ${chosen ? "open" : ""}>
         <summary>Booking link</summary>
@@ -446,8 +432,6 @@ async function conversationsPage(env, url) {
 `);
 }
 
-// ===== ACUITY CONNECTION =====
-
 // ===== FEEDBACK =====
 
 async function feedbackPage(env, url) {
@@ -489,34 +473,6 @@ async function feedbackPage(env, url) {
   </p>
   ${list}`
   );
-}
-
-async function acuityPage(env, url) {
-  const e = escapeHtml;
-  const result = await checkAcuity(env);
-  const body = result.ok
-    ? `<div class="card">
-        <p class="notice">Connected. The Worker's secrets belong to this Acuity account:</p>
-        <table>
-          <tr><th>User ID</th><td>${e(result.account.id)}</td></tr>
-          <tr><th>Name</th><td>${e(result.account.name)}</td></tr>
-          <tr><th>Email</th><td>${e(result.account.email)}</td></tr>
-          <tr><th>Plan</th><td>${e(result.account.plan)}</td></tr>
-        </table>
-        <p>Bookings only come through if this is the same account as the booking calendar on novacane.co.uk, and its webhooks point at this Worker.</p>
-      </div>`
-    : `<div class="card"><p class="warn">${e(result.message)}</p>
-        ${
-          result.needsPlan
-            ? "<p>Referral tracking needs the Acuity API, which is only on the Powerhouse plan.</p>"
-            : `<p>Set the secrets again from the Acuity account that has your bookings (Integrations &rarr; API &rarr; View credentials):<br>
-        <code>npx wrangler secret put ACUITY_USER_ID</code><br><code>npx wrangler secret put ACUITY_API_KEY</code></p>`
-        }</div>`;
-  return page(env, "Referrals", url, `
-  <p><a href="/admin">&larr; Referrals</a></p>
-  <h2>Acuity connection</h2>
-  ${body}
-`);
 }
 
 // ===== CONNECTIONS (Google and Stripe) =====
@@ -594,22 +550,11 @@ async function testBookingEmail(env) {
 
 async function connectionsPage(env, url) {
   const e = escapeHtml;
-  const system = await bookingSystem(env);
-  const novaReady = (await googleReady(env)) && stripeReady(env);
   const switchSection = `
   <h2>Booking system</h2>
   <div class="card">
-    <p>NovaBot is using <b>${system === "nova" ? "Nova Bot's own booking system (Google Calendar, Gmail, Stripe)" : "Acuity"}</b>${system === "acuity" ? " (the default)" : ""}.</p>
-    <p class="dim small">Acuity: Acuity's booking page, Nova Agent, Acuity's webhook and emails, as always.
-      Nova: Nova Bot's own booking page (/book), the studio's Google Calendar, booking emails from Gmail and deposits with Stripe.
-      The switch takes effect straight away, no redeploy. Bookings made with either keep working after switching back.</p>
-    ${
-      system === "nova"
-        ? `<form method="post" action="/admin/booking-system"><input type="hidden" name="system" value="acuity"><button class="btn">Switch back to Acuity</button></form>`
-        : novaReady
-          ? `<form method="post" action="/admin/booking-system" onsubmit="return confirm('Switch NovaBot to its own booking system? Customers will book on Nova Bot\\'s booking page and pay deposits with Stripe.')"><input type="hidden" name="system" value="nova"><button class="btn ghost">Switch to Nova Bot's booking system</button></form>`
-          : `<p class="warn">Nova Bot's booking system can be switched on once Google and Stripe below are both working.</p>`
-    }
+    <p>NovaBot uses <b>Nova Bot's own booking system</b>: its booking page (/book), the studio's Google Calendar, booking emails from Gmail and deposits with Stripe.</p>
+    <p class="dim small">It needs Google and Stripe below to both say ✓ Working.</p>
   </div>`;
   const [account, gProblem, sProblem] = await Promise.all([connectedAccount(env), googleProblem(env), stripeProblem(env)]);
   const connectedAt = await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_connected_at'").first("value");
@@ -645,7 +590,7 @@ async function connectionsPage(env, url) {
   <h2>Booking page</h2>
   <div class="card">
     <p><a href="${e(base)}/book" target="_blank" rel="noopener">${e(base)}/book</a></p>
-    <p class="dim small">${system === "nova" ? "Point the website's \"Book a session\" button here." : "Only after switching to Nova: until then this address sends people to the usual Acuity booking page."} Customers pick a time, pay the deposit with Stripe, and it goes straight into Google Calendar.</p>
+    <p class="dim small">Point the website's "Book a session" button here. Customers pick a time, pay the deposit with Stripe, and it goes straight into Google Calendar.</p>
   </div>
 
   <h2>Acuity's bookings</h2>
@@ -668,20 +613,6 @@ async function connectionsPage(env, url) {
     </table>
   </div>`;
   return page(env, "Booking system", url, switchSection + body);
-}
-
-// Flip the booking system switch. Nova only once Google and Stripe both work.
-async function switchBookingSystem(env, form) {
-  const system = String(form.get("system") || "");
-  if (system === "nova" && !((await googleReady(env)) && stripeReady(env))) {
-    return back("Not switched: connect Google and set up Stripe first.", "/admin/connections");
-  }
-  try {
-    await setBookingSystem(env, system);
-  } catch {
-    return back("That isn't a booking system.", "/admin/connections");
-  }
-  return back(system === "nova" ? "Switched: NovaBot now uses its own booking system." : "Switched back: NovaBot uses Acuity.", "/admin/connections");
 }
 
 // ===== SHARED =====

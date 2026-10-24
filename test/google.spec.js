@@ -382,11 +382,9 @@ describe("Calendar: Nova and Google, both ways", () => {
 		expect([...G.calendars["studio-cal"].values()].map((e) => e.summary)).toEqual(["✦ Mix (2)"]);
 	});
 
-	it("with Nova's own bookings, the old copies of Acuity's bookings go: ones to come deleted, past ones kept", async () => {
-		const setting = (key, value) => env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(key, value).run();
-		await setting("booking_system", "nova");
-		await setting("google_studio_calendar", "studio-cal");
-		try {
+	it("the old copies of Acuity's bookings go: ones to come deleted, past ones kept", async () => {
+		await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('google_studio_calendar', 'studio-cal') ON CONFLICT (key) DO UPDATE SET value = excluded.value").run();
+		{
 			G.calendars["studio-cal"] = new Map();
 			const at = (days, hour) => new Date(Date.now() + days * 86400000 + hour * 3600000).toISOString();
 			const copy = (id, nova, days) => ({ id, seq: ++G.seq, status: "confirmed", summary: "Booking: Rap Package", start: { dateTime: at(days, 0) }, end: { dateTime: at(days, 2) }, extendedProperties: { private: { novaBooking: nova } } });
@@ -404,8 +402,6 @@ describe("Calendar: Nova and Google, both ways", () => {
 			const before = G.calls.length;
 			await syncCalendar(genv(), budget());
 			expect(G.calls.slice(before).filter((c) => c.includes("copy-"))).toEqual([]);
-		} finally {
-			await env.DB.prepare("DELETE FROM settings WHERE key = 'booking_system'").run();
 		}
 	});
 

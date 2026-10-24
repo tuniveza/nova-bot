@@ -3,7 +3,6 @@ import { STAFF_AUTH, STAFF_COOKIE } from "./sign-in.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../src";
 import { forgetSessionTypes } from "../src/nova/booking.js";
-import { useNova } from "./fakes.js";
 
 const BASE = "https://novacane-worker.test";
 
@@ -111,7 +110,6 @@ describe("staff app data", () => {
 	});
 
 	it("makes a booking link with the customer's details", async () => {
-		await useNova();
 		const cookie = await signIn();
 		const id = await addEnquiry();
 		const { data } = await app("sessions", { cookie });

@@ -16,7 +16,6 @@ import { canUse, connectedAccount, googleReady, offline } from "../nova/google.j
 export const OPTIONS = {
   calendar: { label: "Calendar", on: true, needs: "calendar", help: "Nova's Calendar and Google Calendar, both ways." },
   calendarPlan: { label: "Quests and music time", on: false, needs: "calendar", help: "Quests and music time in Google Calendar: also put Nova Agent's plan into the Novacane Studio calendar." },
-  bookings: { label: "Bookings in Calendar", on: true, needs: "calendar", help: "Bookings in Google Calendar: copies of Acuity's bookings (they're still booked in Acuity)." },
   send: { label: "Send from Gmail", on: true, needs: "send", help: "Send approved emails from Gmail: replies, one-to-one emails, invoices and reminders go from the studio's Gmail, so they're in its Sent folder." },
   replies: { label: "Replies into Enquiries", on: true, needs: "replies", help: "Customers' replies to those emails to those emails land back in the right enquiry." },
   contacts: { label: "Clients in Contacts", on: true, needs: "contacts", help: "Clients in Google Contacts, under a \"Novacane clients\" label, both ways." },
@@ -24,7 +23,7 @@ export const OPTIONS = {
   backups: { label: "Nightly backups", on: true, needs: "drive", help: "Nightly backups to Google Drive: Index and the PC's files, every night." },
   sheets: { label: "Money in Sheets", on: true, needs: "drive", help: "Money in Google Sheets: a live sheet of invoices, payments and expenses for the accountant." },
   inbox: { label: "Gmail as the inbox", on: true, needs: "replies", help: "Gmail as Enquiries' inbox: new customer emails to the studio's Gmail come into Enquiries (newsletters, notifications and spam stay out). With the Gmail permission they get a \"Nova\" label, and they're archived in Gmail when they're done." },
-  meet: { label: "Google Meet links", on: true, needs: "calendar", help: "Events you tick \"Google Meet\" on in Calendar, and online-session bookings, get a Meet link." },
+  meet: { label: "Google Meet links", on: true, needs: "calendar", help: "Events you tick \"Google Meet\" on in Calendar get a Meet link." },
   tasks: { label: "Quests in Tasks", on: true, needs: "tasks", help: "Quests in Google Tasks, in a \"Nova quests\" list; ticking one off in Google Tasks marks it done in Nova." },
   docs: { label: "Notes in Docs", on: true, needs: "drive", help: "Notes kept in Google Docs: notes you mark \"Keep in Google Docs\" stay in step with their Google Doc, both ways (the newest change wins; the other is kept as a copy)." },
   files: { label: "Files in Drive", on: true, needs: "drive", help: "Files and invoices in Drive: Agent's files in \"Nova Agent/Files\" and each sent invoice in \"Nova Agent/Invoices\", kept up to date." },

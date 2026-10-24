@@ -5,7 +5,7 @@
 //   - a staff member's own email, or a TV/film phone number (07700 900…), used as a customer
 //   - test, rude or joke words, and the names seen in the studio's own tests (src/tidy-words.js)
 //   - random letters (the inbox's spam check), the same first message in several chats minutes apart
-//   - claude-test-… chats, chat bookings that never reached Acuity, Index pages whose chat is gone
+//   - claude-test-… chats, old chat bookings (from Acuity's days) that never became a booking, Index pages whose chat is gone
 //   - copies: the same Index page, shared note, draft post, email, invoice or expense twice
 //   - the old "Welcome to Notes" note (Notes has a Welcome guide now)
 // Each reason is "strong" or "weak": one strong reason, or two weak ones, makes it "Likely a test";
@@ -121,14 +121,14 @@ export function findTestStuff(data, { now = Date.now() } = {}) {
   const chats = new Map((data.chats || []).map((c) => [c.chat_id, c]));
   const firstText = (id) => norm(((msgs.get(id) || [])[0] || {}).content);
 
-  // --- Bookings made through the chat that never reached Acuity, and the jobs that went with them
+  // --- Old bookings made through the chat (Acuity's days) that never became a booking, and the jobs that went with them
   const jobFor = (b) =>
     (data.jobs || []).find((j) => j.kind === "book" && !j.appointment_id && norm(j.client_name) === norm(b.name) && Math.abs(Date.parse(j.created_at) - Date.parse(b.created_at)) < 60_000);
   const bookingItems = new Map();
   for (const b of data.bookings || []) {
     const reasons = reasonsFor({ name: b.name, email: b.email, phones: [b.phone] }, staff);
     const old = now - Date.parse(b.created_at) > DAY;
-    if (!b.appointment_id && old) reasons.push({ text: "Never reached Acuity (no booking was made there)", strong: false });
+    if (!b.appointment_id && old) reasons.push({ text: "Never became a booking", strong: false });
     if (b.chat_id && !chats.has(b.chat_id)) reasons.push({ text: "Its website chat is gone", strong: false });
     const job = jobFor(b);
     const item = put("booking", b.id, `${b.name || "Someone"}: ${b.starts_at || "no time"}`, { where: "Website bot bookings", open: b.chat_id && chats.has(b.chat_id) ? "/portal/?view=chats" : "/portal/?view=bot", created: b.created_at, by: "The website bot", job: job ? job.id : null }, reasons);

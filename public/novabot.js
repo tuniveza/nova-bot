@@ -20,8 +20,8 @@
   // The live Worker address
   const LIVE_WORKER_URL = "https://nova.novacane.co.uk";
 
-  // The booking page (the "Book a session" button)
-  const BOOKING_LINK = "https://novacane.co.uk/bookings-contact";
+  // The booking page (the "Book a session" button): Nova Bot's own (the website's old page had Acuity's)
+  const BOOKING_LINK = `${LIVE_WORKER_URL}/book`;
 
   // The privacy policy (linked under the message box)
   const PRIVACY_LINK = "https://novacane.co.uk/privacy-policy";
@@ -1557,20 +1557,6 @@
       }
       return params.get("session") ? "Book this session" : "Booking page";
     }
-    if (/acuityscheduling\.com$/.test(link.hostname)) {
-      // A link with the time already selected: "Book Tue 6 Oct, 14:00"
-      const chosen = decodeURIComponent(link.pathname).match(/\/datetime\/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
-      if (chosen) {
-        const day = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" })
-          .format(new Date(chosen[1] + "T00:00:00Z"))
-          .replace(/,/g, "");
-        return `Book ${day}, ${chosen[2]}`;
-      }
-      const params = new URL(link.href).searchParams;
-      // A booking NovaBot made: Acuity's pages for paying the deposit or seeing it
-      if (params.get("action") === "appt") return /pay/i.test(link.search) ? "Pay the deposit" : "View your booking";
-      return params.get("appointmentType") || params.get("appointmentTypeIds[]") ? "Book this session" : "Booking calendar";
-    }
     return url.replace(/^https?:\/\//, "");
   }
 
@@ -1609,8 +1595,7 @@
     } catch (err) {
       return;
     }
-    const acuity = url.protocol === "https:" && /(^|\.)acuityscheduling\.com$/.test(url.hostname);
-    if (!acuity && !isNovaBookingLink(url)) return;
+    if (!isNovaBookingLink(url)) return;
 
     const box = document.createElement("div");
     box.className = "nv-choice";
@@ -1919,10 +1904,9 @@
     summary.setAttribute("aria-live", "polite");
     const problem = el("div", "nv-card-problem");
     problem.setAttribute("role", "alert");
-    // With Acuity (form.choose) they pick how: "Book it for me" (NovaBot checks
-    // the time and fills it all in, then they pay the deposit, which books it) or
-    // "I'll book it myself" (Acuity's booking page for the session). Nothing is
-    // booked until the deposit's paid.
+    // With form.choose they pick how: "Book it for me" (NovaBot checks the time
+    // and fills it all in, then they pay the deposit, which books it) or "I'll
+    // book it myself" (the booking page for the session).
     const bookButton = el("button", "nv-card-book");
     bookButton.type = "submit";
     bookButton.dataset.label = form.choose ? "Book it for me" : "Book it";
@@ -2096,9 +2080,9 @@
     });
 
     // Done: the card folds into a glowing tick with sparks flying off it.
-    // payFirst (Acuity): the time's free and filled in, and it's booked once
-    // they pay the deposit on the booking page. Otherwise (Nova Bot's own
-    // system) it's in, with its link to pay the deposit.
+    // payFirst: the time's free and filled in, and it's booked once they pay
+    // the deposit on the booking page. Otherwise it's in, with its link to pay
+    // the deposit.
     function celebrate(data, details) {
       const when = `${ymdLabel(details.date, { weekday: "long", day: "numeric", month: "long" })} at ${niceTime(details.time)}`;
       const payFirst = Boolean(data.payFirst && data.pay && data.pay.url);

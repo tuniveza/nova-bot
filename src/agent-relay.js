@@ -100,7 +100,7 @@ export function isRelayed(pathname) {
 // (100 MB). (Each route on the PC has its own limit too: a Board's files go up to this.)
 const MAX_BODY = 95 * 1024 * 1024;
 const PIECE = 256 * 1024;
-// Long enough for a chat that uses the Acuity helper
+// Long enough for a chat that uses a slow tool
 const ANSWER_WITHIN_MS = 5 * 60_000;
 // An answer nobody reads any more (a live feed whose browser left without the "cancel" getting
 // through) mustn't pile up here: on 2026-10-15 Nova Bot's memory climbed to its ceiling in about
