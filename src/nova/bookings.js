@@ -159,8 +159,10 @@ async function syncEvent(env, b) {
 // The time must already have been checked with freeSlot(); it's checked once more
 // here, just before the calendar event goes in.
 // `test` ({ by: staff id, blocks }) makes a TEST booking (test-booking.js): flagged, no referral.
+// `keepOnClash` keeps it even if another booking overlaps (bookings carried over from Acuity:
+// they already exist, so both stay; src/acuity-import.js).
 // Returns { booking } or { problem, taken? }.
-export async function createBooking(env, { type, date, time, person, source, status = "booked", notes = "", referralCode = "", chatId = null, sender = null, pricePence = null, skipCheck = false, test = null }) {
+export async function createBooking(env, { type, date, time, person, source, status = "booked", notes = "", referralCode = "", chatId = null, sender = null, pricePence = null, skipCheck = false, keepOnClash = false, test = null }) {
   if (!skipCheck) {
     const slot = await freeSlot(env, { date, time }, ukToday(), { type });
     if (slot.problem) return { problem: slot.problem, taken: Boolean(slot.taken) };
@@ -206,7 +208,7 @@ export async function createBooking(env, { type, date, time, person, source, sta
   )
     .bind(b.id, new Date(mine[1]).toISOString(), new Date(mine[0] - 86_400_000).toISOString())
     .all();
-  const clash = near.some((o) => Date.parse(o.starts_at) < mine[1] && Date.parse(o.ends_at) + (o.changeover || 0) * 60_000 > mine[0]);
+  const clash = !keepOnClash && near.some((o) => Date.parse(o.starts_at) < mine[1] && Date.parse(o.ends_at) + (o.changeover || 0) * 60_000 > mine[0]);
   if (clash) {
     await deleteEvent(env, b.event_id).catch(() => {});
     await env.DB.prepare("UPDATE bookings SET status = 'expired', updated_at = ? WHERE id = ?").bind(new Date().toISOString(), b.id).run();

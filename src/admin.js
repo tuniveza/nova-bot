@@ -16,6 +16,9 @@
 //   GET  /admin/google/callback    Google sends the browser back here with access
 //   POST /admin/google/disconnect  forget the Google connection
 //   POST /admin/connections/test-email  send a test email from the connected Gmail
+//   GET  /admin/import-acuity      a dry run: Acuity's future bookings and what bringing them over would do
+//   POST /admin/import-acuity      bring them over into Nova's own booking system (src/acuity-import.js;
+//                                  no emails, no charges, safe to press again)
 //   GET  /admin/test-booking       run a TEST booking (no real money, no client emails) and
 //                                  remove test bookings (admin-test-booking.js)
 //
@@ -35,6 +38,8 @@ import { stripeOffline, stripeProblem, stripeReady } from "./nova/stripe.js";
 import { googleClient } from "./nova/google-keys.js";
 import { googleSetupPage, removeClient, saveGoogleSetup } from "./admin-google.js";
 import { handleTestBooking } from "./admin-test-booking.js";
+// Carrying Acuity's future bookings over (a one-off, removed after the switch: src/acuity-import.js)
+import { handleAcuityImport } from "./acuity-import.js";
 
 export async function handleAdmin(request, env) {
   // Connecting Google: a one-time pass from Portal (POST /app/api/google/connect-link, admins)
@@ -68,6 +73,8 @@ export async function handleAdmin(request, env) {
     if (request.headers.get("Origin") !== url.origin) return text("Forbidden", 403);
     // Test bookings (JSON, from their page)
     if (url.pathname.startsWith("/admin/test-booking/")) return handleTestBooking(request, env, url, admin, page);
+    // Bringing Acuity's future bookings over (no form fields)
+    if (url.pathname === "/admin/import-acuity") return handleAcuityImport(request, env, url, { page, back, escapeHtml });
     const form = await request.formData();
     if (url.pathname === "/admin/codes") return addCode(env, form);
     if (url.pathname === "/admin/codes/toggle") return toggleCode(env, form);
@@ -100,6 +107,7 @@ export async function handleAdmin(request, env) {
   if (url.pathname === "/admin/feedback") return feedbackPage(env, url);
   if (url.pathname === "/admin/acuity") return acuityPage(env, url);
   if (url.pathname === "/admin/connections") return connectionsPage(env, url);
+  if (url.pathname === "/admin/import-acuity") return handleAcuityImport(request, env, url, { page, back, escapeHtml });
   if (url.pathname === "/admin/links") return linksPage(env, url);
   if (url.pathname === "/admin/google/setup") return googleSetupPage(env, url, page);
   if (url.pathname === "/admin/test-booking" || url.pathname.startsWith("/admin/test-booking/")) return handleTestBooking(request, env, url, admin, page);
@@ -638,6 +646,12 @@ async function connectionsPage(env, url) {
   <div class="card">
     <p><a href="${e(base)}/book" target="_blank" rel="noopener">${e(base)}/book</a></p>
     <p class="dim small">${system === "nova" ? "Point the website's \"Book a session\" button here." : "Only after switching to Nova: until then this address sends people to the usual Acuity booking page."} Customers pick a time, pay the deposit with Stripe, and it goes straight into Google Calendar.</p>
+  </div>
+
+  <h2>Acuity's bookings</h2>
+  <div class="card">
+    <p><a class="btn ghost" href="/admin/import-acuity">Bring Acuity's bookings over</a></p>
+    <p class="dim small">Every future Acuity booking goes into Nova and Google Calendar. No emails, no charges. You see the list first.</p>
   </div>
 
   <h2>Recent booking emails</h2>
