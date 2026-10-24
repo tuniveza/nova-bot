@@ -602,7 +602,7 @@ export async function handleClientsForStaff(request, env, me, route) {
   }
   if (route === "/clients" && request.method === "POST") return answer(await addClient(env, me, await readJson(request)));
   // (Importing Acuity's spreadsheets went with Acuity: an old Portal still asking is told so)
-  if (route === "/clients/import" && request.method === "POST") return json({ error: "Importing Acuity's spreadsheets isn't needed any more: bookings come from Nova's own booking system." }, 410);
+  if (route === "/clients/import" && request.method === "POST") return json({ error: "Importing a spreadsheet isn't needed any more: bookings come from Nova's own booking system." }, 410);
   if (route === "/clients/sync" && request.method === "POST") {
     if (!admin) return onlyAdmins();
     try {

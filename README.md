@@ -105,7 +105,7 @@ it sends you to Portal and back.
 | **Enquiries** | Every enquiry, mark done, and a test email |
 | **Conversations** | Recent chats (kept 90 days), one in full with `?chat=ID` |
 | **Feedback** | What visitors said about NovaBot, good and bad |
-| **Booking system** (`/admin/connections`) | Google and Stripe for bookings, recent booking emails, and **Bring Acuity's bookings over** (`/admin/import-acuity`, a one-off) |
+| **Booking system** (`/admin/connections`) | Google and Stripe for bookings and recent booking emails |
 | **Links** (`/admin/links`) | The master list: every address with a live check, **What's changed**, and **everything the suite can do**. Edited here as JSON |
 
 <p align="center">
@@ -327,7 +327,6 @@ Everything secret is a **Wrangler secret** (`npx wrangler secret put NAME`), or 
 |---|---|
 | `ANTHROPIC_API_KEY` | Claude answers and memory (required live) |
 | `ADMIN_PASSWORD` | Only proves it's you when setting up the very first Portal admin |
-| `ACUITY_CALENDAR_URL` | Only for bringing Acuity's future bookings over, once (`/admin/import-acuity`); not needed after |
 | `AGENT_NOVA_KEY` | Nova Agent's routes (`/nova-agent/*`; `/memory/*`), and its online link (`/nova-agent/link`, the AgentLink Durable Object in `src/agent-relay.js`: Nova Agent's chat, Missions, Quests, Calendar and Visualizer online, through the studio PC) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Phone notifications (Web Push) |
 | `MAIL_API_URL`, `MAIL_KEY`, `ENQUIRY_EMAIL_TO`, `ENQUIRY_EMAIL_FROM` | Emailing (the studio's own mail server on the VPS; enquiries, replies, invoices, newsletters) |
@@ -349,7 +348,7 @@ More detail lives alongside this file:
 
 ## Bookings: Nova Bot's own booking system
 
-`src/nova/` is the booking system (Acuity isn't used any more, 24 Oct 2026):
+`src/nova/` is the booking system:
 
 - **Booking page** at `/book`, with the studio's **Google Calendar** as the diary,
   confirmation emails from the studio's **Gmail**, and deposits through **Stripe**.
@@ -359,10 +358,6 @@ More detail lives alongside this file:
   (`src/booking-actions.js`, `src/nova/booking-changes.js`).
 - **The client list** follows every booking (`src/clients.js`), and Nova Club's Tap to Pay
   can take a payment for a booking (`src/nova/club-terminal.js`).
-- **Bringing Acuity's bookings over** (a one-off): `/admin/import-acuity` lists every future
-  booking in Acuity's calendar feed and what would happen to it; **Bring them over** puts them
-  in, with no emails and no charges, and is safe to press again (`src/acuity-import.js`, to be
-  removed once that's done).
 
 <details>
 <summary><b>Setting it up</b></summary>
@@ -434,7 +429,6 @@ src/links.js                     the master list: links, features, changelog
 src/memory/                      the memory engine (store, extract, routes)
 src/portal/                      Portal: sign-in, sessions, staff, planets
 src/booking-actions.js           Approvals: booking changes an AI suggests and an admin approves
-src/acuity-import.js             bringing Acuity's future bookings over (one-off)
 src/agent-nova.js                check-ins, quests, alerts and read-only tools for Nova Agent
 src/enquiries.js                 enquiries, enquiry emails, chat log
 src/push.js                      notifications and the Alerts tab
