@@ -31,6 +31,7 @@ import { GoogleError, connectedAccount, google } from "./nova/google.js";
 import { partOn, readSetting, writeSetting } from "./google/common.js";
 import { sendFromGmail } from "./google/gmail.js";
 import { cleanEmail, isPersonalMailbox, mayEmail, optoutUrl, outreachEmail, recordOptout } from "./outreach.js";
+import { handleAria } from "./aria.js";
 
 // ===== THE SIX KINDS OF PEOPLE, AND WHAT THE STUDIO OFFERS EACH =====
 
@@ -1283,6 +1284,8 @@ async function exportCsv(env) {
 export async function handleFunnelForStaff(request, env, me, route) {
   if (route === "/funnel" && request.method === "GET") return json(await overview(env, me));
   if (route === "/funnel/export.csv" && request.method === "GET") return exportCsv(env);
+  // Aria, the social media manager (src/aria.js)
+  if (route === "/funnel/aria" || route.startsWith("/funnel/aria/")) return handleAria(request, env, me, route, canDecide(me));
   const one = route.match(/^\/funnel\/(\d{1,12})$/);
   if (one && request.method === "GET") {
     const row = await readRow(env, Number(one[1]));

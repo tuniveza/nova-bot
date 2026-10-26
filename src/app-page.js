@@ -130,6 +130,13 @@
 //   POST /app/api/funnel/pause          { paused } (anyone can pause; starting again is for an admin)
 //   POST /app/api/funnel/approve        { items: [{ id, updatedAt }] } -> into the warm-up queue (admin, cookie)
 //   POST /app/api/funnel/settings       { cap?, rampStart?, rampStep?, rampEvery?, gapMin?, gapMax?, fromHour?, toHour?, weekdaysOnly?, signoff?, pitch? } (admin, cookie)
+//   GET  /app/api/funnel/aria           -> { profile, items, asks, counts, mix, next, bestTimes, ready, … } Aria, the social
+//                                       media manager (see src/aria.js)
+//   POST /app/api/funnel/aria/ask       { mode, brief, platforms, count, target? } or { askId, answer } -> { ask, items, closing }
+//   POST /app/api/funnel/aria/:id/tweak|full|sequence   ({ note } for tweak) -> { item, items, closing }
+//   POST /app/api/funnel/aria/:id/edit|status|remove|social|metricool   (metricool { autoPublish }: auto is admin, cookie)
+//   POST /app/api/funnel/aria/profile   { brand?, niche?, audience?, voice?, offer?, platforms?, mix? } (admin, cookie)
+//   POST /app/api/funnel/aria/best-times  Metricool's best hours, read again
 
 import { askPortal } from "./portal-ask.js";
 import { questsForPortal, queueQuestAction } from "./agent-nova.js";
