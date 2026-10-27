@@ -8,6 +8,8 @@
 //     POST /google/key             { clientId, clientSecret }   the key made in Google Cloud
 //     POST /google/key/remove
 //     POST /google/disconnect
+//     POST /google/calendar-account          { use: "own" | "main" }   which account Calendar uses
+//     POST /google/calendar-account/forget   forget Calendar's own account (back to the studio's)
 //     POST /google/options         { changes: { calendar: false, … } }
 //     POST /google/sync            { part }   do that part now
 //     POST /google/docs            { title, html } -> { url }   a note as a Google Doc (any staff)
@@ -26,7 +28,8 @@
 // plan's 50 calls a run: Calendar every 5 minutes, replies at :20, contacts at :35, the Money sheet
 // at :50, backups at about 3am (UK).
 
-import { connectedAccount, disconnect, googleReady, grantedScopes, offline, FEATURE_SCOPES } from "../nova/google.js";
+import { calendarOwn, calendarOwnAccount, connectedAccount, disconnect, googleReady, grantedScopes, offline, FEATURE_SCOPES } from "../nova/google.js";
+import { forgetOwnCalendar, useCalendarAccount } from "./calendar-account.js";
 import { clientProblem, googleClient, keyProblemWithGoogle, removeClient, saveClient } from "../nova/google-keys.js";
 import { publicUrl } from "../nova/booking.js";
 import { OPTIONS, needsReconnect, newBudget, noteStatus, onHold, partOn, readBackoff, readOptions, readSetting, readStatus, runPart, setOptions } from "./common.js";
@@ -162,6 +165,14 @@ export async function googleOverview(env, me) {
     connected: Boolean(ready && account),
     account: account || null,
     connectedAt: (await readSetting(env, "google_connected_at")) || null,
+    // Calendar's Google account: the studio's, or one of its own (calendar-account.js)
+    calendarAccount: ready
+      ? await (async () => {
+          const own = await calendarOwnAccount(env);
+          const use = own && (await calendarOwn(env)) ? "own" : "main";
+          return { use, own: own || null, main: account || null, inUse: use === "own" ? own : account || null };
+        })()
+      : null,
     missing,
     options,
     parts: Object.entries(OPTIONS).map(([k, o]) => ({ id: k, label: o.label, help: o.help, on: options[k], allowed: Boolean(has[o.needs]) })),
@@ -259,7 +270,7 @@ export async function handleGoogleForStaff(request, env, me, route, ctx = null) 
       .bind(JSON.stringify({ ticket, at: Date.now(), by: me.id }))
       .run();
     const origin = new URL(request.url).origin;
-    return json({ ok: true, url: `${origin}/admin/google?ticket=${ticket}${body.popup ? "&popup=1" : ""}` });
+    return json({ ok: true, url: `${origin}/admin/google?ticket=${ticket}${body.popup ? "&popup=1" : ""}${body.for === "calendar" ? "&for=calendar" : ""}` });
   }
   if (route === "/google/key/remove") {
     await removeClient(env);
@@ -269,6 +280,13 @@ export async function handleGoogleForStaff(request, env, me, route, ctx = null) 
     await disconnect(env);
     return json({ ok: true });
   }
+  if (route === "/google/calendar-account") {
+    const use = body.use === "own" ? "own" : body.use === "main" ? "main" : "";
+    if (!use) return json({ error: 'Which account? use: "own" or "main".' }, 400);
+    const out = await useCalendarAccount(env, use);
+    return out.ok || out.moved !== undefined ? json(out) : json({ error: out.message }, 409);
+  }
+  if (route === "/google/calendar-account/forget") return json(await forgetOwnCalendar(env));
   if (route === "/google/options") return json({ ok: true, options: await setOptions(env, body.changes) });
   if (route === "/google/sync") {
     const name = String(body.part || "");

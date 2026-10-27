@@ -215,6 +215,47 @@ async function studioCalendar(env, budget) {
   return made.id;
 }
 
+// Calendar has just switched Google accounts (src/google/calendar-account.js): its sync starts
+// afresh in the account it uses now. That account's "Novacane Studio" calendar is found again if
+// it has one, so nothing is doubled (otherwise the next run makes one and sends Nova's events
+// into it). `sameAccount` false: what Nova had brought in from the old account goes from Nova's
+// Calendar (copies only: the events stay in that Google account). Calls Google as it is now.
+export async function resetCalendarSync(env, { sameAccount = true } = {}) {
+  const old = (await readSetting(env, STUDIO_KEY)) || "";
+  const mine = [];
+  let pageToken = "";
+  do {
+    const data = await google(env, "GET", `${API}/users/me/calendarList?minAccessRole=owner&maxResults=250${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`);
+    mine.push(...(data.items || []));
+    pageToken = data.nextPageToken || "";
+  } while (pageToken);
+  const found = mine.find((c) => c.id === old)?.id || mine.find((c) => c.summary === "Novacane Studio")?.id || "";
+  const fresh = ["primary", "studio"].flatMap((w) => [writeSetting(env, syncKey(w), ""), writeSetting(env, pageKey(w), "")]);
+  // Copies to take out of Nova's Calendar: from the old studio calendar, and the old account's own
+  const drop = [];
+  if (found !== old && old) drop.push(old);
+  if (!sameAccount) drop.push("primary");
+  const gone = [];
+  for (const extra of drop) {
+    const { results } = await env.DB.prepare("SELECT nova_id FROM google_links WHERE kind = 'event' AND extra = ?").bind(extra).all();
+    gone.push(...results.map((r) => r.nova_id).filter((id) => /^gp?-/.test(id)));
+  }
+  await env.DB.batch([
+    ...fresh,
+    ...(found !== old
+      ? [
+          found ? writeSetting(env, STUDIO_KEY, found) : env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(STUDIO_KEY),
+          // Nova's own events go into the calendar found (or made) afresh, all of them
+          env.DB.prepare("DELETE FROM google_links WHERE kind = 'event' AND extra = ?").bind(old),
+          writeSetting(env, REV_KEY, "0"),
+        ]
+      : []),
+    ...(sameAccount ? [] : [env.DB.prepare("DELETE FROM google_links WHERE kind = 'event' AND extra = 'primary'")]),
+  ]);
+  for (const id of gone) await deleteItem(env, id);
+  return { studio: found ? (found === old ? "kept" : "found") : "new", dropped: gone.length };
+}
+
 const eventsUrl = (calId, path = "") => `${API}/calendars/${encodeURIComponent(calId)}/events${path}`;
 // (with Meet links: Google only makes or keeps one when told it may)
 const withMeet = (url) => url + (url.includes("?") ? "&" : "?") + "conferenceDataVersion=1";

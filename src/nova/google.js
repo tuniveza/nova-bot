@@ -7,13 +7,17 @@
 //      (google-keys.js keeps them; GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET secrets still work).
 //   2. "Connect Google", signed in as the studio's Google account. The refresh token Google
 //      hands back is kept encrypted in the settings table (or set GOOGLE_REFRESH_TOKEN).
+//   3. (If wanted) "Connect the Calendar account": Calendar then uses a Google account of its own
+//      (google_cal_use = "own"), so bookings land in, say, the engineer's calendar while Gmail,
+//      Drive and the rest stay on the studio's. Every call to the Calendar API goes with that
+//      account's token (google() picks it by the address). Switching: src/google/calendar-account.js.
 // GOOGLE_CALENDAR_ID picks the calendar (default "primary": the account's own).
 //
 // Sandbox: with SANDBOX=true and no Google keys, everything works offline:
 // the "calendar" is just the bookings table, and emails go to the outbox table.
 
 import { TIME_ZONE } from "./studio.js";
-import { googleClient, keepRefreshToken, REFRESH_KEYS, refreshToken } from "./google-keys.js";
+import { calendarRefreshToken, CAL_REFRESH_KEY, googleClient, keepCalendarRefreshToken, keepRefreshToken, REFRESH_KEYS, refreshToken } from "./google-keys.js";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -77,24 +81,29 @@ export const calendarId = (env) => env.GOOGLE_CALENDAR_ID || "primary";
 // Where Google sends the browser back to after "Connect Google"
 export const redirectUri = (origin) => `${origin}/admin/google/callback`;
 
+// The Calendar account's sign-in asks for Calendar alone
+export const CALENDAR_SCOPES = [FEATURE_SCOPES.calendar, "openid", "email"];
+
 // The address of Google's "allow access" page. `state` protects the callback.
-export async function consentUrl(env, origin, state) {
+// `calendar`: the sign-in for Calendar's own account (Google lets them pick which account).
+export async function consentUrl(env, origin, state, { calendar = false } = {}) {
   const params = new URLSearchParams({
     client_id: (await googleClient(env)).id,
     redirect_uri: redirectUri(origin),
     response_type: "code",
-    scope: SCOPES.join(" "),
+    scope: (calendar ? CALENDAR_SCOPES : SCOPES).join(" "),
     access_type: "offline", // a refresh token, so it keeps working
-    prompt: "consent", // always hand a refresh token back
-    include_granted_scopes: "true",
+    prompt: calendar ? "consent select_account" : "consent", // always hand a refresh token back
+    ...(calendar ? {} : { include_granted_scopes: "true" }),
     state,
   });
   return `${AUTH_URL}?${params}`;
 }
 
 // Google sent the browser back with a code: swap it for tokens and keep the refresh token.
-// Returns the connected account's email.
-export async function finishConnecting(env, origin, code) {
+// Returns the connected account's email. `calendar`: it's Calendar's own account (the caller
+// then switches Calendar over: src/google/calendar-account.js).
+export async function finishConnecting(env, origin, code, { calendar = false } = {}) {
   const client = await googleClient(env);
   const res = await fetch(TOKEN_URL, {
     method: "POST",
@@ -111,6 +120,17 @@ export async function finishConnecting(env, origin, code) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.refresh_token) throw new Error(data.error_description || data.error || `Google answered ${res.status}`);
   const email = emailFromIdToken(data.id_token);
+  if (calendar) {
+    if (!String(data.scope || "").split(/\s+/).includes(FEATURE_SCOPES.calendar)) throw new Error("Google didn't allow Calendar. Press Connect again and tick the Calendar box.");
+    if (!email) throw new Error("Google didn't say which account that was. Press Connect again.");
+    await env.DB.batch([
+      await keepCalendarRefreshToken(env, data.refresh_token),
+      setting(env, "google_cal_account", email),
+      setting(env, "google_cal_connected_at", new Date().toISOString()),
+    ]);
+    accessCache.calendar = null;
+    return email;
+  }
   // What Google granted (someone can untick boxes on Google's page): each feature checks for its
   // own permission, and Portal says which are missing
   const granted = SCOPES.filter((s) => s.startsWith("https://") && String(data.scope || "").split(/\s+/).includes(s));
@@ -123,18 +143,52 @@ export async function finishConnecting(env, origin, code) {
     // Connected again: no more "Connect again" in Portal, nothing on hold
     env.DB.prepare("DELETE FROM settings WHERE key IN ('google_reconnect', 'google_reconnect_pinged', 'google_backoff')"),
   ]);
-  accessCache = null;
+  accessCache.main = null;
   return email;
 }
 
 export async function disconnect(env) {
   await env.DB.prepare(`DELETE FROM settings WHERE key IN ('${REFRESH_KEYS.join("', '")}', 'google_account', 'google_connected_at', 'google_scopes')`).run();
-  accessCache = null;
+  accessCache.main = null;
 }
 
 // The connected account's email (for the admin page and the From: line)
 export async function connectedAccount(env) {
   return (await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_account'").first("value")) || env.GOOGLE_ACCOUNT || "";
+}
+
+// ===== CALENDAR'S OWN ACCOUNT =====
+
+// Does Calendar use its own account just now? (A switch, so it can go back to the studio's without
+// signing out; read at most every 20 seconds.)
+let calRoute = null; // { own, until }
+export async function calendarOwn(env) {
+  if (offline(env) || !env.DB) return false;
+  if (calRoute && Date.now() < calRoute.until) return calRoute.own;
+  const use = await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_cal_use'").first("value").catch(() => null);
+  const own = use === "own" && Boolean(await calendarRefreshToken(env));
+  calRoute = { own, until: Date.now() + 20_000 };
+  return own;
+}
+export function forgetCalendarRoute() {
+  calRoute = null;
+  accessCache.calendar = null;
+}
+
+// The account signed in for Calendar (whether it's in use or not), or ""
+export async function calendarOwnAccount(env) {
+  return (await env.DB.prepare("SELECT value FROM settings WHERE key = 'google_cal_account'").first("value").catch(() => null)) || "";
+}
+
+// The account whose calendar Nova uses just now
+export async function calendarAccount(env) {
+  return (await calendarOwn(env)) ? await calendarOwnAccount(env) : await connectedAccount(env);
+}
+
+// Forget Calendar's own account (Calendar goes back to the studio's: the caller switches it)
+export async function forgetCalendarAccount(env) {
+  await env.DB.prepare(`DELETE FROM settings WHERE key IN ('${CAL_REFRESH_KEY}', 'google_cal_account', 'google_cal_connected_at', 'google_cal_use')`).run();
+  forgetCalendarRoute();
 }
 
 // The permissions the studio's connection has (a connection from before they were saved: the
@@ -149,6 +203,8 @@ export async function grantedScopes(env) {
 // Is Google connected with the permission this feature needs? (feature: a FEATURE_SCOPES key)
 export async function canUse(env, feature) {
   if (!(await googleReady(env))) return false;
+  // Calendar's own account was only kept once Google allowed Calendar
+  if (feature === "calendar" && (await calendarOwn(env))) return true;
   return (await grantedScopes(env)).includes(FEATURE_SCOPES[feature]);
 }
 
@@ -167,17 +223,30 @@ function emailFromIdToken(idToken) {
 
 // ===== ACCESS TOKENS =====
 
-let accessCache = null; // { token, until }
+// The studio's account ("main") and Calendar's own ("calendar"): { token, until } each
+const accessCache = { main: null, calendar: null };
 
 // For tests
 export function forgetGoogleToken() {
-  accessCache = null;
+  accessCache.main = null;
+  accessCache.calendar = null;
+  calRoute = null;
 }
 
-async function accessToken(env) {
-  if (accessCache && Date.now() < accessCache.until) return accessCache.token;
-  const [refresh, client] = await Promise.all([refreshToken(env), googleClient(env)]);
-  if (!client.id || !refresh) throw new GoogleError("Google isn't connected yet (Admin → Google in Nova Agent).", 0);
+// Which account a call goes with: Calendar's own for the Calendar API (when it's switched on),
+// otherwise the studio's. `as` ("main" | "calendar") says it outright.
+async function whichAccount(env, url, as) {
+  if (as === "main" || as === "calendar") return as;
+  return String(url).startsWith(CALENDAR) && (await calendarOwn(env)) ? "calendar" : "main";
+}
+
+async function accessToken(env, which = "main") {
+  const cached = accessCache[which];
+  if (cached && Date.now() < cached.until) return cached.token;
+  const [refresh, client] = await Promise.all([which === "calendar" ? calendarRefreshToken(env) : refreshToken(env), googleClient(env)]);
+  if (!client.id || !refresh) {
+    throw new GoogleError(which === "calendar" ? "Calendar's own Google account isn't connected (Portal → Admin → Google → Calendar account)." : "Google isn't connected yet (Admin → Google in Nova Agent).", 0);
+  }
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -189,7 +258,9 @@ async function accessToken(env) {
     // invalid_grant: the access was removed, or the OAuth app is still in "testing" (tokens last 7 days)
     const err = new GoogleError(
       data.error === "invalid_grant"
-        ? "Google turned down the saved connection (invalid_grant). Press Connect Google again (Admin → Google)."
+        ? which === "calendar"
+          ? "Google turned down Calendar's own account (invalid_grant). Press Connect again under Calendar account (Portal → Admin → Google)."
+          : "Google turned down the saved connection (invalid_grant). Press Connect Google again (Admin → Google)."
         : `Couldn't get a Google access token (${data.error || res.status}).`,
       res.status
     );
@@ -197,7 +268,7 @@ async function accessToken(env) {
     if (data.error === "invalid_grant" || data.error === "unauthorized_client") err.reconnect = true;
     throw err;
   }
-  accessCache = { token: data.access_token, until: Date.now() + (Number(data.expires_in) || 3600) * 1000 - 60_000 };
+  accessCache[which] = { token: data.access_token, until: Date.now() + (Number(data.expires_in) || 3600) * 1000 - 60_000 };
   return data.access_token;
 }
 
@@ -210,8 +281,8 @@ export class GoogleError extends Error {
 
 // Call a Google API and get its raw answer (for downloads and uploads). `body` is sent as it is,
 // with `headers`; the caller reads the Response. Throws GoogleError only when there's no token.
-export async function googleFetch(env, method, url, { body, headers = {}, timeout = TIMEOUT_MS } = {}) {
-  const token = await accessToken(env);
+export async function googleFetch(env, method, url, { body, headers = {}, timeout = TIMEOUT_MS, as } = {}) {
+  const token = await accessToken(env, await whichAccount(env, url, as));
   return fetch(url, { method, headers: { Authorization: `Bearer ${token}`, ...headers }, body, signal: AbortSignal.timeout(timeout) });
 }
 
@@ -221,8 +292,9 @@ const PASSING = new Set([429, 500, 502, 503, 504]);
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Call a Google API. Returns the JSON answer, or throws GoogleError.
-export async function google(env, method, url, body) {
-  const token = await accessToken(env);
+// `as`: "main" or "calendar" to pick the account outright (otherwise it goes by the address).
+export async function google(env, method, url, body, { as } = {}) {
+  const token = await accessToken(env, await whichAccount(env, url, as));
   const send = () =>
     fetch(url, {
       method,
@@ -299,9 +371,10 @@ export async function getEvent(env, id) {
   }
 }
 
-export async function insertEvent(env, event) {
+// `as`: which account's calendar ("main" or "calendar"; otherwise the one Calendar uses now)
+export async function insertEvent(env, event, { as } = {}) {
   if (offline(env)) return { id: "sandbox-" + crypto.randomUUID().slice(0, 8), htmlLink: "" };
-  return google(env, "POST", cal(env, "/events"), event);
+  return google(env, "POST", cal(env, "/events"), event, { as });
 }
 
 export async function patchEvent(env, id, changes) {
@@ -309,10 +382,10 @@ export async function patchEvent(env, id, changes) {
   return google(env, "PATCH", cal(env, `/events/${encodeURIComponent(id)}`), changes);
 }
 
-export async function deleteEvent(env, id) {
+export async function deleteEvent(env, id, { as } = {}) {
   if (offline(env) || !id) return;
   try {
-    await google(env, "DELETE", cal(env, `/events/${encodeURIComponent(id)}`));
+    await google(env, "DELETE", cal(env, `/events/${encodeURIComponent(id)}`), undefined, { as });
   } catch (err) {
     // Already gone (deleted by hand in Google Calendar): that's fine
     if (err.status !== 404 && err.status !== 410) throw err;

@@ -132,3 +132,22 @@ export async function keepRefreshToken(env, token) {
 }
 
 export const REFRESH_KEYS = [REFRESH_KEY, OLD_REFRESH_KEY];
+
+// ===== THE CALENDAR'S OWN ACCOUNT =====
+// Calendar can use a Google account of its own (Portal → Admin → Google → Calendar account), so
+// bookings land in, say, the engineer's own calendar while emails still go from the studio's.
+
+const CAL_REFRESH_KEY = "google_cal_refresh_token_enc";
+
+export async function calendarRefreshToken(env) {
+  if (!env.DB) return "";
+  const sealed = await read(env, CAL_REFRESH_KEY);
+  return sealed ? (await unseal(env, sealed).catch(() => "")) || "" : "";
+}
+
+// A statement that keeps the Calendar account's refresh token (encrypted), for a batch
+export async function keepCalendarRefreshToken(env, token) {
+  return write(env, CAL_REFRESH_KEY, await seal(env, token));
+}
+
+export { CAL_REFRESH_KEY };

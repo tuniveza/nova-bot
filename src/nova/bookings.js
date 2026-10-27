@@ -20,7 +20,7 @@
 
 import { calendarTouched, dayInWords, freeSlot, publicUrl, ukToday } from "./booking.js";
 import { calendarChanged } from "./club-calendar.js";
-import { deleteEvent, insertEvent, patchEvent } from "./google.js";
+import { calendarOwn, calendarOwnAccount, connectedAccount, deleteEvent, insertEvent, patchEvent, sendEmail } from "./google.js";
 import { manageLink, moneyState, sendBookingEmail } from "./emails.js";
 import { notifyPhones } from "../push.js";
 import { clientsAfterBooking } from "../clients.js";
@@ -107,6 +107,33 @@ async function tellStaff(env, b, title, extraLines = []) {
   } catch (err) {
     console.log("Couldn't tell staff:", err);
   }
+  await tellCalendarOwner(env, b, title, extraLines);
+}
+
+// Calendar uses someone's own Google account (Portal → Admin → Google → Calendar account): they get
+// an email about each booking too, so they see it even without Nova Agent on their phone
+export async function tellCalendarOwner(env, b, title, extraLines = []) {
+  if (b.test) return false;
+  try {
+    if (!(await calendarOwn(env))) return false;
+    const to = await calendarOwnAccount(env);
+    if (!to || to.toLowerCase() === String(await connectedAccount(env)).toLowerCase()) return false;
+    const lines = [
+      ...extraLines,
+      "",
+      ...bookingLines(b),
+      "",
+      ...(b.event_link && b.status !== "cancelled" ? [`In your Google Calendar: ${b.event_link}`] : []),
+      "Change or cancel it in Portal (not in Google Calendar), so the client is emailed.",
+    ];
+    const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const html = `<div style="font:15px/1.5 system-ui,sans-serif"><p><b>${esc(title)}</b></p>${lines.map((l) => (l ? `<div>${esc(l).replace(/(https:\/\/\S+)/g, '<a href="$1">$1</a>')}</div>` : "<br>")).join("")}</div>`;
+    await sendEmail(env, { to, subject: `Nova: ${title}`, text: [title, "", ...lines].join("\n"), html });
+    return true;
+  } catch (err) {
+    console.log("Couldn't email the calendar's owner:", String(err?.message || err).slice(0, 200));
+    return false;
+  }
 }
 
 // ===== THE CALENDAR EVENT =====
@@ -140,8 +167,29 @@ export function eventFor(env, b) {
     // A test booking is marked "free" in the calendar, so it never blocks a customer (unless the admin chose to)
     transparency: test && !b.test_blocks ? "transparent" : "opaque",
     extendedProperties: { private: { novaBooking: String(b.id), ...(test ? { novaTest: "1" } : {}) } },
-    reminders: { useDefault: true },
+    // A day before and an hour before, on the phone (Google Calendar's app)
+    reminders: test ? { useDefault: true } : { useDefault: false, overrides: [{ method: "popup", minutes: 1440 }, { method: "popup", minutes: 60 }] },
   };
+}
+
+// Calendar now uses another Google account (src/google/calendar-account.js): every booking still to
+// come goes into its calendar, and out of the old one. `to` / `from`: "main" or "calendar" (the
+// account each is in); `from` null when the old one can't be reached any more. -> the bookings moved
+export async function moveBookingsToCalendar(env, { to, from }) {
+  const { results } = await env.DB.prepare("SELECT * FROM bookings WHERE status IN ('hold', 'booked') AND ends_at > ? ORDER BY starts_at").bind(new Date().toISOString()).all();
+  const moved = [];
+  for (const b of results) {
+    try {
+      const event = await insertEvent(env, eventFor(env, b), { as: to });
+      await env.DB.prepare("UPDATE bookings SET event_id = ?, event_link = ? WHERE id = ?").bind(event.id, event.htmlLink || null, b.id).run();
+      if (from && b.event_id) await deleteEvent(env, b.event_id, { as: from }).catch((err) => console.log(`Couldn't take booking #${b.id} out of the old calendar:`, err?.message));
+      moved.push({ ...b, event_id: event.id, event_link: event.htmlLink || null });
+    } catch (err) {
+      console.log(`Couldn't put booking #${b.id} into the new calendar:`, err?.message);
+    }
+  }
+  if (moved.length) await touched(env);
+  return { moved, missed: results.length - moved.length };
 }
 
 // The calendar changed: free times are looked up afresh, and Nova Club and Nova Agent (its /next

@@ -27,6 +27,7 @@ import { feedbackCounts, recentFeedback } from "./feedback.js";
 // Nova Bot's own booking system (src/nova/)
 import { bookingLink, getSessionTypes, publicUrl } from "./nova/booking.js";
 import { calendarId, connectedAccount, consentUrl, disconnect, finishConnecting, googleProblem, offline, sendEmail } from "./nova/google.js";
+import { calendarNow, useCalendarAccount } from "./google/calendar-account.js";
 import { stripeOffline, stripeProblem } from "./nova/stripe.js";
 import { googleClient } from "./nova/google-keys.js";
 import { googleSetupPage, removeClient, saveGoogleSetup } from "./admin-google.js";
@@ -489,18 +490,21 @@ async function connectGoogle(env, url) {
   if (!(await googleClient(env)).id) return back("Set Google up first: paste the key in step 5.", "/admin/google/setup");
   const state = crypto.randomUUID();
   const popup = url.searchParams.get("popup") === "1" ? "p" : "n";
+  // ?for=calendar: the sign-in for Calendar's own account (src/google/calendar-account.js)
+  const calendar = url.searchParams.get("for") === "calendar";
   return new Response(null, {
     status: 302,
     headers: {
-      Location: await consentUrl(env, url.origin, state),
-      "Set-Cookie": `nv_gstate=${state}.${popup}; Path=/admin/google; Max-Age=600; HttpOnly; Secure; SameSite=Lax`,
+      Location: await consentUrl(env, url.origin, state, { calendar }),
+      "Set-Cookie": `nv_gstate=${state}.${popup}${calendar ? "c" : ""}; Path=/admin/google; Max-Age=600; HttpOnly; Secure; SameSite=Lax`,
     },
   });
 }
 
 async function googleCallback(request, env, url) {
-  const cookie = (request.headers.get("Cookie") || "").match(/(?:^|;\s*)nv_gstate=([0-9a-f-]{36})(?:\.([pn]))?/);
+  const cookie = (request.headers.get("Cookie") || "").match(/(?:^|;\s*)nv_gstate=([0-9a-f-]{36})(?:\.([pn])(c)?)?/);
   const popup = Boolean(cookie && cookie[2] === "p");
+  const calendar = Boolean(cookie && cookie[3] === "c");
   const clear = { "Set-Cookie": "nv_gstate=; Path=/admin/google; Max-Age=0; HttpOnly; Secure; SameSite=Lax" };
   const done = (ok, message) =>
     popup
@@ -515,6 +519,12 @@ async function googleCallback(request, env, url) {
   if (url.searchParams.get("error")) return done(false, "Google said: " + url.searchParams.get("error") + ". Nothing was connected.");
   if (!cookie || cookie[1] !== url.searchParams.get("state")) return done(false, "That sign-in didn't start here (or took over 10 minutes). Press Connect Google again.");
   try {
+    if (calendar) {
+      const before = await calendarNow(env);
+      const email = await finishConnecting(env, url.origin, url.searchParams.get("code") || "", { calendar: true });
+      const switched = await useCalendarAccount(env, "own", before);
+      return done(true, `Calendar connected as ${email}. ${switched.message}`);
+    }
     const email = await finishConnecting(env, url.origin, url.searchParams.get("code") || "");
     return done(true, `Connected as ${email || "your Google account"}.`);
   } catch (err) {
