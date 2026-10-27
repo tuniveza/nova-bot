@@ -27,7 +27,7 @@ import { feedbackCounts, recentFeedback } from "./feedback.js";
 // Nova Bot's own booking system (src/nova/)
 import { bookingLink, getSessionTypes, publicUrl } from "./nova/booking.js";
 import { calendarId, connectedAccount, consentUrl, disconnect, finishConnecting, googleProblem, offline, sendEmail } from "./nova/google.js";
-import { calendarNow, useCalendarAccount } from "./google/calendar-account.js";
+import { calendarInviteOk, calendarNow, forgetCalendarInvite, useCalendarAccount } from "./google/calendar-account.js";
 import { stripeOffline, stripeProblem } from "./nova/stripe.js";
 import { googleClient } from "./nova/google-keys.js";
 import { googleSetupPage, removeClient, saveGoogleSetup } from "./admin-google.js";
@@ -38,6 +38,16 @@ export async function handleAdmin(request, env) {
   // stands in for the sign-in, since the window to Google's page may not carry it; and Google's
   // answer (the callback) is checked against the state cookie set when it started
   const early = new URL(request.url);
+  // A sign-in link for Calendar's own account, made in Portal → Admin → Google for someone who isn't on
+  // Portal (say, the engineer): 48 hours, Calendar only, used up once it has worked (calendar-account.js)
+  if (request.method === "GET" && early.pathname === "/admin/google" && early.searchParams.get("invite")) {
+    if (!(await calendarInviteOk(env, early.searchParams.get("invite")))) {
+      return text("That sign-in link has expired or has been used. Ask for a new one (Portal → Admin → Google → Calendar account).", 403);
+    }
+    const go = new URL(early);
+    go.search = "?for=calendar&popup=1";
+    return connectGoogle(env, go);
+  }
   if (request.method === "GET" && early.pathname === "/admin/google" && early.searchParams.get("ticket")) {
     if (await useConnectTicket(env, early.searchParams.get("ticket"))) return connectGoogle(env, early);
     return text("That Connect Google link has expired. Go back to Portal → Admin → Google and press Connect Google again.", 403);
@@ -523,6 +533,7 @@ async function googleCallback(request, env, url) {
       const before = await calendarNow(env);
       const email = await finishConnecting(env, url.origin, url.searchParams.get("code") || "", { calendar: true });
       const switched = await useCalendarAccount(env, "own", before);
+      await forgetCalendarInvite(env);
       return done(true, `Calendar connected as ${email}. ${switched.message}`);
     }
     const email = await finishConnecting(env, url.origin, url.searchParams.get("code") || "");

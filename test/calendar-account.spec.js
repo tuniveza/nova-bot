@@ -141,3 +141,24 @@ describe("Calendar's own account", () => {
     expect(g.main.events.has(booking.event_id)).toBe(true);
   });
 });
+
+describe("a sign-in link for someone who isn't on Portal", () => {
+  it("starts Calendar's own sign-in for 48 hours, and only that", async () => {
+    const { makeCalendarInvite } = await import("../src/google/calendar-account.js");
+    const worker = (await import("../src")).default;
+    const { createExecutionContext } = await import("cloudflare:test");
+    const { url, hours } = await makeCalendarInvite(env, "https://novacane-worker.test", "tuniveza");
+    expect(hours).toBe(48);
+    const res = await worker.fetch(new Request(url, { redirect: "manual" }), env, createExecutionContext());
+    expect(res.status).toBe(302);
+    const google = new URL(res.headers.get("Location"));
+    expect(google.searchParams.get("scope")).toBe("https://www.googleapis.com/auth/calendar openid email");
+    expect(res.headers.get("Set-Cookie")).toMatch(/nv_gstate=[0-9a-f-]{36}\.pc;/);
+    // A made-up or old link does nothing
+    const bad = await worker.fetch(new Request(url.replace(/invite=\w+/, "invite=" + "0".repeat(48)), { redirect: "manual" }), env, createExecutionContext());
+    expect(bad.status).toBe(403);
+    await env.DB.prepare("UPDATE settings SET value = json_set(value, '$.at', ?) WHERE key = 'google_cal_invite'").bind(Date.now() - 49 * 3600_000).run();
+    const old = await worker.fetch(new Request(url, { redirect: "manual" }), env, createExecutionContext());
+    expect(old.status).toBe(403);
+  });
+});

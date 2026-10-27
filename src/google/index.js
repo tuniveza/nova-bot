@@ -10,6 +10,7 @@
 //     POST /google/disconnect
 //     POST /google/calendar-account          { use: "own" | "main" }   which account Calendar uses
 //     POST /google/calendar-account/forget   forget Calendar's own account (back to the studio's)
+//     POST /google/calendar-account/invite   -> { url, hours }  a sign-in link for Calendar's own account, to send
 //     POST /google/options         { changes: { calendar: false, … } }
 //     POST /google/sync            { part }   do that part now
 //     POST /google/docs            { title, html } -> { url }   a note as a Google Doc (any staff)
@@ -29,7 +30,7 @@
 // at :50, backups at about 3am (UK).
 
 import { calendarOwn, calendarOwnAccount, connectedAccount, disconnect, googleReady, grantedScopes, offline, FEATURE_SCOPES } from "../nova/google.js";
-import { forgetOwnCalendar, useCalendarAccount } from "./calendar-account.js";
+import { forgetOwnCalendar, makeCalendarInvite, useCalendarAccount } from "./calendar-account.js";
 import { clientProblem, googleClient, keyProblemWithGoogle, removeClient, saveClient } from "../nova/google-keys.js";
 import { publicUrl } from "../nova/booking.js";
 import { OPTIONS, needsReconnect, newBudget, noteStatus, onHold, partOn, readBackoff, readOptions, readSetting, readStatus, runPart, setOptions } from "./common.js";
@@ -287,6 +288,7 @@ export async function handleGoogleForStaff(request, env, me, route, ctx = null) 
     return out.ok || out.moved !== undefined ? json(out) : json({ error: out.message }, 409);
   }
   if (route === "/google/calendar-account/forget") return json(await forgetOwnCalendar(env));
+  if (route === "/google/calendar-account/invite") return json({ ok: true, ...(await makeCalendarInvite(env, new URL(request.url).origin, me.id)) });
   if (route === "/google/options") return json({ ok: true, options: await setOptions(env, body.changes) });
   if (route === "/google/sync") {
     const name = String(body.part || "");

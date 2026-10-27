@@ -72,3 +72,29 @@ export async function forgetOwnCalendar(env) {
   await forgetCalendarAccount(env);
   return { ok: true, message: `Calendar's own account is forgotten.${message ? " " + message : ""}` };
 }
+
+// ===== A SIGN-IN LINK FOR SOMEONE ELSE =====
+// The calendar's owner may not be on Portal: an admin makes a link (48 hours) and sends it to them.
+// It only starts Calendar's own sign-in (/admin/google?invite=…), and is used up once that has worked.
+
+const INVITE_KEY = "google_cal_invite";
+const INVITE_HOURS = 48;
+
+export async function makeCalendarInvite(env, origin, by) {
+  const ticket = [...crypto.getRandomValues(new Uint8Array(24))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  await writeSetting(env, INVITE_KEY, JSON.stringify({ ticket, at: Date.now(), by })).run();
+  return { url: `${origin}/admin/google?invite=${ticket}`, hours: INVITE_HOURS };
+}
+
+export async function calendarInviteOk(env, ticket) {
+  if (!/^[0-9a-f]{48}$/.test(String(ticket))) return false;
+  let saved = null;
+  try {
+    saved = JSON.parse((await readSetting(env, INVITE_KEY)) || "null");
+  } catch {}
+  return Boolean(saved && saved.ticket === ticket && Date.now() - saved.at < INVITE_HOURS * 3600_000);
+}
+
+export async function forgetCalendarInvite(env) {
+  await env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(INVITE_KEY).run();
+}
