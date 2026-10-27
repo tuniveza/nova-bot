@@ -1469,10 +1469,11 @@ async function observatoryFiles(request, env, pathname) {
 // says which (Sec-Fetch-Dest); the panels' own inside.js catches browsers that don't.
 // (wrangler.jsonc sends / and the panels' pages through here first: "run_worker_first".)
 const PANELS = ["/portal", "/calendar", "/notes", "/quests", "/board", "/console", "/app/memory", "/observatory", "/lossless", "/visualizer", "/admin", "/fixer", "/computer", "/invoicer"];
-// Under the panels' addresses but not pages: Lossless audio's signalling, and connecting or
-// signing in with Google (Google won't show its pages inside a frame, so those leave Nova Agent
-// for a moment, in a popup, and come back)
-const NOT_PAGES = /^\/(lossless\/(ws|ice)|admin\/google(\/callback)?)$/;
+// Under the panels' addresses but not pages: Lossless audio's signalling, connecting or signing in
+// with Google (Google won't show its pages inside a frame, so those leave Nova Agent for a moment, in
+// a popup, and come back), and an invoice's own page and PDF for staff (Nova Phone's Open opens it in
+// a tab; it was sent to /agent/?open=/portal/ and the invoice never showed: the phone audit, 27 Oct 2026)
+const NOT_PAGES = /^\/(lossless\/(ws|ice)|admin\/google(\/callback)?|app\/api\/money\/invoices\/[\w-]+\/(document|pdf))$/;
 // /agent/<name>: Nova Agent with that panel open
 const PANEL_NAMES = { portal: "/portal/", calendar: "/calendar/", notes: "/notes/", quests: "/quests/", board: "/board/", console: "/console/", index: "/app/memory/", observatory: "/observatory/", lossless: "/lossless/", visualizer: "/visualizer", admin: "/admin", fixer: "/fixer/", computer: "/computer/", invoicer: "/invoicer/", nova: "/visualizer" };
 const AGENT = "/agent/";
