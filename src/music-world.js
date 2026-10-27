@@ -1,8 +1,10 @@
 // Nova Agent's "Today in music" (its front page): the live bits, fetched here and kept a while so
 // it stays quick and light.
-//   GET /music-world               { updated, top: [{ rank, title, artist, art, url, markets }] }
+//   GET /music-world               { updated, source, top: [{ rank, title, artist, art, url, markets }], stale?, note? }
 //     The ten songs most played right now across twelve big markets, from Apple Music's public
-//     most-played charts (each song scores by its place in each market, added up). Kept 6 hours.
+//     most-played charts, or the iTunes Store's top songs when Apple Music turns us away (each song
+//     scores by its place in each market, added up). Kept 6 hours. When neither answers: the last
+//     chart that loaded with stale: true, or 503 if none ever did.
 //   GET /music-world/photo/<Wiki_Title>
 //     A musician's photo (for the quote of the day): Wikipedia's picture for that page, as a
 //     redirect to the image. Kept a week. 404 when there isn't one (the page shows initials).
@@ -34,20 +36,53 @@ async function cached(request, ctx, make) {
   return res;
 }
 
-async function topSongs() {
+// The charts, best first. Apple Music's most-played feed (rss.marketingtools.apple.com) answers 403
+// to every request carrying the "CF-Worker" header, which the Workers runtime (Cloudflare and the
+// VPS's Miniflare alike) adds to every outside fetch and a worker can't remove (found 27 Oct 2026:
+// the same request answers 200 from curl and 403 with that one header). So when it turns us away,
+// the iTunes Store's top songs (itunes.apple.com, which doesn't) stand in.
+const FEEDS = [
+  {
+    source: "Apple Music most played, 12 markets",
+    url: (m) => `https://rss.marketingtools.apple.com/api/v2/${m}/music/most-played/25/songs.json`,
+    songs: (d) => ((d && d.feed && d.feed.results) || []).map((s) => ({ id: s.id, title: s.name, artist: s.artistName, art: s.artworkUrl100, url: s.url })),
+  },
+  {
+    source: "iTunes Store top songs, 12 markets",
+    url: (m) => `https://itunes.apple.com/${m}/rss/topsongs/limit=25/json`,
+    songs: (d) =>
+      [].concat((d && d.feed && d.feed.entry) || []).map((e) => {
+        const label = (x) => (x && x.label) || "";
+        const images = e["im:image"] || [];
+        const link = [].concat(e.link || []).find((l) => l && l.attributes && l.attributes.rel === "alternate");
+        return {
+          id: e.id && e.id.attributes && e.id.attributes["im:id"],
+          title: label(e["im:name"]),
+          artist: label(e["im:artist"]),
+          art: label(images[images.length - 1]),
+          url: (link && link.attributes.href) || label(e.id),
+        };
+      }),
+  },
+];
+// A feed counts only when most markets answered (so one market never stands for the world)
+const ENOUGH = Math.ceil(MARKETS.length / 2);
+
+async function fromFeed(feed) {
   const lists = await Promise.all(
     MARKETS.map((m) =>
-      fetch(`https://rss.marketingtools.apple.com/api/v2/${m}/music/most-played/25/songs.json`, { headers: BROWSER, cf: { cacheTtl: 6 * HOURS, cacheEverything: true } })
+      fetch(feed.url(m), { headers: BROWSER, signal: AbortSignal.timeout(WAIT) })
         .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null)
+        .then((d) => feed.songs(d).filter((s) => s.title && s.artist))
+        .catch(() => [])
     )
   );
+  if (lists.filter((l) => l.length).length < ENOUGH) return [];
   const songs = new Map();
   lists.forEach((list) => {
-    const results = (list && list.feed && list.feed.results) || [];
-    results.forEach((s, i) => {
-      const key = s.id || `${s.artistName}|${s.name}`.toLowerCase();
-      const was = songs.get(key) || { title: s.name, artist: s.artistName, art: s.artworkUrl100, url: s.url, score: 0, markets: 0 };
+    list.forEach((s, i) => {
+      const key = s.id || `${s.artist}|${s.title}`.toLowerCase();
+      const was = songs.get(key) || { title: s.title, artist: s.artist, art: s.art, url: s.url, score: 0, markets: 0 };
       was.score += 26 - (i + 1);
       was.markets += 1;
       songs.set(key, was);
@@ -59,14 +94,45 @@ async function topSongs() {
     .map(({ score, ...s }, i) => ({ rank: i + 1, ...s }));
 }
 
+async function topSongs() {
+  for (const feed of FEEDS) {
+    const top = await fromFeed(feed);
+    if (top.length) return { top, source: feed.source };
+  }
+  return { top: [], source: "" };
+}
+
+// The last chart that loaded, kept a month: shown (marked as such) when no feed answers
+const LAST = new Request("https://music-world.nova/last-good-chart", { method: "GET" });
+async function keepLast(data) {
+  try {
+    await caches.default.put(LAST, new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json", "Cache-Control": `s-maxage=${30 * 24 * HOURS}` } }));
+  } catch (err) {}
+}
+async function lastGood() {
+  try {
+    const hit = await caches.default.match(LAST);
+    return hit ? await hit.json() : null;
+  } catch (err) {
+    return null;
+  }
+}
+
 export async function handleMusicWorld(request, env, ctx, pathname) {
   if (request.method !== "GET") return json({ error: "Only GET" }, 405, 0);
   if (pathname === "/music-world") {
     return cached(request, ctx, async () => {
-      const top = await topSongs();
-      // (not kept: the next look tries again)
-      if (!top.length) return json({ updated: new Date().toISOString(), top: [], note: "The charts couldn't be reached just now." }, 503, 0);
-      return json({ updated: new Date().toISOString(), source: "Apple Music most played, 12 markets", top });
+      const { top, source } = await topSongs();
+      if (top.length) {
+        const data = { updated: new Date().toISOString(), source, top };
+        ctx.waitUntil(keepLast(data));
+        return json(data);
+      }
+      // No feed answered: the last chart that loaded, marked as old and kept only 10 minutes so
+      // the next look soon tries again; nothing at all only if none ever loaded (not kept)
+      const last = await lastGood();
+      if (last && last.top && last.top.length) return json({ ...last, stale: true, note: "Apple's charts can't be reached just now, so this is the last chart that loaded." }, 200, 600);
+      return json({ updated: new Date().toISOString(), top: [], note: "Apple's charts can't be reached just now." }, 503, 0);
     });
   }
   const m = /^\/music-world\/photo\/([\w%().,'-]{1,120})$/.exec(pathname);
