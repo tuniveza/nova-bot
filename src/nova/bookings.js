@@ -138,19 +138,36 @@ export async function tellCalendarOwner(env, b, title, extraLines = []) {
 
 // ===== THE CALENDAR EVENT =====
 
+// The booking's stage, first in its calendar event's title so it shows at a glance in Google
+// Calendar (the user, 27 Oct 2026: "make sure that all booking stages show up")
+export function stageOf(b) {
+  if (b.status === "cancelled") return "CANCELLED";
+  if (b.status === "expired") return "DIDN'T PAY (hold let go)";
+  if (b.status === "hold") return "HOLD (paying deposit)";
+  const { net, balanceDue } = moneyState(b);
+  if (net <= 0) return "BOOKED, NOT PAID";
+  return balanceDue > 0 ? "DEPOSIT PAID" : "PAID IN FULL";
+}
+
 export function eventFor(env, b) {
   const hold = b.status === "hold";
+  // Cancelled, or the deposit never came: the event stays, greyed out and "free", so it's still
+  // seen but never blocks the time (bookings.js keeps it rather than deleting it)
+  const gone = b.status === "cancelled" || b.status === "expired";
   const test = Boolean(b.test);
   const { net, balanceDue } = moneyState(b);
   const paid = net <= 0 ? "Not paid" : balanceDue > 0 ? `${money(net)} paid, ${money(balanceDue)} due` : "Paid in full";
   return {
-    summary: `${test ? "TEST · " : ""}${hold ? "HOLD (paying deposit) · " : ""}${fullName(b)} · ${b.session}`,
+    summary: `${test ? "TEST · " : ""}${stageOf(b)} · ${fullName(b)} · ${b.session}`,
     description: [
       ...(test ? [`TEST BOOKING: not a real client. Made in Portal → Admin → Test booking; it removes itself within 24 hours.${b.test_blocks ? "" : " It doesn't block this time for customers."}`, ""] : []),
+      ...(b.status === "cancelled" ? [`Cancelled${b.cancel_reason ? ` (${String(b.cancel_reason).replace(/^customer\b/, "by the customer").replace(/^staff\b/, "by staff")})` : ""}. This time is free for other bookings.`, ""] : []),
+      ...(b.status === "expired" ? ["The deposit wasn't paid in time, so the hold was let go. This time is free for other bookings.", ""] : []),
       `Booking #${b.id} (${b.source})`,
       `Phone: ${b.phone || "-"}`,
       `Email: ${b.email}`,
       `Price: ${money(b.price_pence)} · ${paid}`,
+      b.refunded_pence > 0 ? `Refunded: ${money(b.refunded_pence)}` : "",
       b.referral_code ? `Referral code: ${b.referral_code}` : "",
       b.notes ? `Notes: ${b.notes}` : "",
       "",
@@ -163,12 +180,12 @@ export function eventFor(env, b) {
     end: { dateTime: b.ends_at, timeZone: TIME_ZONE },
     location: STUDIO.address,
     status: hold ? "tentative" : "confirmed",
-    colorId: test || hold ? "8" : b.source === "website" ? "3" : "9",
+    colorId: test || hold || gone ? "8" : b.source === "website" ? "3" : "9",
     // A test booking is marked "free" in the calendar, so it never blocks a customer (unless the admin chose to)
-    transparency: test && !b.test_blocks ? "transparent" : "opaque",
+    transparency: gone || (test && !b.test_blocks) ? "transparent" : "opaque",
     extendedProperties: { private: { novaBooking: String(b.id), ...(test ? { novaTest: "1" } : {}) } },
-    // A day before and an hour before, on the phone (Google Calendar's app)
-    reminders: test ? { useDefault: true } : { useDefault: false, overrides: [{ method: "popup", minutes: 1440 }, { method: "popup", minutes: 60 }] },
+    // A day before and an hour before, on the phone (Google Calendar's app); none once it's off
+    reminders: test ? { useDefault: true } : gone ? { useDefault: false, overrides: [] } : { useDefault: false, overrides: [{ method: "popup", minutes: 1440 }, { method: "popup", minutes: 60 }] },
   };
 }
 
@@ -369,8 +386,11 @@ export async function checkoutExpired(env, { bookingId, checkoutId }) {
 }
 
 export async function releaseHold(env, b) {
-  await deleteEvent(env, b.event_id).catch((err) => console.log("Couldn't remove a hold from the calendar:", err));
-  await env.DB.prepare("UPDATE bookings SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'hold'").bind(new Date().toISOString(), b.id).run();
+  const { meta } = await env.DB.prepare("UPDATE bookings SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'hold'").bind(new Date().toISOString(), b.id).run();
+  // Still seen in the calendar, greyed out and free ("DIDN'T PAY"); a test booking's just goes
+  const after = meta.changes ? await getBooking(env, b.id) : null;
+  if (after && !after.test) await syncEvent(env, after).catch((err) => console.log("Couldn't mark a let-go hold in the calendar:", err));
+  else if (after) await deleteEvent(env, b.event_id).catch((err) => console.log("Couldn't remove a hold from the calendar:", err));
   await touched(env);
 }
 
@@ -423,10 +443,12 @@ export async function cancelBooking(env, b, { by, notify = true, note = "", refu
   await env.DB.prepare("UPDATE bookings SET status = 'cancelled', cancelled_at = ?, cancel_reason = ?, updated_at = ?, hold_until = NULL WHERE id = ?")
     .bind(now, `${by}${note ? ": " + note : ""}`.slice(0, 500), now, b.id)
     .run();
-  await deleteEvent(env, b.event_id).catch((err) => console.log("Couldn't remove the cancelled booking from the calendar:", err));
+  let cancelled = await getBooking(env, b.id);
+  // Still seen in the calendar, greyed out and free ("CANCELLED"); a test booking's just goes
+  if (cancelled.test) await deleteEvent(env, b.event_id).catch((err) => console.log("Couldn't remove the cancelled booking from the calendar:", err));
+  else await syncEvent(env, cancelled).catch((err) => console.log("Couldn't mark the cancelled booking in the calendar:", err));
   await touched(env);
   await markReferralCancelled(env, b.id);
-  let cancelled = await getBooking(env, b.id);
   await noteClient(env, cancelled);
 
   // The money
@@ -436,6 +458,7 @@ export async function cancelBooking(env, b, { by, notify = true, note = "", refu
     try {
       await refundBooking(env, cancelled, amount, `Cancelled by ${by}`);
       cancelled = await getBooking(env, b.id);
+      if (!cancelled.test) await syncEvent(env, cancelled).catch(() => {});
       moneyLine = `${money(amount)} is being refunded to your card. It usually shows within 5 to 10 working days.`;
       staffLine = `${money(amount)} refunded.`;
     } catch (err) {

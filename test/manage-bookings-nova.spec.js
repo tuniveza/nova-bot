@@ -110,7 +110,8 @@ describe("cancel_booking", () => {
     expect(fakes.stripe.refunds).toEqual([{ id: expect.any(String), paymentIntent: `pi_${b.id}_10000`, amount: 10000 }]);
     const after = await getBooking(env, b.id);
     expect(after).toMatchObject({ status: "cancelled", refunded_pence: 10000 });
-    expect(fakes.google.events.has(b.event_id)).toBe(false);
+    expect(fakes.google.events.get(b.event_id)).toMatchObject({ transparency: "transparent" });
+    expect(fakes.google.events.get(b.event_id).description).toContain("Refunded: £100");
     expect(fakes.google.emails[0].text).toContain("£100 is being refunded to your card");
   });
 

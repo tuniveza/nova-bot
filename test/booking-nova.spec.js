@@ -120,7 +120,7 @@ describe("paying the deposit", () => {
     expect(b).toMatchObject({ status: "booked", paid_pence: 10000, hold_until: null });
     const event = fakes.google.events.get(b.event_id);
     expect(event.status).toBe("confirmed");
-    expect(event.summary).toBe("Kai Lee · " + b.session);
+    expect(event.summary).toBe("DEPOSIT PAID · Kai Lee · " + b.session);
     expect(event.description).toContain("£100 paid, £100 due");
 
     expect(fakes.google.emails).toHaveLength(1);
@@ -163,7 +163,9 @@ describe("paying the deposit", () => {
     expect(await back.text()).toContain("No payment was taken");
     b = await getBooking(env, b.id);
     expect(b.status).toBe("expired");
-    expect(fakes.google.events.has(b.event_id)).toBe(false);
+    // Still seen in the calendar, greyed out and free (it no longer blocks the time)
+    expect(fakes.google.events.get(b.event_id)).toMatchObject({ transparency: "transparent", colorId: "8" });
+    expect(fakes.google.events.get(b.event_id).summary).toMatch(/^DIDN'T PAY \(hold let go\) · Kai Lee/);
 
     // And by the clock
     await startBooking(ukDay(11));
@@ -219,13 +221,15 @@ describe("the customer's booking page", () => {
     expect((await call("/booking/xxxxxxxxxxxxxxxxxxxxxxxxxxxx")).status).toBe(404);
   });
 
-  it("cancels with enough notice: out of the calendar, emailed, staff told to refund the deposit", async () => {
+  it("cancels with enough notice: greyed out and free in the calendar, emailed, staff told to refund the deposit", async () => {
     const b = await bookedAndPaid();
     const out = await (await call(`/booking/${b.token}/cancel`, { method: "POST", body: {} })).json();
     expect(out.ok).toBe(true);
     const after = await getBooking(env, b.id);
     expect(after.status).toBe("cancelled");
-    expect(fakes.google.events.has(b.event_id)).toBe(false);
+    expect(fakes.google.events.get(b.event_id)).toMatchObject({ transparency: "transparent", colorId: "8", reminders: { useDefault: false, overrides: [] } });
+    expect(fakes.google.events.get(b.event_id).summary).toMatch(/^CANCELLED · /);
+    expect(fakes.google.events.get(b.event_id).description).toContain("Cancelled (by the customer). This time is free for other bookings.");
     expect(fakes.google.emails[0].subject).toMatch(/^Cancelled/);
     expect(fakes.google.emails[0].text).toContain("Your refund of £100 will be processed by the team");
     expect(fakes.google.emails[0].attachments[0].content).toContain("METHOD:CANCEL");

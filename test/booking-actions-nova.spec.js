@@ -238,7 +238,7 @@ describe("Portal approvals", () => {
 		fakes.google.emails.length = 0;
 		await approve((await propose("cancel", { bookingId: kai.id, notifyClient: false, refund: "none" })).id);
 		expect((await getBooking(env, kai.id)).status).toBe("cancelled");
-		expect(fakes.google.events.has(kai.event_id)).toBe(false);
+		expect(fakes.google.events.get(kai.event_id)).toMatchObject({ transparency: "transparent" });
 		expect(fakes.google.emails).toHaveLength(0);
 
 		// block_add and block_remove
