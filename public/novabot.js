@@ -54,6 +54,11 @@
 
   const widget = document.createElement("div");
   widget.id = "nv-chat";
+  // Where it sits (Options → Position, remembered in this browser): the right unless chosen
+  // otherwise (the user, 18 Nov 2026). Set before it's on the page, so it never jumps.
+  const SIDES = ["left", "center", "right", "top-left", "top-right"];
+  const readSide = () => { try { const s = localStorage.getItem("nv-side"); return SIDES.includes(s) ? s : "right"; } catch (err) { return "right"; } };
+  widget.dataset.side = readSide();
   widget.innerHTML = `
     <button id="nv-chat-toggle" type="button" aria-label="Open chat with NovaBot" aria-controls="nv-chat-panel" aria-expanded="false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true">
@@ -188,6 +193,16 @@
           </div>
           <div class="nv-opt-row">
             <button type="button" class="nv-opt-chip" id="nv-tint-videos" role="switch" aria-checked="true">Videos too</button>
+          </div>
+        </section>
+        <section>
+          <p class="nv-opt-label">Position</p>
+          <div class="nv-opt-row nv-sides" role="radiogroup" aria-label="Where the chat sits">
+            <button type="button" class="nv-opt-chip" role="radio" data-side="left">Left</button>
+            <button type="button" class="nv-opt-chip" role="radio" data-side="center">Centre</button>
+            <button type="button" class="nv-opt-chip" role="radio" data-side="right">Right</button>
+            <button type="button" class="nv-opt-chip" role="radio" data-side="top-left">Top left</button>
+            <button type="button" class="nv-opt-chip" role="radio" data-side="top-right">Top right</button>
           </div>
         </section>
       </div>
@@ -1311,13 +1326,15 @@
   }
 
   // ===== MOVING OUT OF THE WAY =====
-  // See MOVE_AWAY_FROM at the top. The window has two spots: "home" (bottom
-  // left since 18 Nov 2026, by the chat button) and "other" (the bottom of the other side).
-  // It can also shrink to just its header bar ("small").
+  // See MOVE_AWAY_FROM at the top. The window has two spots: "home" (by the chat button, wherever
+  // Options → Position puts it) and "other" (the same distance from the other side; for the centre
+  // that's the same place). It can also shrink to just its header bar ("small").
 
   let spot = "home"; // where it is now
   let small = false; // shrunk to its header bar?
   let fit = 0; // made shorter (this many px) so it sits below things to click, e.g. the website's menu
+  let drop = 0; // (at the top: a shorter window keeps its bottom edge, so its top comes down this far)
+  const atTop = () => widget.dataset.side.startsWith("top");
   let hovering = false;
   let dragging = false; // pressing on the chat, e.g. dragging its scrollbar
   let checkTimer = null;
@@ -1334,10 +1351,18 @@
     // it covered the website's menu, so it shrank on every page)
     if (!small && !fit && panel.offsetHeight) fullHeight = panel.offsetHeight;
     const height = shrunk ? header.offsetHeight : fitH ? fitH : fullHeight;
-    // Home is on the left (novabot.css: left), the other spot the same distance from the right
-    // (worked out without the current move, --nv-shift, which only moves it with a transform)
-    const gap = parseFloat(style.left);
+    // Home is where novabot.css puts it, the other spot the same distance from the other side
+    // (worked out without the current move, --nv-shift, which only moves it with a transform; the
+    // centre also has translate: -50%, which `left` doesn't include)
+    const tx = style.translate && style.translate !== "none" ? style.translate.split(" ")[0] : "0";
+    const gap = parseFloat(style.left) + (tx.endsWith("%") ? width * parseFloat(tx) / 100 : parseFloat(tx) || 0);
     const left = where === "other" ? document.documentElement.clientWidth - gap - width : gap;
+    // At the top it hangs down from below the chat button: its top edge stays put
+    if (atTop()) {
+      const base = parseFloat(style.top) - drop;
+      const top = shrunk ? base : base + (fitH ? Math.max(0, fullHeight - fitH) : 0);
+      return { left, top, right: left + width, bottom: shrunk ? base + height : base + fullHeight };
+    }
     const bottom = document.documentElement.clientHeight - parseFloat(style.bottom);
     return { left, top: bottom - height, right: left + width, bottom };
   }
@@ -1392,6 +1417,8 @@
     fit = shrunk ? 0 : fitH;
     widget.classList.toggle("nv-fitted", !!fit);
     if (fit) widget.style.setProperty("--nv-fit-height", fit + "px");
+    drop = fit && atTop() ? Math.max(0, fullHeight - fit) : 0;
+    widget.style.setProperty("--nv-fit-drop", drop + "px");
     // How far the "other" spot is from home (to the right)
     const shift = where === "other" ? boxAt("other", false).left - boxAt("home", false).left : 0;
     // Set on the whole widget, so the panel and its glow layer both follow
@@ -2359,8 +2386,11 @@
     const height = list.clientHeight;
     const total = list.scrollHeight;
     if (total <= height + 1) return null;
-    const thumb = Math.max(48, (height * height) / total); // 48px at least, as in novabot.css
-    return { top: (list.scrollTop / (total - height)) * (height - thumb), height: thumb };
+    // (the track starts below the header's peaks and ends 14px from the bottom: novabot.css)
+    const start = parseFloat(getComputedStyle(widget).getPropertyValue("--nv-peaks")) + 10 || 14;
+    const length = height - start - 14;
+    const thumb = Math.max(48, (length * height) / total); // 48px at least, as in novabot.css
+    return { top: start + (list.scrollTop / (total - height)) * (length - thumb), height: thumb };
   }
   list.addEventListener(
     "scroll",
@@ -2934,10 +2964,59 @@
     const f = (n) => { const k = (n + h / 30) % 12, a = sat * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, "0"); };
     return `#${f(0)}${f(8)}${f(4)}`;
   }
-  // The website's cursors (novabot.css html.nv-site-cursor), redrawn in the theme's colours
-  const CURSORS = (A, B, C) => `html.nv-site-cursor,
+  // The website's cursors (novabot.css html.nv-site-cursor), redrawn for the theme: its colours,
+  // and each theme's own small touch (the user, 18 Nov 2026: "each color theme has its own cursor
+  // vibe and slight styling"). Novacane's are the ones in novabot.css.
+  //   accent: drawn by the arrow's tip corner;  ring: round the tip over things to click;
+  //   edge: the arrow's outline;  beam: the text cursor's touch
+  const CURSOR_LOOKS = {
+    violet: { // a small four-point star; a dotted ring
+      accent: (A, B, C) => `<path d='M22 1.2l1 2.9 2.9 1-2.9 1-1 2.9-1-2.9-2.9-1 2.9-1z' fill='${C}'/>`,
+      ring: (A) => `<circle cx='4' cy='3' r='3.6' fill='none' stroke='${A}' stroke-width='1.4' stroke-dasharray='2 1.3'/>`,
+      edge: "#f3ecff",
+      beam: (A, C) => `<path d='M16 11.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z' fill='${C}'/>`,
+    },
+    ember: { // a little flame; a glowing ring
+      accent: (A, B, C) => `<path d='M22.2 .8c2 2.3 2.8 3.8 2.8 5.3a2.8 2.8 0 0 1-5.6 0c0-1.1.5-2 1.3-2.8.1 1.1.6 1.7 1.3 1.7.3-1.4-.1-2.8.2-4.2z' fill='${C}' stroke='${A}' stroke-width='.6'/>`,
+      ring: (A) => `<circle cx='4' cy='3' r='3.6' fill='${A}' fill-opacity='.28' stroke='${A}' stroke-width='1.4'/>`,
+      edge: "#fff1e2",
+      beam: (A, C) => `<circle cx='16' cy='14' r='1.6' fill='${C}'/>`,
+    },
+    gold: { // a diamond glint; a double ring
+      accent: (A, B, C) => `<path d='M22 1l2.6 3.6L22 8.2l-2.6-3.6z' fill='${C}' stroke='#fff' stroke-width='.6'/>`,
+      ring: (A) => `<circle cx='4' cy='3' r='3.6' fill='none' stroke='${A}' stroke-width='1.2'/><circle cx='4' cy='3' r='2' fill='none' stroke='${A}' stroke-width='.8'/>`,
+      edge: "#fff7dc",
+      beam: (A, C) => `<path d='M16 12l1.6 2-1.6 2-1.6-2z' fill='${C}'/>`,
+    },
+    aurora: { // a wavy ribbon of light; a ring in both colours
+      accent: (A, B, C) => `<path d='M16.5 5.2q2.3-3 4.6 0t4.6 0' fill='none' stroke='${C}' stroke-width='1.5' stroke-linecap='round'/>`,
+      ring: () => `<circle cx='4' cy='3' r='3.6' fill='none' stroke='url(#g)' stroke-width='1.7'/>`,
+      edge: "#eafff8",
+      beam: (A, C) => `<path d='M13.8 14q1.1-1.6 2.2 0t2.2 0' fill='none' stroke='${C}' stroke-width='1.3' stroke-linecap='round'/>`,
+    },
+    ocean: { // two bubbles; a ring with a bubble rising off it
+      accent: (A, B, C) => `<circle cx='21.6' cy='6' r='1.9' fill='none' stroke='${C}' stroke-width='1.1'/><circle cx='25' cy='2.4' r='1.1' fill='${C}'/>`,
+      ring: (A) => `<circle cx='4' cy='3' r='3.6' fill='none' stroke='${A}' stroke-width='1.4' stroke-opacity='.85'/><circle cx='9.5' cy='1.6' r='1.1' fill='none' stroke='${A}' stroke-width='.9'/>`,
+      edge: "#eaf6ff",
+      beam: (A, C) => `<circle cx='16' cy='12.5' r='1.3' fill='none' stroke='${C}' stroke-width='1'/><circle cx='17' cy='16' r='.8' fill='${C}'/>`,
+    },
+    mono: { // plain: no touch, a thin crisp outline
+      accent: () => "",
+      ring: (A) => `<circle cx='4' cy='3' r='3.4' fill='none' stroke='${A}' stroke-width='1'/>`,
+      edge: "#ffffff",
+      beam: () => "",
+    },
+  };
+  // (a picture for a CSS cursor: written plainly, then the few characters a url() can't hold escaped)
+  const cursorUrl = (svg) => `url("data:image/svg+xml,${svg.replace(/</g, "%3C").replace(/>/g, "%3E").replace(/#/g, "%23")}")`;
+  function CURSORS(look, A, B, C) {
+    const g = `<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='${A}'/><stop offset='1' stop-color='${B}'/></linearGradient></defs>`;
+    const arrow = (dx) => `<path d='M${3 + dx} ${2 + dx}l19 9.5-8 2.3-4 7.7z' fill='url(#g)' stroke='${look.edge}' stroke-width='${look === CURSOR_LOOKS.mono ? 1.3 : 1.6}' stroke-linejoin='round'/>`;
+    const svg = (w, h, inner) => `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' viewBox='0 0 ${w} ${h}'>${inner}</svg>`;
+    const beam = `<path d='M5.5 3h9M10 3v22M5.5 25h9' fill='none' stroke='${A}' stroke-width='3' stroke-linecap='round'/><path d='M5.5 3h9M10 3v22M5.5 25h9' fill='none' stroke='#fff' stroke-width='1' stroke-linecap='round'/>`;
+    return `html.nv-site-cursor,
 html.nv-site-cursor * {
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='${A}'/%3E%3Cstop offset='1' stop-color='${B}'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M3 2l19 9.5-8 2.3-4 7.7z' fill='url(%23g)' stroke='%23fff' stroke-width='1.6' stroke-linejoin='round'/%3E%3Ccircle cx='22' cy='4' r='1.3' fill='${C}'/%3E%3C/svg%3E") 3 2, auto;
+  cursor: ${cursorUrl(svg(28, 28, g + arrow(0) + look.accent(A, B, C)))} 3 2, auto;
 }
 html.nv-site-cursor a,
 html.nv-site-cursor button,
@@ -2951,24 +3030,27 @@ html.nv-site-cursor input[type="checkbox"],
 html.nv-site-cursor input[type="radio"],
 html.nv-site-cursor #nv-chat-panel.nv-small,
 html.nv-site-cursor #nv-chat-panel.nv-small * {
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='${A}'/%3E%3Cstop offset='1' stop-color='${B}'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='4' cy='3' r='3.6' fill='none' stroke='${A}' stroke-width='1.4' stroke-opacity='0.85'/%3E%3Cpath d='M4 3l19 9.5-8 2.3-4 7.7z' fill='url(%23g)' stroke='%23fff' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E") 4 3, pointer;
+  cursor: ${cursorUrl(svg(30, 30, g + look.ring(A) + arrow(1)))} 4 3, pointer;
 }
 html.nv-site-cursor input:not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 html.nv-site-cursor textarea,
 html.nv-site-cursor [contenteditable="true"] {
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='28' viewBox='0 0 20 28'%3E%3Cpath d='M5.5 3h9M10 3v22M5.5 25h9' fill='none' stroke='${A}' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M5.5 3h9M10 3v22M5.5 25h9' fill='none' stroke='%23fff' stroke-width='1' stroke-linecap='round'/%3E%3C/svg%3E") 10 14, text;
+  cursor: ${cursorUrl(svg(20, 28, beam + look.beam(A, C)))} 10 14, text;
+  caret-color: ${A};
 }
 html.nv-site-cursor.nv-acted,
 html.nv-site-cursor.nv-acted * {
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10.5' fill='${A}' fill-opacity='0.18'/%3E%3Cpath d='M20.19 6.26A10 10 0 0 1 6.26 20.19M3.81 17.74A10 10 0 0 1 17.74 3.81' fill='none' stroke='${A}' stroke-width='2.4'/%3E%3Cpath d='M3.9 20.1 11.3 7.5M12.5 8.3 13.5 16M14.7 16.5 20.1 3.9' fill='none' stroke='%23fff' stroke-width='1.9'/%3E%3C/svg%3E") 16 16, pointer;
+  cursor: ${cursorUrl(`<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10.5' fill='${A}' fill-opacity='0.18'/><path d='M20.19 6.26A10 10 0 0 1 6.26 20.19M3.81 17.74A10 10 0 0 1 17.74 3.81' fill='none' stroke='${A}' stroke-width='2.4'/><path d='M3.9 20.1 11.3 7.5M12.5 8.3 13.5 16M14.7 16.5 20.1 3.9' fill='none' stroke='#fff' stroke-width='1.9'/></svg>`)} 16 16, pointer;
 }
 `;
+  }
   let cursorStyle = null;
   function themeCursors(t) {
-    if (!t.turn && !t.grey) return cursorStyle && cursorStyle.remove(), (cursorStyle = null);
+    const look = CURSOR_LOOKS[t.id];
+    if (!look) return cursorStyle && cursorStyle.remove(), (cursorStyle = null);
     if (!cursorStyle) { cursorStyle = document.createElement("style"); cursorStyle.id = "nv-theme-cursors"; document.head.appendChild(cursorStyle); }
-    const c = (hex) => "%23" + turnColour(hex, t).slice(1);
-    cursorStyle.textContent = CURSORS(c("#ff5fa8"), c("#8a4fd8"), c("#ffd1ea"));
+    const c = (hex) => turnColour(hex, t);
+    cursorStyle.textContent = CURSORS(look, c("#ff5fa8"), c("#8a4fd8"), c("#ffd1ea"));
   }
   const themesRow = options.querySelector(".nv-themes");
   themesRow.innerHTML = THEMES.map((t) => `<button type="button" class="nv-opt-chip nv-theme" role="radio" data-theme="${t.id}" style="--sw:${t.tint || "#b01d68"}">${t.name}</button>`).join("");
@@ -3052,8 +3134,44 @@ html.nv-site-cursor.nv-acted * {
     options.querySelectorAll("[data-theme]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.theme === id)));
     options.querySelectorAll("[data-tint]").forEach((b) => b.setAttribute("aria-checked", String(Number(b.dataset.tint) === tint)));
     document.getElementById("nv-tint-videos").setAttribute("aria-checked", String(readTheme().videos));
+    options.querySelectorAll("[data-side]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.side === widget.dataset.side)));
   }
   applyTheme();
+
+  // Where it sits (Options → Position): left, centre, right, top left or top right
+  options.querySelectorAll("[data-side]").forEach((b) => b.addEventListener("click", () => {
+    try { localStorage.setItem("nv-side", b.dataset.side); } catch (err) {}
+    widget.dataset.side = b.dataset.side;
+    place("home", false); // (back by the button, wherever that is now)
+    watchTop();
+    liftButton();
+    drawOptions();
+  }));
+  // At the top, the chat button sits just below the website's own bar (its logo and menu) while
+  // that's showing, never over it (--nv-top; only watched while a top position is chosen)
+  let topFrame = 0;
+  function measureTop() {
+    topFrame = 0;
+    let clear = 0;
+    for (const el of document.querySelectorAll('header, [role="banner"], #header')) {
+      if (widget.contains(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.height > 0 && r.top <= 8 && r.bottom > 0 && r.width > innerWidth * 0.5 && r.bottom < innerHeight * 0.4) clear = Math.max(clear, r.bottom);
+    }
+    widget.style.setProperty("--nv-top", Math.round(Math.max(24, clear + 12)) + "px");
+  }
+  const measureTopSoon = () => { if (!topFrame) topFrame = requestAnimationFrame(measureTop); };
+  let topWatched = false;
+  function watchTop() {
+    const on = atTop();
+    if (on === topWatched) return on && measureTop();
+    topWatched = on;
+    const how = on ? addEventListener : removeEventListener;
+    how("scroll", measureTopSoon, { passive: true, capture: true });
+    how("resize", measureTopSoon, { passive: true });
+    if (on) { measureTop(); setTimeout(measureTop, 1200); }
+  }
+  watchTop();
 
   // Escape closes it (from inside the chat)
   panel.addEventListener("keydown", (e) => {
@@ -3155,8 +3273,9 @@ html.nv-site-cursor.nv-acted * {
     const r = toggle.getBoundingClientRect();
     if (!r.width) return;
     const x = r.left + r.width / 2;
-    // Where the button would be without any lift
-    const y = Math.min(r.bottom + lift, innerHeight) - 4 - r.height / 2;
+    // Where the button would be without any lift (at the top: the bottom of the screen below it,
+    // so the window hanging down from the top stops above a banner too)
+    const y = atTop() ? innerHeight - 4 - r.height / 2 : Math.min(r.bottom + lift, innerHeight) - 4 - r.height / 2;
     let top = innerHeight;
     for (const el of document.elementsFromPoint(x, y)) {
       if (widget.contains(el) || el === document.body || el === document.documentElement) continue;

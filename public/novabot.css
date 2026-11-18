@@ -3047,3 +3047,152 @@ html.nv-page-locked body {
   .nv-gear svg { width: 18px; height: 18px; }
   .nv-options { bottom: calc(46px + env(safe-area-inset-bottom)); }
 }
+
+/* ----- The scrollbar starts below the header's mountain lines, never over them (the user,
+   18 Nov 2026: "the scrollbar is in front of the theming mountain lines"). The message area
+   reaches up between the peaks, so its track starts that far down (novabot.js thumbBox: same) ----- */
+#nv-chat-messages::-webkit-scrollbar-track { margin: calc(var(--nv-peaks, 34px) + 10px) 0 14px; }
+
+/* ===================================================================================== */
+/* ----- 18 Nov 2026: Options → Position (left, centre, right, top left, top right) -----
+   novabot.js puts data-side on #nv-chat (the right unless chosen otherwise) and, at the top,
+   --nv-top: just below the website's own bar. The window grows out of the chat button wherever
+   it is; phones keep their full-width sheet (only the button and its bubble move). */
+
+/* The chat button and its speech bubble */
+#nv-chat[data-side="right"] #nv-chat-toggle,
+#nv-chat[data-side="top-right"] #nv-chat-toggle { left: auto; right: 24px; }
+#nv-chat[data-side="center"] #nv-chat-toggle { left: calc(50% - 32px); right: auto; }
+#nv-chat[data-side^="top"] #nv-chat-toggle { top: var(--nv-top, 24px); bottom: auto; transition: transform 0.15s ease, filter 0.15s ease, top 0.3s ease; }
+
+#nv-chat[data-side="right"] #nv-chat-teaser { left: auto; right: 24px; transform-origin: calc(100% - 32px) 100%; }
+#nv-chat[data-side="center"] #nv-chat-teaser { left: 0; right: 0; margin: 0 auto; transform-origin: 50% 100%; }
+#nv-chat[data-side^="top"] #nv-chat-teaser { top: calc(var(--nv-top, 24px) + 80px); bottom: auto; }
+#nv-chat[data-side="top-left"] #nv-chat-teaser { left: 24px; right: auto; transform-origin: 32px 0; }
+#nv-chat[data-side="top-right"] #nv-chat-teaser { left: auto; right: 24px; transform-origin: calc(100% - 32px) 0; }
+/* (its sharper corner and little tail point at the button) */
+#nv-chat[data-side="left"] .nv-teaser-open { border-radius: 22px 22px 22px 6px; }
+#nv-chat[data-side="right"] .nv-teaser-open { border-radius: 22px 22px 6px 22px; }
+#nv-chat[data-side="center"] .nv-teaser-open { border-radius: 22px; }
+#nv-chat[data-side="top-left"] .nv-teaser-open { border-radius: 6px 22px 22px 22px; }
+#nv-chat[data-side="top-right"] .nv-teaser-open { border-radius: 22px 6px 22px 22px; }
+#nv-chat[data-side="right"] .nv-teaser-open::after,
+#nv-chat[data-side="top-right"] .nv-teaser-open::after { left: auto; right: 26px; }
+#nv-chat[data-side="center"] .nv-teaser-open::after { left: calc(50% - 7px); right: auto; }
+#nv-chat[data-side^="top"] .nv-teaser-open::after {
+  top: -8px;
+  bottom: auto;
+  border: 0;
+  border-left: 1px solid rgba(229, 194, 224, 0.35);
+  border-top: 1px solid rgba(229, 194, 224, 0.35);
+}
+
+/* The window (computers and tablets) */
+@media (min-width: 481px) and (min-height: 561px), (min-width: 481px) and (pointer: fine) {
+  #nv-chat[data-side="right"] #nv-chat-panel,
+  #nv-chat[data-side="right"] .nv-panel-glow { left: auto; right: 24px; border-radius: 40px 40px 52px 40px; }
+  #nv-chat[data-side="right"] #nv-chat-panel { transform-origin: calc(100% - 32px) 100%; }
+
+  #nv-chat[data-side="center"] #nv-chat-panel,
+  #nv-chat[data-side="center"] .nv-panel-glow { left: 50%; right: auto; translate: -50% 0; border-radius: 40px; }
+  #nv-chat[data-side="center"] #nv-chat-panel { transform-origin: 50% 100%; }
+
+  /* At the top: it hangs down from just below the button (a shorter window keeps its bottom edge,
+     so its top comes down: --nv-fit-drop) */
+  #nv-chat[data-side^="top"] #nv-chat-panel,
+  #nv-chat[data-side^="top"] .nv-panel-glow {
+    top: calc(var(--nv-top, 24px) + 80px + var(--nv-fit-drop, 0px));
+    bottom: auto;
+    max-height: calc(100dvh - var(--nv-top, 24px) - 104px - var(--nv-lift, 0px));
+  }
+  #nv-chat[data-side^="top"] #nv-chat-panel:not(.nv-small, .nv-booking),
+  #nv-chat[data-side^="top"] .nv-panel-glow { height: min(600px, calc(100dvh - var(--nv-top, 24px) - 104px - var(--nv-lift, 0px))); }
+  #nv-chat[data-side^="top"] #nv-chat-panel.nv-booking { height: min(720px, calc(100dvh - var(--nv-top, 24px) - 104px - var(--nv-lift, 0px))); }
+  #nv-chat[data-side="top-left"] #nv-chat-panel,
+  #nv-chat[data-side="top-left"] .nv-panel-glow { left: 24px; right: auto; border-radius: 52px 40px 40px 40px; }
+  #nv-chat[data-side="top-left"] #nv-chat-panel { transform-origin: 32px 0; }
+  #nv-chat[data-side="top-right"] #nv-chat-panel,
+  #nv-chat[data-side="top-right"] .nv-panel-glow { left: auto; right: 24px; border-radius: 40px 52px 40px 40px; }
+  #nv-chat[data-side="top-right"] #nv-chat-panel { transform-origin: calc(100% - 32px) 0; }
+
+  /* A computer window under 801px high: beside the button, as on the left, for more height */
+  @media (min-width: 481px) and (max-height: 800px) and (pointer: fine) {
+    #nv-chat[data-side="right"] #nv-chat-panel,
+    #nv-chat[data-side="right"] .nv-panel-glow { left: auto; right: 100px; }
+    #nv-chat[data-side="right"] #nv-chat-panel { transform-origin: 100% 100%; }
+    #nv-chat[data-side^="top"] #nv-chat-panel,
+    #nv-chat[data-side^="top"] .nv-panel-glow {
+      top: calc(var(--nv-top, 24px) + var(--nv-fit-drop, 0px));
+      max-height: calc(100dvh - var(--nv-top, 24px) - 12px - var(--nv-lift, 0px));
+    }
+    #nv-chat[data-side^="top"] #nv-chat-panel:not(.nv-small, .nv-booking),
+    #nv-chat[data-side^="top"] .nv-panel-glow { height: min(600px, calc(100dvh - var(--nv-top, 24px) - 12px - var(--nv-lift, 0px))); }
+    #nv-chat[data-side^="top"] #nv-chat-panel.nv-booking { height: min(720px, calc(100dvh - var(--nv-top, 24px) - 12px - var(--nv-lift, 0px))); }
+    #nv-chat[data-side="top-left"] #nv-chat-panel,
+    #nv-chat[data-side="top-left"] .nv-panel-glow { left: 100px; }
+    #nv-chat[data-side="top-left"] #nv-chat-panel { transform-origin: 0 0; }
+    #nv-chat[data-side="top-right"] #nv-chat-panel,
+    #nv-chat[data-side="top-right"] .nv-panel-glow { right: 100px; }
+    #nv-chat[data-side="top-right"] #nv-chat-panel { transform-origin: 100% 0; }
+  }
+  /* (the centre on a short window: beside the button on its right where there's room for the
+     whole window, otherwise above it as on a tall one) */
+  @media (min-width: 900px) and (max-height: 800px) and (pointer: fine) {
+    #nv-chat[data-side="center"] #nv-chat-panel,
+    #nv-chat[data-side="center"] .nv-panel-glow { left: calc(50% + 44px); translate: none; border-radius: 40px 40px 40px 52px; }
+    #nv-chat[data-side="center"] #nv-chat-panel { transform-origin: 0 100%; }
+  }
+  @media (max-width: 899px) and (max-height: 800px) and (pointer: fine) {
+    #nv-chat[data-side="center"] #nv-chat-panel:not(.nv-keyboard),
+    #nv-chat[data-side="center"] .nv-panel-glow {
+      bottom: calc(104px + var(--nv-lift, 0px));
+      max-height: calc(100dvh - 130px - var(--nv-lift, 0px));
+    }
+    #nv-chat[data-side="center"] #nv-chat-panel:not(.nv-small, .nv-booking, .nv-keyboard) { height: min(600px, calc(100dvh - 130px - var(--nv-lift, 0px))); }
+  }
+}
+
+/* The position chips: all five on one line (the user, 18 Nov 2026), each one's words on one line,
+   a little slimmer than the other chips so they fit the narrowest window */
+.nv-opt-row.nv-sides { flex-wrap: nowrap; gap: 4px; }
+.nv-sides .nv-opt-chip { white-space: nowrap; flex: 0 1 auto; min-width: 0; padding: 4px 9px; font-size: 12px; }
+@media (max-width: 360px) { .nv-sides .nv-opt-chip { padding: 4px 6px; font-size: 11px; } }
+
+/* ----- 18 Nov 2026: the text cursor (the blinking line where you type) in the theme's colour: the
+   chat's own boxes are drawn through the theme's colour turn, so its usual pink turns with them;
+   the website's boxes get the theme's colour from novabot.js (the cursors' style) ----- */
+#nv-chat input, #nv-chat textarea { caret-color: #ff5fa8; }
+html.nv-site-cursor input, html.nv-site-cursor textarea, html.nv-site-cursor [contenteditable="true"] { caret-color: #ff5fa8; }
+
+/* ----- 18 Nov 2026: everything in Options shows at once, with no scrolling (the user). The box may
+   reach up to just below the window's top; the gaps are tighter; the sound's "this hour" sits on
+   its label's line; on a short window "Options" (the title) steps aside; on a phone on its side the
+   three parts sit side by side ----- */
+.nv-options { max-height: calc(100% - 102px); padding: 10px 12px 10px; overflow-y: auto; }
+.nv-options section + section { margin-top: 8px; padding-top: 8px; }
+.nv-opt-title { margin: 0 0 4px; font-size: 13px; }
+.nv-opt-label { margin: 0 0 2px; }
+.nv-opt-now { margin: 0; font-size: 13px; }
+.nv-opt-row { margin-top: 5px; gap: 5px; }
+.nv-opt-volume { margin-top: 6px; }
+.nv-opt-volume input { height: 20px; }
+@media (max-height: 720px) { .nv-opt-title { display: none; } }
+@media (max-width: 480px) { .nv-opt-title { display: none; } }
+@media (max-height: 560px) and (pointer: coarse) and (orientation: landscape) {
+  .nv-opt-title { display: none; }
+  .nv-options { max-height: calc(100% - 58px - env(safe-area-inset-bottom)); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "sound theme" "side theme"; column-gap: 12px; align-items: start; }
+  .nv-options section:nth-of-type(1) { grid-area: sound; }
+  .nv-options section:nth-of-type(2) { grid-area: theme; margin-top: 0; padding-top: 0; border-top: 0; padding-left: 12px; border-left: 1px solid rgba(255, 255, 255, .08); align-self: stretch; }
+  .nv-options section:nth-of-type(3) { grid-area: side; }
+}
+/* (a phone held upright: while the options are open the sheet rises to the full height, so a small
+   phone shows them all too) */
+@media (max-width: 480px) {
+  #nv-chat-panel:has(#nv-options:not([hidden])) { top: var(--nv-view-top, 0px); height: var(--nv-view-height, 100dvh); max-height: none; border-radius: 0; }
+}
+/* (a little tighter still, for a window made shorter to sit below the website's menu: the sound's
+   name sits beside its label, and the parts' dividers have less room round them) */
+.nv-options section:first-of-type .nv-opt-label,
+.nv-options section:first-of-type .nv-opt-now { display: inline-block; vertical-align: baseline; }
+.nv-options section:first-of-type .nv-opt-label { margin: 0 8px 0 0; }
+.nv-options section + section { margin-top: 6px; padding-top: 6px; }

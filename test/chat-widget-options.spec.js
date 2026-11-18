@@ -30,7 +30,14 @@ describe("the sound's seed", () => {
 
 describe("the options (the cogwheel, bottom left)", () => {
   it("the hover effects over the website (its cursors and sparkles) follow the theme", () => {
-    expect(js).toContain("cursorStyle.textContent = CURSORS(c(\"#ff5fa8\"), c(\"#8a4fd8\"), c(\"#ffd1ea\"));");
+    expect(js).toContain("cursorStyle.textContent = CURSORS(look, c(\"#ff5fa8\"), c(\"#8a4fd8\"), c(\"#ffd1ea\"));");
+    // (each theme its own touch on the cursors: 18 Nov 2026)
+    for (const id of ["violet", "ember", "gold", "aurora", "ocean", "mono"]) expect(js).toMatch(new RegExp(`\\n    ${id}: \\{ // `));
+  });
+  it("sits where Options → Position says: left, centre, right, top left or top right (the right unless chosen)", () => {
+    for (const side of ["left", "center", "right", "top-left", "top-right"]) expect(js).toContain(`data-side="${side}"`);
+    expect(js).toContain('return SIDES.includes(s) ? s : "right";');
+    expect(css).toContain('#nv-chat[data-side^="top"] #nv-chat-toggle { top: var(--nv-top, 24px); bottom: auto;');
     expect(css).toContain(".nv-spark { filter: var(--nv-theme-filter, none); }");
   });
   it("the peaks are only their edges: see-through inside, a glowing line round them", () => {
