@@ -2993,25 +2993,19 @@ html.nv-page-locked body {
     linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03) 60%, rgba(255, 255, 255, 0.07));
   background-clip: padding-box;
 }
+/* (flat: one even see-through colour with a faint glass edge, no shine stripe, so it doesn't
+   look like a pill; the user, 18 Nov 2026) */
 #nv-chat-messages::-webkit-scrollbar-thumb {
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0.18) 28%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.14) 100%),
-    linear-gradient(180deg, rgba(255, 220, 240, 0.35) 0%, rgba(255, 220, 240, 0) 18%),
-    linear-gradient(180deg, rgba(208, 42, 125, 0.72), rgba(122, 31, 134, 0.66));
+  background: linear-gradient(180deg, rgba(196, 52, 132, 0.62), rgba(150, 46, 150, 0.6));
   background-clip: padding-box;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -1px 0 rgba(40, 0, 40, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 #nv-chat-messages::-webkit-scrollbar-thumb:hover {
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.22) 28%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.18) 100%),
-    linear-gradient(180deg, rgba(255, 220, 240, 0.4) 0%, rgba(255, 220, 240, 0) 18%),
-    linear-gradient(180deg, rgba(230, 60, 145, 0.82), rgba(140, 40, 160, 0.76));
+  background: linear-gradient(180deg, rgba(214, 62, 146, 0.74), rgba(166, 52, 166, 0.72));
   background-clip: padding-box;
 }
 #nv-chat-messages::-webkit-scrollbar-thumb:active {
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.25) 28%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.2) 100%),
-    linear-gradient(180deg, rgba(255, 95, 168, 0.9), rgba(154, 47, 176, 0.85));
+  background: linear-gradient(180deg, rgba(232, 80, 160, 0.85), rgba(180, 60, 180, 0.82));
   background-clip: padding-box;
 }
 /* Firefox draws only flat colours: a see-through pink on a faint glass track */
@@ -3020,9 +3014,7 @@ html.nv-page-locked body {
 }
 /* The fading trail behind the handle, in the same glass */
 .nv-scroll-ghost {
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0) 55%),
-    linear-gradient(180deg, rgba(208, 42, 125, 0.5), rgba(122, 31, 134, 0.4));
+  background: linear-gradient(180deg, rgba(196, 52, 132, 0.45), rgba(150, 46, 150, 0.4));
 }
 /* While the chat button is lifted above a cookie banner, the window above it rises with it, so the
    button never sits on the window's corner (computers and tablets; phones use the sheet) */
