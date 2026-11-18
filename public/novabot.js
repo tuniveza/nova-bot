@@ -267,7 +267,8 @@
   const keepClosedSwitch = document.getElementById("nv-keep-closed");
 
   // Same sizes as the "Phones: full screen chat" part of novabot.css
-  const PHONE = "(max-width: 480px), (max-height: 560px)";
+  // (a short computer window keeps the computer window: only touch screens get the phone layout)
+  const PHONE = "(max-width: 480px), (max-height: 560px) and (pointer: coarse)";
   // Phones and tablets: a finger, no mouse. The window stays where it is (no
   // moving out of the way or shrinking, which is for the mouse), it doesn't pop
   // the on-screen keyboard up by itself, and it starts closed like on phones.
@@ -1311,11 +1312,12 @@
 
   // ===== MOVING OUT OF THE WAY =====
   // See MOVE_AWAY_FROM at the top. The window has two spots: "home" (bottom
-  // right, by the chat button) and "left" (bottom left). It can also shrink to
-  // just its header bar ("small").
+  // left since 18 Nov 2026, by the chat button) and "other" (the bottom of the other side).
+  // It can also shrink to just its header bar ("small").
 
   let spot = "home"; // where it is now
   let small = false; // shrunk to its header bar?
+  let fit = 0; // made shorter (this many px) so it sits below things to click, e.g. the website's menu
   let hovering = false;
   let dragging = false; // pressing on the chat, e.g. dragging its scrollbar
   let checkTimer = null;
@@ -1323,15 +1325,21 @@
 
   // The window's box on screen at a spot, full size or small (worked out from
   // the CSS, so it's right whatever the window is doing right now)
-  function boxAt(where, shrunk) {
+  let fullHeight = 600;
+  function boxAt(where, shrunk, fitH = 0) {
     const style = getComputedStyle(panel);
     const width = panel.offsetWidth;
-    // Its full height: 720px, or its max-height on a short screen (as in novabot.css)
-    const height = shrunk ? header.offsetHeight : Math.min(720, parseFloat(style.maxHeight) || 720);
-    const gap = parseFloat(style.right);
-    const right = where === "left" ? gap + width : document.documentElement.clientWidth - gap;
+    // Its full height: what it really is now (600px or less since the 16 Oct look), or, while
+    // it's shrunk to its header bar, what it was at full size (an old fixed 720px made it think
+    // it covered the website's menu, so it shrank on every page)
+    if (!small && !fit && panel.offsetHeight) fullHeight = panel.offsetHeight;
+    const height = shrunk ? header.offsetHeight : fitH ? fitH : fullHeight;
+    // Home is on the left (novabot.css: left), the other spot the same distance from the right
+    // (worked out without the current move, --nv-shift, which only moves it with a transform)
+    const gap = parseFloat(style.left);
+    const left = where === "other" ? document.documentElement.clientWidth - gap - width : gap;
     const bottom = document.documentElement.clientHeight - parseFloat(style.bottom);
-    return { left: right - width, top: bottom - height, right, bottom };
+    return { left, top: bottom - height, right: left + width, bottom };
   }
 
   // How much of the page's `things` a box would cover (in square pixels,
@@ -1343,6 +1351,9 @@
       if (widget.contains(el)) continue;
       // The part of it inside the box, if any
       const r = el.getBoundingClientRect();
+      // Something covering most of the screen (a background video, a full-page section) is the
+      // page itself, not a thing to click: moving away from it would only shrink the chat for good
+      if (r.width * r.height > innerWidth * innerHeight * 0.4) continue;
       const x1 = Math.max(r.left, box.left);
       const x2 = Math.min(r.right, box.right);
       const y1 = Math.max(r.top, box.top);
@@ -1374,12 +1385,15 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(measurePeaks).catch(() => {});
 
   // Move the window to a spot, full size or small
-  function place(where, shrunk) {
+  function place(where, shrunk, fitH = 0) {
     clearTimeout(moveTimer);
     spot = where;
     small = shrunk;
-    // How far left the "left" spot is from home
-    const shift = where === "left" ? boxAt("left", false).left - boxAt("home", false).left : 0;
+    fit = shrunk ? 0 : fitH;
+    widget.classList.toggle("nv-fitted", !!fit);
+    if (fit) widget.style.setProperty("--nv-fit-height", fit + "px");
+    // How far the "other" spot is from home (to the right)
+    const shift = where === "other" ? boxAt("other", false).left - boxAt("home", false).left : 0;
     // Set on the whole widget, so the panel and its glow layer both follow
     widget.style.setProperty("--nv-shift", shift + "px");
     widget.style.setProperty("--nv-small-height", header.offsetHeight + "px");
@@ -1393,29 +1407,56 @@
   // side, otherwise its header bar
   function bestPlace() {
     // Full size somewhere that's clear of things to click
-    const clear = ["home", "left"].filter((where) => !overlap(MOVE_AWAY_FROM, boxAt(where, false)));
-    if (clear.length) return { where: clear[0], shrunk: false };
+    const clear = ["home", "other"].filter((where) => !overlap(MOVE_AWAY_FROM, boxAt(where, false)));
+    if (clear.length) return { where: clear[0], shrunk: false, fit: 0 };
+    // Only things near its top in the way (the website's menu): a shorter window below them
+    for (const where of ["home", "other"]) {
+      const h = fitBelow(where);
+      if (h) return { where, shrunk: false, fit: h };
+    }
     // Nowhere clear: shrink to the header bar, somewhere it's clear if possible
-    const where = ["home", "left"].find((w) => !overlap(MOVE_AWAY_FROM, boxAt(w, true))) || "home";
-    return { where, shrunk: true };
+    const where = ["home", "other"].find((w) => !overlap(MOVE_AWAY_FROM, boxAt(w, true))) || "home";
+    return { where, shrunk: true, fit: 0 };
+  }
+
+  // How tall the window can be at a spot if it stops just below the things to click in the top
+  // part of its box (at least 380px, or 0 when that won't work: something lower down is in the way)
+  function fitBelow(where) {
+    const box = boxAt(where, false);
+    const limit = box.top + (box.bottom - box.top) * 0.45;
+    let lowest = box.top;
+    for (const el of document.querySelectorAll(MOVE_AWAY_FROM)) {
+      if (widget.contains(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width * r.height > innerWidth * innerHeight * 0.4) continue;
+      const x1 = Math.max(r.left, box.left), x2 = Math.min(r.right, box.right);
+      const y1 = Math.max(r.top, box.top), y2 = Math.min(r.bottom, box.bottom);
+      if (x2 - x1 < 4 || y2 - y1 < 4) continue;
+      const under = document.elementsFromPoint((x1 + x2) / 2, (y1 + y2) / 2).find((found) => !widget.contains(found));
+      if (!under || !el.contains(under)) continue;
+      if (r.bottom > limit) return 0;
+      lowest = Math.max(lowest, r.bottom);
+    }
+    const h = Math.floor(box.bottom - lowest - 12);
+    return h >= 380 ? h : 0;
   }
 
   function checkPosition() {
     // Phones and tablets: always in its usual place, full size
     if (!isShowing() || matchMedia(PHONE).matches || fingerOnly()) {
-      if (spot !== "home" || small) place("home", false);
+      if (spot !== "home" || small || fit) place("home", false);
       return;
     }
     if (inUse() || !MOVE_AWAY_FROM) return;
     const best = bestPlace();
-    if (best.where === spot && best.shrunk === small) return;
+    if (best.where === spot && best.shrunk === small && best.fit === fit) return;
     // In the way where it is: move straight away
-    if (overlap(MOVE_AWAY_FROM, boxAt(spot, small))) return place(best.where, best.shrunk);
+    if (overlap(MOVE_AWAY_FROM, boxAt(spot, small, fit))) return place(best.where, best.shrunk, best.fit);
     // Not in the way, but somewhere better (e.g. back home, or full size
     // again): only once the page has been still for a moment
     clearTimeout(moveTimer);
     moveTimer = setTimeout(() => {
-      if (!inUse()) place(best.where, best.shrunk);
+      if (!inUse()) place(best.where, best.shrunk, best.fit);
     }, COME_BACK_AFTER);
   }
 
@@ -3104,6 +3145,39 @@ html.nv-site-cursor.nv-acted * {
 
   // Connect the buttons. If the chat is shrunk to its header bar, the chat
   // button opens it up instead of closing it.
+  // ===== THE CHAT BUTTON STAYS TAPPABLE =====
+  // A website's cookie banner (or anything else fixed along the bottom) can sit over the chat
+  // button. While it does, the button (and its speech bubble) lift just above it (--nv-lift in
+  // novabot.css). Checked as the page loads, when the window changes size and after a tap or
+  // click on the page (the banner goes away when it's accepted): no timers while idle.
+  let lift = 0;
+  function liftButton() {
+    const r = toggle.getBoundingClientRect();
+    if (!r.width) return;
+    const x = r.left + r.width / 2;
+    // Where the button would be without any lift
+    const y = Math.min(r.bottom + lift, innerHeight) - 4 - r.height / 2;
+    let top = innerHeight;
+    for (const el of document.elementsFromPoint(x, y)) {
+      if (widget.contains(el) || el === document.body || el === document.documentElement) continue;
+      // Only things fixed to the screen along the bottom (a banner), never the page's own content
+      let fixed = el;
+      while (fixed && fixed !== document.body && getComputedStyle(fixed).position !== "fixed" && getComputedStyle(fixed).position !== "sticky") fixed = fixed.parentElement;
+      if (!fixed || fixed === document.body) continue;
+      const b = fixed.getBoundingClientRect();
+      if (b.bottom >= innerHeight - 2 && b.height < innerHeight * 0.6) top = Math.min(top, b.top);
+    }
+    const next = top < innerHeight ? Math.max(0, Math.round(innerHeight - top - 24 + 8)) : 0;
+    if (next !== lift) {
+      lift = next;
+      widget.style.setProperty("--nv-lift", lift + "px");
+    }
+  }
+  const liftSoon = () => setTimeout(liftButton, 400);
+  window.addEventListener("resize", liftSoon, { passive: true });
+  document.addEventListener("click", (e) => { if (!widget.contains(e.target)) liftSoon(); }, true);
+  [300, 1500, 4000].forEach((ms) => setTimeout(liftButton, ms));
+
   toggle.addEventListener("click", () => {
     // Pressed before the page finished loading: show it now
     if (panel.classList.contains("nv-waiting")) {

@@ -959,7 +959,7 @@
 }
 
 /* ----- Phones: full screen chat ----- */
-@media (max-width: 480px), (max-height: 560px) {
+@media (max-width: 480px), (max-height: 560px) and (pointer: coarse) {
   #nv-chat-panel,
   #nv-chat-panel.nv-small {
     opacity: 1; /* full screen, so nothing to see through to */
@@ -1906,7 +1906,7 @@ html.nv-site-cursor button:disabled {
 .nv-card-book { margin-top: 4px; padding: 12px 16px; }
 
 /* Phones: already full screen, so booking mode only tucks things away */
-@media (max-width: 480px), (max-height: 560px) {
+@media (max-width: 480px), (max-height: 560px) and (pointer: coarse) {
   #nv-chat-panel.nv-booking {
     width: 100%;
     height: var(--nv-view-height, 100%);
@@ -1937,7 +1937,7 @@ html.nv-site-cursor button:disabled {
   from { opacity: 0.4; transform: scaleX(1); }
   to   { opacity: 0; transform: scaleX(0.4); filter: blur(2px); }
 }
-@media (max-width: 480px), (max-height: 560px) {
+@media (max-width: 480px), (max-height: 560px) and (pointer: coarse) {
   .nv-scroll-ghost { display: none; } /* phones hide the scrollbar until scrolling */
 }
 
@@ -1976,7 +1976,7 @@ html.nv-site-cursor button:disabled {
   from { opacity: 1; transform: scale(0.9); }
   to   { opacity: 0; transform: scale(1.9); }
 }
-@media (max-width: 480px), (max-height: 560px) {
+@media (max-width: 480px), (max-height: 560px) and (pointer: coarse) {
   /* Full screen on phones: fold down towards the bottom middle instead */
   #nv-chat-panel.nv-closing { transform-origin: 50% 100%; }
 }
@@ -2166,7 +2166,7 @@ html.nv-site-cursor button:disabled {
   height: calc(100vh - 130px);
   height: calc(100dvh - 130px);
 }
-@media (max-width: 480px), (max-height: 560px) {
+@media (max-width: 480px), (max-height: 560px) and (pointer: coarse) {
   .nv-panel-glow { display: none; } /* full screen on phones: nothing to glow round */
 }
 
@@ -2323,7 +2323,7 @@ html.nv-page-locked body {
 .nv-header {
   transition: padding 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-@media (max-width: 480px), (max-height: 560px) {
+@media (max-width: 480px), (max-height: 560px) and (pointer: coarse) {
   .nv-book { max-height: 80px; }
   .nv-tools { max-height: 80px; }
   #nv-chat-panel.nv-keyboard .nv-header {
@@ -2649,7 +2649,7 @@ html.nv-page-locked body {
 
 /* Phones: not the whole screen any more. A sheet from the bottom, about three quarters of the
    screen, the page still showing above it; the whole height only while the keyboard is up */
-@media (max-width: 480px), (max-height: 560px) {
+@media (max-width: 480px), (max-height: 560px) and (pointer: coarse) {
   #nv-chat-panel,
   #nv-chat-panel.nv-small {
     top: calc(var(--nv-view-top, 0px) + var(--nv-view-height, 100dvh) * 0.24);
@@ -2702,7 +2702,7 @@ html.nv-page-locked body {
   border-radius: 18px;
 }
 .nv-header { padding-left: 76px; padding-right: 76px; }
-@media (max-width: 480px), (max-height: 560px) {
+@media (max-width: 480px), (max-height: 560px) and (pointer: coarse) {
   #nv-chat-close { left: 4px; top: 2px; }
   .nv-header { padding-left: 68px; padding-right: 68px; }
 }
@@ -2857,4 +2857,201 @@ html.nv-page-locked body {
 #nv-chat.nv-lite #nv-chat-messages {
   margin-top: calc(-1 * var(--nv-peaks, 34px));
   padding-top: calc(22px + var(--nv-peaks, 34px));
+}
+
+/* ===================================================================================== */
+/* ----- 18 Nov 2026: the same sensible window on every screen ----- */
+
+/* A computer with a short window (under 561px high) keeps the computer window, never the phone
+   sheet: it sits beside the chat button and is as tall as the window allows. (The phone layout is
+   only for touch screens, see the "(pointer: coarse)" rules above.) */
+@media (min-width: 481px) and (max-height: 560px) and (pointer: fine) {
+  #nv-chat-panel,
+  #nv-chat-panel.nv-booking,
+  .nv-panel-glow,
+  #nv-chat-panel.nv-booking ~ .nv-panel-glow {
+    left: 100px;
+    right: auto;
+    bottom: 12px;
+    width: 380px;
+    height: calc(100dvh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+  #nv-chat-panel { transform-origin: 0 100%; }
+}
+
+/* A phone on its side: the sheet would only be about 260px high, so it takes the whole height */
+@media (max-height: 560px) and (pointer: coarse) and (orientation: landscape) {
+  #nv-chat-panel,
+  #nv-chat-panel.nv-small,
+  #nv-chat-panel.nv-booking {
+    top: var(--nv-view-top, 0px);
+    height: var(--nv-view-height, 100dvh);
+    border-radius: 0;
+  }
+}
+
+/* The chat button lifts above a cookie banner (or anything else fixed along the bottom of the
+   website) while that is showing, so it can always be tapped (novabot.js liftButton) */
+#nv-chat-toggle { bottom: calc(24px + var(--nv-lift, 0px)); transition: transform 0.15s ease, filter 0.15s ease, bottom 0.3s ease; }
+#nv-chat-teaser { bottom: calc(104px + var(--nv-lift, 0px)); }
+/* Made shorter so it sits just below the website's menu instead of covering it (novabot.js fitBelow) */
+#nv-chat.nv-fitted #nv-chat-panel:not(.nv-small),
+#nv-chat.nv-fitted #nv-chat-panel:not(.nv-small) ~ .nv-panel-glow {
+  height: var(--nv-fit-height);
+  max-height: var(--nv-fit-height);
+}
+/* Above the website's own layers (Squarespace's cookie banner sits at 300000), so the chat's message
+   box and buttons are never hidden behind them; the order among the chat's own parts stays the same */
+.nv-tint { z-index: 299990; }
+.nv-panel-glow { z-index: 300008; }
+#nv-chat-toggle, #nv-chat-teaser, #nv-chat-panel { z-index: 300009; }
+.nv-spark { z-index: 300011; }
+
+/* A computer window under 801px high: the window sits beside the chat button instead of above it,
+   so it keeps more height (and more room for the conversation) when it moves below the website's menu */
+@media (min-width: 481px) and (max-height: 800px) and (pointer: fine) {
+  #nv-chat-panel,
+  .nv-panel-glow {
+    left: 100px;
+    right: auto;
+    bottom: 12px;
+    height: min(600px, calc(100dvh - 24px));
+    max-height: calc(100dvh - 24px);
+  }
+  #nv-chat-panel { transform-origin: 0 100%; }
+}
+
+/* ===================================================================================== */
+/* ----- 18 Nov 2026: NovaBot sits on the LEFT of the screen (the user asked) -----
+   The chat button, its speech bubble and the window all start from the bottom left; the window
+   grows out of the button and folds back into it there. (novabot.js boxAt: "home" is the left,
+   the spot it moves to when it's in the way is the right.) */
+#nv-chat-toggle { right: auto; left: 24px; }
+#nv-chat-teaser { right: auto; left: 24px; transform-origin: 32px 100%; }
+.nv-teaser-open { text-align: left; }
+.nv-teaser-open::after { right: auto; left: 26px; }
+#nv-chat-panel,
+.nv-panel-glow {
+  right: auto;
+  left: 24px;
+  border-radius: 40px 40px 40px 52px; /* the rounder corner by the button */
+}
+#nv-chat-panel { transform-origin: 32px 100%; }
+#nv-chat-panel.nv-closing { transform-origin: 32px 100%; }
+@media (min-width: 481px) and (max-height: 800px) and (pointer: fine) {
+  #nv-chat-panel, .nv-panel-glow { left: 100px; } /* beside the button, as above */
+}
+/* Phones: the sheet and the full screen still fill the width */
+@media (max-width: 480px), (max-height: 560px) and (pointer: coarse) {
+  #nv-chat-panel,
+  #nv-chat-panel.nv-small { left: 0; right: auto; }
+  #nv-chat-panel { border-radius: 28px 28px 0 0; }
+  #nv-chat-panel.nv-keyboard { border-radius: 0; }
+}
+@media (max-height: 560px) and (pointer: coarse) and (orientation: landscape) {
+  #nv-chat-panel, #nv-chat-panel.nv-small, #nv-chat-panel.nv-booking { border-radius: 0; }
+}
+
+/* ----- The close button: a square place to press with the × in its middle, kept clear of the
+   window's rounded corner, with the same room round it on every screen ----- */
+#nv-chat-close {
+  left: 16px;
+  top: 14px;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  padding: 0 0 4px; /* the × sits a little high in its font: this centres it by eye */
+  margin: 0;
+  font-size: 44px;
+  font-weight: 300;
+  line-height: 1;
+  border-radius: 16px;
+  transform: none;
+}
+.nv-header { padding-left: 76px; padding-right: 76px; }
+/* Phones: the sheet's corners are less round, so it sits a little nearer them */
+@media (max-width: 480px), (max-height: 560px) and (pointer: coarse) {
+  #nv-chat-close { left: 12px; top: 12px; transform: none; }
+  .nv-header { padding-left: 72px; padding-right: 72px; }
+}
+/* A phone on its side (square corners, a slim header) */
+@media (max-height: 560px) and (pointer: coarse) and (orientation: landscape) {
+  #nv-chat-close { left: max(12px, env(safe-area-inset-left)); top: 6px; width: 44px; height: 44px; font-size: 40px; }
+}
+
+/* ----- The message scrollbar: glass, with a soft light running down its left edge ----- */
+#nv-chat-messages::-webkit-scrollbar-track {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 60%, rgba(255, 255, 255, 0.05));
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+#nv-chat-messages::-webkit-scrollbar-track:hover {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03) 60%, rgba(255, 255, 255, 0.07));
+  background-clip: padding-box;
+}
+#nv-chat-messages::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0.18) 28%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.14) 100%),
+    linear-gradient(180deg, rgba(255, 220, 240, 0.35) 0%, rgba(255, 220, 240, 0) 18%),
+    linear-gradient(180deg, rgba(208, 42, 125, 0.72), rgba(122, 31, 134, 0.66));
+  background-clip: padding-box;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -1px 0 rgba(40, 0, 40, 0.3);
+}
+#nv-chat-messages::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.22) 28%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.18) 100%),
+    linear-gradient(180deg, rgba(255, 220, 240, 0.4) 0%, rgba(255, 220, 240, 0) 18%),
+    linear-gradient(180deg, rgba(230, 60, 145, 0.82), rgba(140, 40, 160, 0.76));
+  background-clip: padding-box;
+}
+#nv-chat-messages::-webkit-scrollbar-thumb:active {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.25) 28%, rgba(255, 255, 255, 0) 55%, rgba(255, 255, 255, 0.2) 100%),
+    linear-gradient(180deg, rgba(255, 95, 168, 0.9), rgba(154, 47, 176, 0.85));
+  background-clip: padding-box;
+}
+/* Firefox draws only flat colours: a see-through pink on a faint glass track */
+@supports not selector(::-webkit-scrollbar) {
+  #nv-chat-messages { scrollbar-color: rgba(230, 120, 190, 0.75) rgba(40, 20, 60, 0.9); }
+}
+/* The fading trail behind the handle, in the same glass */
+.nv-scroll-ghost {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(180deg, rgba(208, 42, 125, 0.5), rgba(122, 31, 134, 0.4));
+}
+/* While the chat button is lifted above a cookie banner, the window above it rises with it, so the
+   button never sits on the window's corner (computers and tablets; phones use the sheet) */
+@media (min-width: 481px) and (min-height: 561px), (min-width: 481px) and (pointer: fine) {
+  #nv-chat-panel:not(.nv-keyboard),
+  .nv-panel-glow {
+    bottom: calc(104px + var(--nv-lift, 0px));
+    max-height: calc(100dvh - 130px - var(--nv-lift, 0px));
+  }
+  #nv-chat-panel:not(.nv-keyboard) { height: min(600px, calc(100dvh - 130px - var(--nv-lift, 0px))); }
+  /* (beside the button on short computer windows: no need to rise, nothing of it is under the banner) */
+  @media (min-width: 481px) and (max-height: 800px) and (pointer: fine) {
+    #nv-chat-panel:not(.nv-keyboard), .nv-panel-glow {
+      bottom: 12px;
+      height: min(600px, calc(100dvh - 24px));
+      max-height: calc(100dvh - 24px);
+    }
+  }
+  #nv-chat.nv-fitted #nv-chat-panel:not(.nv-small):not(.nv-keyboard),
+  #nv-chat.nv-fitted #nv-chat-panel:not(.nv-small) ~ .nv-panel-glow {
+    height: var(--nv-fit-height);
+    max-height: var(--nv-fit-height);
+  }
+  #nv-chat-panel.nv-small:not(.nv-keyboard) { height: var(--nv-small-height, 96px); }
+  #nv-chat-panel.nv-booking:not(.nv-keyboard) { height: min(720px, calc(100dvh - 130px - var(--nv-lift, 0px))); }
+}
+/* A phone on its side: the cogwheel sits in the footer row, clear of the message box */
+@media (max-height: 560px) and (pointer: coarse) and (orientation: landscape) {
+  .nv-gear { left: max(12px, env(safe-area-inset-left)); bottom: calc(4px + env(safe-area-inset-bottom)); width: 34px; height: 34px; }
+  .nv-gear svg { width: 18px; height: 18px; }
+  .nv-options { bottom: calc(46px + env(safe-area-inset-bottom)); }
 }

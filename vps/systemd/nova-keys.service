@@ -1,0 +1,8 @@
+[Unit]
+Description=Every hour: check the outside services' keys (Claude, Stripe) still work; fix or email the studio
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nova-keys-check
+Nice=10
