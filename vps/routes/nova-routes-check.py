@@ -144,9 +144,11 @@ for host in ("gmail-smtp-in.l.google.com", "mx00.ionos.co.uk"):
         break
     except OSError as e:
         mx_err = str(e)
-route(G, "port25", "Email leaves the server", "ok" if mx_ok else "down",
+VIA_GMAIL = env(BOT_ENV, "MAIL_VIA") == "gmail"
+route(G, "port25", "Email leaves the server", "ok" if mx_ok else ("idle" if VIA_GMAIL else "down"),
       "Nova can hand emails to other mail servers." if mx_ok else
-      "The VPS company blocks the mail ports (25, 587, 465). Invoices, reminders, replies, bookings, receipts and outreach go from the studio's Gmail instead; still lost: new-enquiry emails to staff, fan sign-ups and newsletters.",
+      ("Not used: the VPS company blocks the mail ports (25, 587, 465), so every Nova email goes from the studio's Gmail instead (MAIL_VIA=gmail)." if VIA_GMAIL else
+      "The VPS company blocks the mail ports (25, 587, 465). Invoices, reminders, replies, bookings, receipts and outreach go from the studio's Gmail instead; still lost: new-enquiry emails to staff, fan sign-ups and newsletters."),
       "" if mx_ok else mx_err, mx_ms if mx_ok else None)
 
 # Postfix's log, 35 days (the invoice list covers 30): each message's recipient, tries and outcome
@@ -178,6 +180,8 @@ delivered = [d for d in week if d["status"] == "sent"]
 lost = [d for d in week if d["status"] in ("expired", "bounced")]
 last_sent = max((d["last"] for d in msgs.values() if d["status"] == "sent"), default="")
 state = "ok" if (not lost and stuck == 0) else ("down" if not delivered and (lost or stuck) else "slow")
+if VIA_GMAIL and stuck <= 1:
+    state = "idle"  # nothing new goes this way (the one left is held on purpose: Rome Fortune #59, 18 Nov 2026)
 route(G, "delivery", "Mail-server emails (7 days)", state,
       f"Through the VPS's own mail server: {len(delivered)} delivered, {stuck} stuck now, {len(lost)} lost or refused.",
       f"last delivered {ago(last_sent) or 'not in 35 days'}")
@@ -205,6 +209,20 @@ if db_ok:
         "SELECT r.invoice_id, r.sent_at, i.bill_name, i.bill_email, i.total_pence FROM invoice_reminders r JOIN invoices i ON i.id = r.invoice_id "
         "WHERE r.status = 'sent' AND r.sent_at >= ?", (since,)).fetchall()
 
+    # Bounces that came back to the studio's Gmail (for emails Gmail sent): who and when
+    bounces = []
+    try:
+        bq = subprocess.run(["/usr/local/sbin/nova-gmail", "search", "newer_than:35d (from:mailer-daemon OR from:postmaster OR subject:(\"delivery status notification\") OR subject:undeliverable)"],
+                            capture_output=True, text=True, timeout=90)
+        for l in bq.stdout.splitlines():
+            b = json.loads(l)
+            try:
+                when = datetime.strptime(re.sub(r"\s*\(.*\)$", "", b["date"]).strip(), "%a, %d %b %Y %H:%M:%S %z").astimezone(timezone.utc).isoformat()[:16]
+            except ValueError:
+                when = ""
+            bounces.append({"at": when, "text": (b["subject"] + " " + b["snippet"]).lower()})
+    except Exception:  # noqa: BLE001
+        pass
     gmail_sent = {}  # invoice id -> when Gmail last sent an email about it (google_links "gmail-thread")
     for row in con.execute("SELECT nova_id, synced_at FROM google_links WHERE kind = 'gmail-thread' AND nova_id LIKE 'invoice:%'"):
         gmail_sent[row[0].split(":", 1)[1]] = row[1] or ""
@@ -227,7 +245,11 @@ if db_ok:
             # first choice); Gmail took it, and anything that bounces comes back to the studio's inbox
             g = gmail_sent.get(str(inv_id), "")
             if g and g[:10] >= t0[:10]:
-                return "arrived", "Sent from the studio's Gmail", g[:16]
+                back = next((b for b in bounces if email in b["text"] and (not b["at"] or b["at"] >= t0[:16])), None)
+                if back:
+                    why = "the address doesn't exist" if re.search(r"not found|does not exist|no such user|unknown user|address couldn", back["text"]) else "it came back undelivered"
+                    return "lost", f"Bounced back to the studio's Gmail: {why}", back["at"]
+                return "arrived", "Sent from the studio's Gmail (no bounce)", g[:16]
             return "unknown", "Not found in the mail log", ""
         if best["status"] == "sent":
             return "arrived", "Arrived in their inbox", best["last"][:16]

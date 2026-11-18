@@ -8,6 +8,7 @@
 // Every chat message is also saved for 90 days (see /admin/conversations).
 
 // Sends Portal notifications to staff phones
+import { sendFromGmail } from "./google/gmail.js";
 import { notifyPhones } from "./push.js";
 // The spam filter (likely spam goes to Portal's Spam folder, quietly)
 import { spamCheck, spamReason } from "./inbox.js";
@@ -249,7 +250,22 @@ export function pickSender(...values) {
   return "";
 }
 
-export async function sendEmail(env, { subject, text, html, replyTo, to, from, headers, idempotencyKey }) {
+// MAIL_VIA=gmail (18 Nov 2026: the VPS company blocks the mail ports, so the studio's mail server can
+// only queue emails that never get out): every email goes from the studio's Gmail instead, and if Gmail
+// can't send one, the caller is told so; nothing is left in a queue that can't get out.
+export async function sendEmail(env, msg) {
+  if (env.MAIL_VIA === "gmail") {
+    try {
+      return await sendFromGmail(env, { ...msg, to: msg.to || emailRecipients(env) }, null);
+    } catch (err) {
+      return { ok: false, status: err?.status || 0, message: `The studio's Gmail didn't send it (${err?.message || err}). Nothing was sent.` };
+    }
+  }
+  return mailServerSend(env, msg);
+}
+
+// The studio's own mail server (on the VPS: Postfix behind vps/mail)
+async function mailServerSend(env, { subject, text, html, replyTo, to, from, headers, idempotencyKey }) {
   if (!mailReady(env)) return { ok: false, message: "The studio's mail server isn't set up (MAIL_API_URL and MAIL_KEY)." };
   try {
     const res = await fetch(mailApiUrl(env) + "/emails", {

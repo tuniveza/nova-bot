@@ -2,7 +2,8 @@
 // Enquiries (Portal → Admin → Google → "Send from Gmail", "Replies into Enquiries").
 //
 // Sending: sendStudioEmail() sends the emails a person approved (enquiry replies, one-to-one
-// emails, invoices and their reminders). With MAIL_FIRST=vps the studio's own mail server sends
+// emails, invoices and their reminders). With MAIL_VIA=gmail (on the VPS since 18 Nov 2026: its mail
+// ports are blocked) every email goes from Gmail and there's no mail server behind it. With MAIL_FIRST=vps the studio's own mail server sends
 // them and Gmail is the backup. Otherwise, with Gmail connected and switched on, they go from the
 // studio's Gmail, so they're in its Sent folder and a reply comes straight back to it; each one
 // remembers its Gmail thread, so the next email about the same thing joins it. If Gmail turns one
@@ -57,6 +58,8 @@ export async function sendStudioEmail(env, msg, ref = null) {
       if (!(err instanceof GoogleError) || !err.status) {
         return { ok: false, message: "Gmail didn't answer in time: it may or may not have gone. Check the studio's Sent folder before trying again." };
       }
+      // Everything goes through Gmail anyway (MAIL_VIA=gmail): no mail server to fall back on
+      if (env.MAIL_VIA === "gmail") return { ok: false, status: err.status, message: `The studio's Gmail didn't send it (${err.message}). Nothing was sent.` };
       console.log(`Gmail turned an email down (${err.status}); sending through the studio's mail server instead`);
     }
   }

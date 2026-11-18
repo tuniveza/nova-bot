@@ -81,7 +81,7 @@ async function search(q) {
   for (const m of list.messages || []) {
     const msg = await gmail(`/messages/${m.id}?format=metadata&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=From`);
     const h = Object.fromEntries((msg.payload?.headers || []).map((x) => [x.name.toLowerCase(), x.value]));
-    console.log(JSON.stringify({ id: m.id, date: h.date || "", to: h.to || "", from: h.from || "", subject: h.subject || "", labels: msg.labelIds || [] }));
+    console.log(JSON.stringify({ id: m.id, date: h.date || "", to: h.to || "", from: h.from || "", subject: h.subject || "", snippet: msg.snippet || "", labels: msg.labelIds || [] }));
   }
 }
 
