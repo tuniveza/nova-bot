@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Nova Routes</title>
+<style>
+/* Nova Routes (18 Nov 2026): every exchange in Nova at a glance, so a bottleneck shows at once.
+   The data is vps/routes/nova-routes-check.py's routes.json (every 5 minutes), signed-in admins only. */
+:root {
+  --bg: #0d0816; --panel: rgba(30, 18, 46, .72); --line: rgba(229, 194, 224, .14);
+  --text: #f1e6f4; --dim: rgba(229, 194, 224, .66);
+  --ok: #4fd6a2; --slow: #f3c35a; --down: #ff5f7e; --idle: #8c84a6;
+  --pink: #ff5fa8; --violet: #9c6cff;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background:
+    radial-gradient(ellipse at 15% 0%, rgba(156, 23, 87, .22), transparent 55%),
+    radial-gradient(ellipse at 100% 100%, rgba(94, 27, 130, .28), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.app { height: 100%; display: grid; grid-template-rows: auto auto 1fr; gap: 10px; padding: 14px 16px; }
+header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+h1 { margin: 0; font-size: 18px; letter-spacing: .14em; text-transform: uppercase; font-weight: 800; }
+h1 b { color: var(--pink); }
+.checked { color: var(--dim); }
+.btn { margin-left: auto; background: rgba(255, 255, 255, .06); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; font: inherit; cursor: pointer; }
+.btn:hover { border-color: rgba(255, 95, 168, .5); }
+
+/* The bottlenecks, in one line: each jumps to its lane */
+.problems { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.problems .label { color: var(--dim); margin-right: 2px; }
+.pchip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(255, 95, 126, .14); border: 1px solid rgba(255, 95, 126, .4); color: var(--text); font: inherit; cursor: pointer; white-space: nowrap; }
+.pchip.slow { background: rgba(243, 195, 90, .1); border-color: rgba(243, 195, 90, .36); }
+.allgood { padding: 6px 12px; border-radius: 999px; background: rgba(79, 214, 162, .1); border: 1px solid rgba(79, 214, 162, .3); }
+
+/* Lanes and invoices side by side on a computer */
+main { min-height: 0; display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(340px, 1fr); gap: 12px; }
+.lanes { min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.col { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.lane { padding: 10px 12px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); }
+.lane.flash { border-color: rgba(255, 95, 168, .7); }
+/* The route itself: its steps in order, joined by arrows; a red step is the bottleneck */
+.chain { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 2px; }
+.step { display: inline-flex; flex-direction: column; gap: 3px; padding: 4px 9px 3px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); color: var(--text); font: inherit; cursor: pointer; text-align: left; }
+.step .top { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-weight: 600; }
+.step .dot { margin-top: 0; }
+.step.down { border-color: rgba(255, 95, 126, .55); background: rgba(255, 95, 126, .1); }
+.step.slow { border-color: rgba(243, 195, 90, .45); background: rgba(243, 195, 90, .07); }
+.step[aria-expanded="true"] { border-color: rgba(255, 95, 168, .75); }
+.step .strip { height: 3px; margin: 0; }
+.link { display: inline-flex; align-items: center; }
+.arrow { color: var(--dim); opacity: .6; padding: 0 3px; }
+.why { margin-top: 7px; display: grid; gap: 5px; }
+.why > div { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 8px; }
+.why .dot { margin-top: 4px; }
+.why b { font-weight: 650; }
+.why .t { color: var(--dim); }
+.why .down .t, .why > div.down .t { color: #ffc2cd; }
+.why small { color: var(--dim); opacity: .85; }
+.lane h2 { margin: 0; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
+.lane .path { color: var(--dim); font-size: 11.5px; margin: 1px 0 6px; }
+.route { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; column-gap: 8px; align-items: start; padding: 5px 0; border-top: 1px solid var(--line); }
+.route:first-of-type { border-top: 0; }
+.dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; background: var(--idle); }
+.ok > .dot, .dot.ok { background: var(--ok); box-shadow: 0 0 8px rgba(79, 214, 162, .55); }
+.slow > .dot, .dot.slow { background: var(--slow); box-shadow: 0 0 8px rgba(243, 195, 90, .55); }
+.down > .dot, .dot.down { background: var(--down); box-shadow: 0 0 9px rgba(255, 95, 126, .7); }
+.route .name { font-weight: 650; }
+.route .says { color: var(--dim); }
+.route.down .says { color: #ffc2cd; }
+.route .detail { color: var(--dim); font-size: 11px; opacity: .8; }
+.route .ms { color: var(--dim); font-size: 11px; white-space: nowrap; }
+.strip { display: flex; gap: 1px; height: 5px; }
+.strip i { flex: 1; border-radius: 1px; background: var(--idle); opacity: .55; }
+.strip i.ok { background: var(--ok); } .strip i.slow { background: var(--slow); opacity: .8; } .strip i.down { background: var(--down); opacity: .9; }
+
+/* Invoices */
+.invoices { min-height: 0; display: flex; flex-direction: column; padding: 10px 12px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); }
+.inv-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.inv-head h2 { margin: 0; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
+.inv-head .count { color: var(--dim); }
+.chips { margin-left: auto; display: flex; gap: 4px; }
+.chip { background: none; color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.chip[aria-pressed="true"] { color: var(--text); border-color: rgba(255, 95, 168, .6); background: rgba(255, 95, 168, .12); }
+.list { flex: 1; min-height: 0; margin-top: 8px; display: flex; flex-direction: column; }
+.inv { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; column-gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.inv:first-child { border-top: 0; }
+.inv .who { font-weight: 650; }
+.inv .who small { color: var(--dim); font-weight: 400; }
+.inv .res { color: var(--dim); }
+.inv.lost .res, .inv.unknown .res { color: #ffc2cd; }
+.inv.stuck .res { color: #ffe1a3; }
+.inv .amt { text-align: right; white-space: nowrap; }
+.inv .amt small { display: block; color: var(--dim); }
+.dot.arrived { background: var(--ok); } .dot.lost, .dot.unknown { background: var(--down); } .dot.stuck { background: var(--slow); } .dot.link { background: var(--idle); }
+.pager { display: flex; align-items: center; justify-content: center; gap: 10px; padding-top: 6px; color: var(--dim); }
+.pager button { background: none; color: var(--text); border: 1px solid var(--line); border-radius: 8px; width: 34px; height: 28px; font: inherit; cursor: pointer; }
+.pager button:disabled { opacity: .3; cursor: default; }
+.note { color: var(--dim); font-size: 11.5px; margin-top: 6px; }
+
+.gate { margin: 12vh auto; max-width: 420px; text-align: center; padding: 24px; border-radius: 18px; background: var(--panel); border: 1px solid var(--line); }
+.gate a { color: var(--pink); }
+
+/* Narrow screens (phones): one column, the page scrolls */
+@media (max-width: 860px) {
+  html, body { height: auto; }
+  .app { height: auto; }
+  main { grid-template-columns: 1fr; }
+  .lanes { grid-template-columns: 1fr; }
+  .list { display: block; }
+  .problem { flex-wrap: wrap; }
+  .problem .since { margin-left: 0; }
+}
+/* Short computer windows: the page may scroll rather than cut anything */
+@media (min-width: 861px) and (max-height: 700px) {
+  html, body { height: auto; }
+  .app { height: auto; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header>
+    <h1>Nova <b>Routes</b></h1>
+    <span class="checked" id="checked">Loading…</span>
+    <button class="btn" id="refresh" type="button">Refresh</button>
+  </header>
+  <section class="problems" id="problems" aria-live="polite"></section>
+  <main>
+    <section class="lanes" id="lanes" aria-label="Routes"></section>
+    <section class="invoices" aria-label="Invoices">
+      <div class="inv-head">
+        <h2>Invoices: did they arrive?</h2>
+        <span class="count" id="inv-count"></span>
+        <div class="chips">
+          <button class="chip" type="button" data-f="problems" aria-pressed="true">Problems</button>
+          <button class="chip" type="button" data-f="all" aria-pressed="false">All</button>
+        </div>
+      </div>
+      <div class="list" id="list"></div>
+      <div class="pager" id="pager" hidden>
+        <button type="button" id="prev" aria-label="Previous page">‹</button>
+        <span id="page"></span>
+        <button type="button" id="next" aria-label="Next page">›</button>
+      </div>
+      <div class="note">Last 30 days. "Sent" in the Invoicer means handed to Nova's mail server; this shows whether it really reached the client.</div>
+    </section>
+  </main>
+</div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const money = (p) => p == null ? "" : "£" + (p / 100).toLocaleString("en-GB", { minimumFractionDigits: p % 100 ? 2 : 0 });
+  const when = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso.length <= 16 ? iso + ":00Z" : iso);
+    return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  };
+  const agoText = (iso) => {
+    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (s < 90) return "just now";
+    if (s < 5400) return Math.round(s / 60) + " min ago";
+    return Math.round(s / 3600) + " h ago";
+  };
+  let data = null, filter = "problems", page = 0, open = "";
+
+  function render() {
+    const d = data;
+    $("checked").textContent = "Checked " + agoText(d.checked) + " · every 5 minutes";
+    // The bottlenecks, worst first
+    const bad = d.routes.filter((r) => r.state === "down" || r.state === "slow").sort((a, b) => (a.state === "down" ? 0 : 1) - (b.state === "down" ? 0 : 1));
+    $("problems").innerHTML = bad.length
+      ? `<span class="label">Bottlenecks:</span>` + bad.map((r) => `<button type="button" class="pchip ${r.state}" data-go="${esc(r.group)}" data-id="${esc(r.id)}"><span class="dot ${r.state}"></span>${esc(r.name)}</button>`).join("")
+      : `<div class="allgood">Every route is working.</div>`;
+    // One lane per route group: its steps in order, then what's wrong (or the step tapped)
+    const cards = d.groups.map((g) => {
+      const rs = d.routes.filter((r) => r.group === g.id);
+      if (!rs.length) return "";
+      const shown = rs.filter((r) => r.state === "down" || r.state === "slow" || r.id === open);
+      return `<article class="lane" id="lane-${esc(g.id)}"><h2>${esc(g.name)}</h2><div class="path">${esc(g.path)}</div>
+        <div class="chain">${rs.map((r, i) => `<span class="link">${i ? '<span class="arrow" aria-hidden="true">→</span>' : ""}<button type="button" class="step ${r.state}" data-id="${esc(r.id)}" aria-expanded="${r.id === open}">
+          <span class="top"><span class="dot ${r.state}"></span>${esc(r.name)}</span>
+          <span class="strip" aria-label="Last 24 hours">${(r.history || []).slice(-48).map((h) => `<i class="${h}"></i>`).join("")}</span></button></span>`).join("")}</div>
+        ${shown.length ? `<div class="why">${shown.map((r) => `<div class="${r.state}"><span class="dot ${r.state}"></span><div><b>${esc(r.name)}</b>${r.since && r.state !== "ok" ? ` <small>· ${r.since === "over 24 h" ? "over 24 h" : "since " + esc(when(r.since))}</small>` : ""}<div class="t">${esc(r.says)}</div>${r.detail || r.ms != null ? `<small>${esc(r.detail)}${r.detail && r.ms != null ? " · " : ""}${r.ms != null ? r.ms + " ms" : ""}</small>` : ""}</div></div>`).join("")}</div>` : ""}
+      </article>`;
+    });
+    // Two columns, each lane its own height: every lane goes in the shorter column so far (by how
+    // much it shows), so neither column runs much longer than the other
+    const cols = [[], []], size = [0, 0];
+    d.groups.forEach((g, i) => {
+      if (!cards[i]) return;
+      const rs = d.routes.filter((r) => r.group === g.id);
+      const h = 3 + rs.length + rs.filter((r) => r.state !== "ok" || r.id === open).length * 3;
+      const c = size[0] <= size[1] ? 0 : 1;
+      cols[c].push(cards[i]); size[c] += h;
+    });
+    // Phones: one column, the lanes with a bottleneck first
+    if (matchMedia("(max-width: 860px)").matches) {
+      const worst = (g) => { const st = d.routes.filter((r) => r.group === g.id).map((r) => r.state); return st.includes("down") ? 0 : st.includes("slow") ? 1 : 2; };
+      const order = d.groups.map((g, i) => [worst(g), i]).sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+      $("lanes").innerHTML = `<div class="col">${order.map(([, i]) => cards[i]).join("")}</div>`;
+    } else {
+      $("lanes").innerHTML = cols.map((c) => `<div class="col">${c.join("")}</div>`).join("");
+    }
+    renderInvoices();
+  }
+
+  function renderInvoices() {
+    const all = data.invoices || [];
+    const problems = all.filter((i) => i.result !== "arrived" && i.result !== "link");
+    $("inv-count").textContent = `${problems.length} of ${all.filter((i) => i.result !== "link").length} emailed didn't arrive`;
+    const rows = filter === "problems" ? problems : all;
+    const list = $("list");
+    const item = (i) => `<div class="inv ${i.result}">
+        <span class="dot ${i.result}"></span>
+        <div><div class="who">${esc(i.name)} <small>${esc(i.what)} #${esc(i.no)}${i.to ? " · " + esc(i.to) : ""}</small></div>
+        <div class="res">${esc(i.says)}${i.at && i.result === "arrived" ? " · " + esc(when(i.at)) : i.at && i.result === "lost" ? " (gave up " + esc(when(i.at)) + ")" : ""}</div></div>
+        <div class="amt">${money(i.total)}<small>${esc(when(i.sent))}</small></div></div>`;
+    if (!rows.length) { list.innerHTML = `<div class="note">${filter === "problems" ? "Every invoice email arrived." : "No invoices in the last 30 days."}</div>`; $("pager").hidden = true; return; }
+    // On a computer: as many rows as fit, then pages (never a scroll box). Phones: all of them.
+    if (matchMedia("(max-width: 860px)").matches) { list.innerHTML = rows.map(item).join(""); $("pager").hidden = true; return; }
+    list.innerHTML = item(rows[0]);
+    const rowH = list.firstElementChild.getBoundingClientRect().height || 48;
+    $("pager").hidden = false;
+    const per = Math.max(3, Math.floor((list.clientHeight - 2) / rowH));
+    const pages = Math.max(1, Math.ceil(rows.length / per));
+    page = Math.min(page, pages - 1);
+    list.innerHTML = rows.slice(page * per, page * per + per).map(item).join("");
+    $("pager").hidden = pages < 2;
+    $("page").textContent = `${page + 1} / ${pages}`;
+    $("prev").disabled = page === 0;
+    $("next").disabled = page >= pages - 1;
+  }
+
+  async function load() {
+    try {
+      const res = await fetch("data/routes.json?t=" + Date.now(), { credentials: "same-origin", cache: "no-store" });
+      if (res.status === 401 || res.status === 403) return gate();
+      if (!res.ok) throw new Error("answer " + res.status);
+      data = await res.json();
+      render();
+    } catch (e) {
+      $("checked").textContent = "Couldn't load the routes (" + e.message + "). Trying again in a minute.";
+    }
+  }
+  function gate() {
+    $("app").innerHTML = `<div class="gate"><h1>Nova <b>Routes</b></h1><p>Sign in to Nova as an admin first, then come back to this page.</p><p><a href="/agent/">Open Nova Desk</a> · <a href="/phone/">Open Nova Phone</a></p></div>`;
+  }
+
+  document.querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => {
+    filter = b.dataset.f; page = 0;
+    document.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", c === b ? "true" : "false"));
+    if (data) renderInvoices();
+  }));
+  // Tap a step: its details under the lane (tap again to close). Tap a bottleneck: go to its lane.
+  document.addEventListener("click", (e) => {
+    const step = e.target.closest(".step");
+    if (step) { open = open === step.dataset.id ? "" : step.dataset.id; render(); return; }
+    const chip = e.target.closest(".pchip");
+    if (chip) {
+      const lane = $("lane-" + chip.dataset.go);
+      if (lane) { lane.scrollIntoView({ block: "nearest", behavior: "smooth" }); lane.classList.add("flash"); setTimeout(() => lane.classList.remove("flash"), 1200); }
+    }
+  });
+  $("prev").addEventListener("click", () => { page--; renderInvoices(); });
+  $("next").addEventListener("click", () => { page++; renderInvoices(); });
+  $("refresh").addEventListener("click", load);
+  let resizeT; addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => data && render(), 150); });
+  // Fresh data every minute while the page is showing; nothing while it's hidden
+  let timer = null;
+  const tick = () => { clearInterval(timer); timer = document.hidden ? null : setInterval(load, 60000); };
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); tick(); });
+  load(); tick();
+})();
+</script>
+</body>
+</html>

@@ -7,10 +7,23 @@
 	handle @inside {
 		respond 404
 	}
-	# The VPS's desktop (Computer panel; vps/desktop-setup.sh): signed-in admins only, asked of Nova Bot first.
-	# (Here too, not only added by desktop-setup.sh: vps/deploy.sh writes this file afresh on every deploy)
-	@desk path /vps-desktop /vps-desktop/*
-	handle @desk {
+	# The VPS's terminal (Computer panel; vps/terminal-setup.sh): signed-in admins only, asked of Nova Bot first.
+	# (Here too, not only set up by terminal-setup.sh: vps/deploy.sh writes this file afresh on every deploy)
+	redir /vps-terminal /vps-terminal/ 308
+	redir /vps-terminal/view /vps-terminal/view/ 308
+	# View only (read-only, port 7682), checked before the one that types (7681)
+	@termview path /vps-terminal/view/*
+	handle @termview {
+		forward_auth 127.0.0.1:8787 {
+			uri /app/api/admin-check
+			header_up -Sec-Fetch-Dest
+			header_up -Sec-Fetch-Mode
+			header_up Accept application/json
+		}
+		reverse_proxy 127.0.0.1:7682
+	}
+	@term path /vps-terminal/*
+	handle @term {
 		forward_auth 127.0.0.1:8787 {
 			uri /app/api/admin-check
 			# A plain question, not a page: without these Nova Bot would send a browser's page request on to Nova Agent
@@ -18,17 +31,41 @@
 			header_up -Sec-Fetch-Mode
 			header_up Accept application/json
 		}
-		handle /vps-desktop/websockify {
-			reverse_proxy 127.0.0.1:6081
-		}
-		handle_path /vps-desktop/* {
-			root * /usr/share/novnc
-			file_server
-		}
+		reverse_proxy 127.0.0.1:7681
 	}
+	# The old desktop's address (20 Oct 2026: the VPS has no desktop any more, only the terminal)
+	@desk path /vps-desktop /vps-desktop/*
+	redir @desk /vps-terminal/ 302
 	# Computer's status service (token only: vps/desk-status/server.mjs)
 	handle /desk-status/* {
 		reverse_proxy 127.0.0.1:8788
+	}
+	# Routes (18 Nov 2026): how every exchange in Nova is doing, so a bottleneck shows at once (vps/routes/,
+	# data written every 5 minutes by nova-routes-check). The page holds nothing itself; its data is for
+	# signed-in admins only, asked of Nova Bot first.
+	redir /routes /routes/ 308
+	@routesdata path /routes/data/*
+	handle @routesdata {
+		forward_auth 127.0.0.1:8787 {
+			uri /app/api/admin-check
+			header_up -Sec-Fetch-Dest
+			header_up -Sec-Fetch-Mode
+			header_up Accept application/json
+		}
+		uri strip_prefix /routes
+		root * /srv/nova-routes
+		header Cache-Control "no-store"
+		file_server
+	}
+	@routespage {
+		path /routes/*
+		not path /routes/data/*
+	}
+	handle @routespage {
+		uri strip_prefix /routes
+		root * /srv/nova-routes
+		header Cache-Control "no-store"
+		file_server
 	}
 	# Files (17 Oct 2026): the panels' scripts, styles, pictures and sounds straight from disk, never
 	# through the runtime: wrangler dev kept memory for every file it handed out, three requests in four
@@ -58,6 +95,10 @@
 			# The runtime's own proxy (wrangler dev) answers on plain http, so the redirects it sends
 			# say http://<this address>/…; people only ever use https here, so say that (one hop less)
 			header_down Location "^http://((nova\.novacane\.co\.uk|[0-9-]+\.sslip\.io)(/|$))" "https://$1"
+			# (20 Oct 2026) While Nova Bot restarts (about a second), wait for it rather than answer
+			# "Nova is restarting": a restart for memory, a deploy or a fresh start is then just a short pause
+			lb_try_duration 30s
+			lb_try_interval 250ms
 		}
 	}
 	log {

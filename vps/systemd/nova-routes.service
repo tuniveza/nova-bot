@@ -1,0 +1,9 @@
+[Unit]
+Description=Every 5 minutes: check every route in Nova for the Routes page (/routes/)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nova-routes-check
+Nice=10
+TimeoutStartSec=170
