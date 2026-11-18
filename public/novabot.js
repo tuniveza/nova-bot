@@ -3014,6 +3014,8 @@
     const arrow = (dx) => `<path d='M${3 + dx} ${2 + dx}l19 9.5-8 2.3-4 7.7z' fill='url(#g)' stroke='${look.edge}' stroke-width='${look === CURSOR_LOOKS.mono ? 1.3 : 1.6}' stroke-linejoin='round'/>`;
     const svg = (w, h, inner) => `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' viewBox='0 0 ${w} ${h}'>${inner}</svg>`;
     const beam = `<path d='M5.5 3h9M10 3v22M5.5 25h9' fill='none' stroke='${A}' stroke-width='3' stroke-linecap='round'/><path d='M5.5 3h9M10 3v22M5.5 25h9' fill='none' stroke='#fff' stroke-width='1' stroke-linecap='round'/>`;
+    const hand = `${cursorUrl(svg(30, 30, g + look.ring(A) + arrow(1)))} 4 3, pointer`;
+    // (the class written twice: these must win over novabot.css's own pink ones, whichever loads last)
     return `html.nv-site-cursor,
 html.nv-site-cursor * {
   cursor: ${cursorUrl(svg(28, 28, g + arrow(0) + look.accent(A, B, C)))} 3 2, auto;
@@ -3030,7 +3032,11 @@ html.nv-site-cursor input[type="checkbox"],
 html.nv-site-cursor input[type="radio"],
 html.nv-site-cursor #nv-chat-panel.nv-small,
 html.nv-site-cursor #nv-chat-panel.nv-small * {
-  cursor: ${cursorUrl(svg(30, 30, g + look.ring(A) + arrow(1)))} 4 3, pointer;
+  cursor: ${hand};
+}
+html.nv-site-cursor [data-nv-point]:not(:disabled, .nv-book-busy),
+html.nv-site-cursor [data-nv-point]:not(:disabled, .nv-book-busy) *:not(input, textarea, select) {
+  cursor: ${hand} !important;
 }
 html.nv-site-cursor input:not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 html.nv-site-cursor textarea,
@@ -3042,7 +3048,11 @@ html.nv-site-cursor.nv-acted,
 html.nv-site-cursor.nv-acted * {
   cursor: ${cursorUrl(`<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10.5' fill='${A}' fill-opacity='0.18'/><path d='M20.19 6.26A10 10 0 0 1 6.26 20.19M3.81 17.74A10 10 0 0 1 17.74 3.81' fill='none' stroke='${A}' stroke-width='2.4'/><path d='M3.9 20.1 11.3 7.5M12.5 8.3 13.5 16M14.7 16.5 20.1 3.9' fill='none' stroke='#fff' stroke-width='1.9'/></svg>`)} 16 16, pointer;
 }
-`;
+html.nv-site-cursor.nv-acted [data-nv-point],
+html.nv-site-cursor.nv-acted [data-nv-point] * {
+  cursor: ${cursorUrl(`<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><circle cx='12' cy='12' r='10.5' fill='${A}' fill-opacity='0.18'/><path d='M20.19 6.26A10 10 0 0 1 6.26 20.19M3.81 17.74A10 10 0 0 1 17.74 3.81' fill='none' stroke='${A}' stroke-width='2.4'/><path d='M3.9 20.1 11.3 7.5M12.5 8.3 13.5 16M14.7 16.5 20.1 3.9' fill='none' stroke='#fff' stroke-width='1.9'/></svg>`)} 16 16, pointer !important;
+}
+`.replace(/html\.nv-site-cursor/g, "html.nv-site-cursor.nv-site-cursor");
   }
   let cursorStyle = null;
   function themeCursors(t) {
@@ -3321,6 +3331,22 @@ html.nv-site-cursor.nv-acted * {
   // and tablets are left alone.)
   const CLICKABLE = 'a, button, [role="button"], label, select, summary, input[type="submit"], input[type="button"]';
   document.documentElement.classList.add("nv-site-cursor");
+
+  // Squarespace's own buttons (the music player, the social icons, "Subscribe") ask for the
+  // plain hand with stronger CSS than ours. Whatever shows the plain hand under the mouse is
+  // marked, and novabot.css gives it the Novacane hand (in the chosen theme) instead.
+  const handChecked = new WeakSet();
+  document.addEventListener(
+    "mouseover",
+    (e) => {
+      for (let el = e.target; el && el.nodeType === 1 && el !== document.body; el = el.parentElement) {
+        if (handChecked.has(el)) continue;
+        handChecked.add(el);
+        if (getComputedStyle(el).cursor === "pointer") el.setAttribute("data-nv-point", "");
+      }
+    },
+    { passive: true }
+  );
 
   // Just after a click on something, the cursor becomes the Novacane sigil for a moment
   let actedTimer = null;
