@@ -9,7 +9,7 @@
 #   - Nova Bot's own log: new Claude errors in the last hour
 # Fixes what it safely can: if one copy of the Claude key works and another doesn't, the working one is
 # copied over (with a backup) and the service restarted.
-# Tells the studio: one email a day per problem to ALERT_TO while it lasts, and one when it's fixed.
+# Tells the studio (email + Nova alert, tell()): once a day per problem to ALERT_TO while it lasts, and one when it's fixed.
 # Nothing secret is ever written to the log or the email (only the last 4 characters of a key).
 set -uo pipefail
 
@@ -24,6 +24,15 @@ AGENT=/etc/nova-agent/agent.env
 val() { grep -m1 "^$2=" "$1" 2>/dev/null | cut -d= -f2- | sed 's/^"//; s/"$//'; }
 tail4() { local k="$1"; echo "…${k: -4}"; }
 code() { curl -s -o /dev/null -m 20 -w '%{http_code}' "$@"; }
+
+# Tell the studio both ways: an email, and a Nova alert (Portal → Alerts and the phones signed up for
+# them), so it still arrives when email can't get out
+tell() { # tell <subject> <message>
+  printf 'From: Nova <%s>\nTo: %s\nSubject: %s\n\n%s\n' "$FROM" "$ALERT_TO" "$1" "$2" | /usr/sbin/sendmail -t
+  local key; key=$(val $BOT AGENT_NOVA_KEY)
+  [ -n "$key" ] && python3 -c 'import json,sys; print(json.dumps({"title": sys.argv[1], "message": sys.argv[2], "source": "agent", "tag": "keys", "urgent": True}))' "$1" "$2" \
+    | curl -s -o /dev/null -m 20 -X POST https://nova.novacane.co.uk/nova-agent/notify -H "Authorization: Bearer $key" -H 'Content-Type: application/json' --data-binary @- || true
+}
 
 claude_ok() { [ -n "$1" ] && [ "$(code https://api.anthropic.com/v1/models -H "x-api-key: $1" -H 'anthropic-version: 2023-06-01')" = 200 ]; }
 
@@ -49,8 +58,7 @@ else
     case "$fixed" in *"$AGENT"*) systemctl restart nova-agent ;; esac
     case "$fixed" in *"/srv/nova/"*) systemctl restart nova ;; esac
     echo "copied the working Claude key ($(tail4 "$good")) to:$fixed"
-    printf 'The Claude key had stopped working in part of Nova. The working key (%s) was copied to:%s\nand the services restarted. Nothing for you to do.\n' "$(tail4 "$good")" "$fixed" \
-      | { printf 'From: Nova <%s>\nTo: %s\nSubject: Nova: Claude key fixed automatically\n\n' "$FROM" "$ALERT_TO"; cat; } | /usr/sbin/sendmail -t
+    tell "Claude key fixed automatically" "The Claude key had stopped working in part of Nova. The working key ($(tail4 "$good")) was copied to:$fixed and the services restarted. Nothing for you to do."
   fi
 fi
 
@@ -82,8 +90,7 @@ for p in "${problems[@]}"; do
   echo "PROBLEM $id: $msg"
   last=$(cat "$STATE/$id" 2>/dev/null || echo 0)
   if [ $((now - last)) -ge 86400 ]; then
-    { printf 'From: Nova <%s>\nTo: %s\nSubject: Nova: a key needs replacing (%s)\n\n' "$FROM" "$ALERT_TO" "$id"
-      printf '%s\n\nChecked %s on the VPS. You will get this once a day until it is fixed.\n' "$msg" "$(date '+%d %b %Y %H:%M')"; } | /usr/sbin/sendmail -t
+    tell "A key needs replacing ($id)" "$msg (Checked $(date '+%d %b %Y %H:%M') on the VPS. You will get this once a day until it is fixed.)"
     echo "$now" > "$STATE/$id"
   fi
 done
@@ -91,8 +98,7 @@ for f in "$STATE"/*; do
   [ -e "$f" ] || continue
   id=$(basename "$f")
   case " $active " in *" $id "*) ;; *)
-    { printf 'From: Nova <%s>\nTo: %s\nSubject: Nova: %s is working again\n\n' "$FROM" "$ALERT_TO" "$id"
-      printf 'The problem with %s is over (checked %s).\n' "$id" "$(date '+%d %b %Y %H:%M')"; } | /usr/sbin/sendmail -t
+    tell "$id is working again" "The problem with $id is over (checked $(date '+%d %b %Y %H:%M'))."
     rm -f "$f"; echo "recovered $id" ;;
   esac
 done
