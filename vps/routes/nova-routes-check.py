@@ -146,7 +146,7 @@ for host in ("gmail-smtp-in.l.google.com", "mx00.ionos.co.uk"):
         mx_err = str(e)
 route(G, "port25", "Email leaves the server", "ok" if mx_ok else "down",
       "Nova can hand emails to other mail servers." if mx_ok else
-      "The server can't reach other mail servers (port 25 blocked): no email from Nova arrives. Ask the VPS company to unblock it, or send through a mail service.",
+      "The server can't reach other mail servers (ports 25, 587 and 465 blocked by the VPS company). Invoices, reminders, receipts and replies now go from the studio's Gmail instead; still lost: new-enquiry emails to staff, fan sign-ups, newsletters and outreach.",
       "" if mx_ok else mx_err, mx_ms if mx_ok else None)
 
 # Postfix's log, 35 days (the invoice list covers 30): each message's recipient, tries and outcome
@@ -196,7 +196,11 @@ if db_ok:
         "SELECT r.invoice_id, r.sent_at, i.bill_name, i.bill_email, i.total_pence FROM invoice_reminders r JOIN invoices i ON i.id = r.invoice_id "
         "WHERE r.status = 'sent' AND r.sent_at >= ?", (since,)).fetchall()
 
-    def outcome(email, sent_at):
+    gmail_sent = {}  # invoice id -> when Gmail last sent an email about it (google_links "gmail-thread")
+    for row in con.execute("SELECT nova_id, synced_at FROM google_links WHERE kind = 'gmail-thread' AND nova_id LIKE 'invoice:%'"):
+        gmail_sent[row[0].split(":", 1)[1]] = row[1] or ""
+
+    def outcome(email, sent_at, inv_id=None):
         """What happened to the email sent to `email` around `sent_at`"""
         if not email:
             return "link", "Not emailed (shared by link or paid in person)", ""
@@ -210,6 +214,11 @@ if db_ok:
                 best = d
                 break
         if not best:
+            # Not through the mail server: sent from the studio's Gmail instead (since 18 Nov 2026 the
+            # first choice); Gmail took it, and anything that bounces comes back to the studio's inbox
+            g = gmail_sent.get(str(inv_id), "")
+            if g and g[:10] >= t0[:10]:
+                return "arrived", "Sent from the studio's Gmail", g[:16]
             return "unknown", "Not found in the mail log", ""
         if best["status"] == "sent":
             return "arrived", "Arrived in their inbox", best["last"][:16]
@@ -225,12 +234,12 @@ if db_ok:
         return "stuck", f"Stuck, still trying ({best['tries']} tries)", best["last"][:16]
 
     for r in rows:
-        kind, says, at = outcome(r["bill_email"], r["sent_at"])
+        kind, says, at = outcome(r["bill_email"], r["sent_at"], r["id"])
         invoices.append({"no": r["seq"], "name": r["bill_name"], "what": "Invoice", "by": r["created_by"], "sent": r["sent_at"][:16],
                          "total": r["total_pence"], "paid": r["paid_pence"], "status": r["status"],
                          "to": (r["bill_email"] or "").split("@")[-1], "result": kind, "says": says, "at": at})
     for r in rem:
-        kind, says, at = outcome(r["bill_email"], r["sent_at"])
+        kind, says, at = outcome(r["bill_email"], r["sent_at"], r["invoice_id"])
         invoices.append({"no": r["invoice_id"], "name": r["bill_name"], "what": "Reminder", "by": "", "sent": r["sent_at"][:16],
                          "total": r["total_pence"], "paid": None, "status": "", "to": (r["bill_email"] or "").split("@")[-1],
                          "result": kind, "says": says, "at": at})
