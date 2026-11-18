@@ -13,7 +13,7 @@
 # Nothing secret is ever written to the log or the email (only the last 4 characters of a key).
 set -uo pipefail
 
-ALERT_TO="${ALERT_TO:-admin@kulturekingdom.uk}"
+ALERT_TO="${ALERT_TO:-$(cat /srv/nova/owner-email)}"
 FROM="hello@novacane.co.uk"
 STATE=/var/lib/nova/keys-check
 mkdir -p "$STATE"
@@ -28,7 +28,9 @@ code() { curl -s -o /dev/null -m 20 -w '%{http_code}' "$@"; }
 # Tell the studio both ways: an email, and a Nova alert (Portal → Alerts and the phones signed up for
 # them), so it still arrives when email can't get out
 tell() { # tell <subject> <message>
-  printf 'From: Nova <%s>\nTo: %s\nSubject: %s\n\n%s\n' "$FROM" "$ALERT_TO" "$1" "$2" | /usr/sbin/sendmail -t
+  # (email from the studio's Gmail: the VPS can't use the mail ports. Routes emails the owner about
+  # broken keys too, so this only says what it fixed by itself)
+  case "$1" in *"fixed automatically"*) printf '%s\n' "$2" | /usr/local/sbin/nova-gmail send "$ALERT_TO" "Nova: $1" >/dev/null || true ;; esac
   local key; key=$(val $BOT AGENT_NOVA_KEY)
   [ -n "$key" ] && python3 -c 'import json,sys; print(json.dumps({"title": sys.argv[1], "message": sys.argv[2], "source": "agent", "tag": "keys", "urgent": True}))' "$1" "$2" \
     | curl -s -o /dev/null -m 20 -X POST https://nova.novacane.co.uk/nova-agent/notify -H "Authorization: Bearer $key" -H 'Content-Type: application/json' --data-binary @- || true

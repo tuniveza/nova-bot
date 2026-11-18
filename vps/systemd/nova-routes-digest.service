@@ -1,0 +1,9 @@
+[Unit]
+Description=Nova Routes digest for the owner (morning, afternoon, end of day)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flock /var/lib/nova/routes.lock /usr/local/sbin/nova-routes-check --digest
+Nice=10
+TimeoutStartSec=170

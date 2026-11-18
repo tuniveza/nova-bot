@@ -1,0 +1,9 @@
+[Unit]
+Description=Nova Routes digest: 08:00, 13:00 and 18:00 London time
+
+[Timer]
+OnCalendar=*-*-* 08,13,18:00:00 Europe/London
+Persistent=true
+
+[Install]
+WantedBy=timers.target

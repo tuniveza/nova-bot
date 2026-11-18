@@ -4,6 +4,6 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/nova-routes-check
+ExecStart=/usr/bin/flock /var/lib/nova/routes.lock /usr/local/sbin/nova-routes-check
 Nice=10
 TimeoutStartSec=170

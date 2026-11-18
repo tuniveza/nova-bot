@@ -146,7 +146,7 @@ for host in ("gmail-smtp-in.l.google.com", "mx00.ionos.co.uk"):
         mx_err = str(e)
 route(G, "port25", "Email leaves the server", "ok" if mx_ok else "down",
       "Nova can hand emails to other mail servers." if mx_ok else
-      "The server can't reach other mail servers (ports 25, 587 and 465 blocked by the VPS company). Invoices, reminders, receipts and replies now go from the studio's Gmail instead; still lost: new-enquiry emails to staff, fan sign-ups, newsletters and outreach.",
+      "The VPS company blocks the mail ports (25, 587, 465). Invoices, reminders, replies, bookings, receipts and outreach go from the studio's Gmail instead; still lost: new-enquiry emails to staff, fan sign-ups and newsletters.",
       "" if mx_ok else mx_err, mx_ms if mx_ok else None)
 
 # Postfix's log, 35 days (the invoice list covers 30): each message's recipient, tries and outcome
@@ -178,9 +178,18 @@ delivered = [d for d in week if d["status"] == "sent"]
 lost = [d for d in week if d["status"] in ("expired", "bounced")]
 last_sent = max((d["last"] for d in msgs.values() if d["status"] == "sent"), default="")
 state = "ok" if (not lost and stuck == 0) else ("down" if not delivered and (lost or stuck) else "slow")
-route(G, "delivery", "Emails delivered (7 days)", state,
-      f"{len(delivered)} delivered, {stuck} stuck now, {len(lost)} lost or refused.",
+route(G, "delivery", "Mail-server emails (7 days)", state,
+      f"Through the VPS's own mail server: {len(delivered)} delivered, {stuck} stuck now, {len(lost)} lost or refused.",
       f"last delivered {ago(last_sent) or 'not in 35 days'}")
+
+# The studio's Gmail (the route that works: invoices, reminders, replies, bookings, receipts, outreach)
+gm = subprocess.run(["/usr/local/sbin/nova-gmail", "search", "in:sent newer_than:2d"], capture_output=True, text=True, timeout=60)
+gsent = [json.loads(l) for l in gm.stdout.splitlines() if l.strip()]
+if gm.returncode != 0:
+    route(G, "gmail", "Studio Gmail sends", "down", "Nova can't use the studio's Gmail: invoices, bookings and replies can't be emailed. Connect Google again in Portal → Admin → Google.", gm.stderr.strip()[:160])
+else:
+    route(G, "gmail", "Studio Gmail sends", "ok", f"Gmail works: {len(gsent)}{'+' if len(gsent) >= 50 else ''} emails sent from it in the last 2 days.",
+          ("last: " + gsent[0]["subject"][:70]) if gsent else "")
 
 # ---------------------------------------------------------------- Invoices: did each email arrive?
 invoices = []
@@ -316,8 +325,12 @@ paused = os.path.exists("/root/outreach/auto/PAUSED")
 lastlog = sh("tail -1 /root/outreach/auto/engine.log").strip()
 m = re.match(r"(\d{4}-\d\d-\d\d)T[\d:.]+Z (.*)", lastlog)
 lastlog = (f"last: {m.group(2)} ({m.group(1)})" if m else lastlog)[:140]
-route("email", "outreach", "Outreach campaign", "idle" if paused else ("down" if not mx_ok else "ok"),
-      "Paused." if paused else ("Running, but its emails can't leave the server, so they're lost." if not mx_ok else "Running."),
+# (errors in the last 24 hours only: old ones, e.g. the dead Claude key on 16 Nov, don't count)
+cutoff = (NOW - timedelta(hours=24)).isoformat()[:19]
+out_err = str(sum(1 for l in sh("tail -200 /root/outreach/auto/engine.log").splitlines()
+                  if l[:19] >= cutoff and re.search(r"error|fail", l, re.I)))
+route("email", "outreach", "Outreach campaign", "idle" if paused else ("slow" if out_err not in ("", "0") else "ok"),
+      "Paused." if paused else ("Running (sends from the studio's Gmail), with errors in its log." if out_err not in ("", "0") else "Running; sends from the studio's Gmail."),
       lastlog)
 
 # ---------------------------------------------------------------- History (24 h) and the file
@@ -357,3 +370,103 @@ json.dump(out, open(tmp, "w"), ensure_ascii=False)
 os.chmod(tmp, 0o644)
 os.replace(tmp, OUT)
 print("routes:", ", ".join(f"{r['id']}={r['state']}" for r in routes))
+
+# ---------------------------------------------------------------- Telling the owner (18 Nov 2026)
+# The owner asked: an email when there's a bottleneck (one per new problem, never every run), and a
+# digest three times a day (morning, afternoon, end of day: nova-routes-digest.timer runs this with
+# --digest). Sent from the studio's Gmail (nova-gmail): the VPS can't use the mail ports.
+import html as _html, sys
+from zoneinfo import ZoneInfo
+
+OWNER = open("/srv/nova/owner-email").read().strip()
+ALERTED = "/var/lib/nova/routes-alerted.json"
+DIGEST = "/var/lib/nova/routes-digest.json"
+PAGE = SITE + "/routes/"
+e = _html.escape
+
+
+def mail(subject, body_html):
+    page = ('<html><body style="font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#1d1230;max-width:620px">'
+            + body_html + f'<p style="margin-top:18px"><a href="{PAGE}" style="color:#b01d68">Open Nova Routes</a> (sign in to Nova first).</p></body></html>')
+    try:
+        r = subprocess.run(["/usr/local/sbin/nova-gmail", "send", OWNER, subject], input=page, text=True, capture_output=True, timeout=60)
+        if r.returncode != 0:
+            print("owner email failed:", r.stderr.strip()[:200])
+        return r.returncode == 0
+    except Exception as ex:  # noqa: BLE001
+        print("owner email failed:", ex)
+        return False
+
+
+def since_text(r):
+    if not r.get("since"):
+        return ""
+    return "over 24 h" if r["since"] == "over 24 h" else "since " + datetime.fromisoformat(r["since"] + ":00+00:00").astimezone(ZoneInfo("Europe/London")).strftime("%-d %b %H:%M")
+
+
+def line(r):
+    colour = "#d0244c" if r["state"] == "down" else "#b07a00"
+    return (f'<li style="margin:6px 0"><b style="color:{colour}">{e(r["name"])}</b> <span style="color:#777">{e(since_text(r))}</span><br>'
+            f'{e(r["says"])}</li>')
+
+
+bad_now = [r for r in routes if r["state"] in ("down", "slow")]
+try:
+    alerted = json.load(open(ALERTED))
+except (OSError, ValueError):
+    alerted = {}
+# New problems: bad for two checks in a row (10 minutes), so a blip never sends an email; and a step
+# getting worse (slow → down) counts as new
+new = [r for r in bad_now if len(r["history"]) >= 2 and r["history"][-2] in ("down", "slow")
+       and (r["id"] not in alerted or (alerted[r["id"]] == "slow" and r["state"] == "down"))]
+# Over: working again for two checks in a row
+fixed = [r for r in routes if r["id"] in alerted and r["state"] in ("ok", "idle") and len(r["history"]) >= 2 and r["history"][-2] in ("ok", "idle")]
+if new:
+    worst = sorted(new, key=lambda r: r["state"] != "down")
+    subject = f"Nova: bottleneck: {worst[0]['name']}" + (f" (+{len(new) - 1} more)" if len(new) > 1 else "")
+    body = (f'<p><b>{"A new bottleneck" if len(new) == 1 else str(len(new)) + " new bottlenecks"} in Nova.</b></p><ul style="padding-left:18px">'
+            + "".join(line(r) for r in worst) + "</ul>")
+    others = [r for r in bad_now if r not in new]
+    if others:
+        body += '<p style="color:#777">Still going on (already told): ' + e(", ".join(r["name"] for r in others)) + ".</p>"
+    if mail(subject, body):
+        for r in new:
+            alerted[r["id"]] = r["state"]
+if fixed:
+    if mail("Nova: working again: " + ", ".join(r["name"] for r in fixed),
+            "<p><b>Working again:</b></p><ul>" + "".join(f"<li>{e(r['name'])}: {e(r['says'])}</li>" for r in fixed) + "</ul>"):
+        for r in fixed:
+            alerted.pop(r["id"], None)
+try:
+    json.dump(alerted, open(ALERTED, "w"))
+except OSError:
+    pass
+
+if "--digest" in sys.argv:
+    london = NOW.astimezone(ZoneInfo("Europe/London"))
+    part = "morning" if london.hour < 12 else "afternoon" if london.hour < 17 else "end of day"
+    try:
+        last = json.load(open(DIGEST)).get("at", "")
+    except (OSError, ValueError):
+        last = ""
+    last = last or (NOW - timedelta(hours=12)).isoformat()[:16]
+    head = (f"{len(bad_now)} bottleneck{'s' if len(bad_now) != 1 else ''}" if bad_now else "every route working")
+    body = f'<p><b>Nova, {part}: {e(head)}.</b> <span style="color:#777">{e(london.strftime("%a %-d %b %H:%M"))}</span></p>'
+    if bad_now:
+        body += '<ul style="padding-left:18px">' + "".join(line(r) for r in sorted(bad_now, key=lambda r: r["state"] != "down")) + "</ul>"
+    recent = [i for i in invoices if i["sent"] > last[:16]]
+    if recent:
+        body += "<p><b>Invoices and reminders since the last digest:</b></p><ul style='padding-left:18px'>"
+        for i in recent:
+            colour = "#178a5c" if i["result"] == "arrived" else "#777" if i["result"] == "link" else "#d0244c"
+            amount = f"£{i['total'] / 100:,.2f}".replace(".00", "") if i["total"] is not None else ""
+            body += f'<li>{e(i["name"])}, {e(i["what"])} #{e(str(i["no"]))} {e(amount)}: <b style="color:{colour}">{e(i["says"])}</b></li>'
+        body += "</ul>"
+    else:
+        body += "<p>No invoices or reminders sent since the last digest.</p>"
+    missing = [i for i in invoices if i["result"] in ("lost", "stuck", "unknown")]
+    if missing:
+        body += (f'<p style="color:#777">Not arrived in the last 30 days: {len(missing)} '
+                 f'({e(", ".join(sorted({i["name"] for i in missing})))}). Nothing is re-sent without your yes.</p>')
+    if mail(f"Nova {part}: {head}", body):
+        json.dump({"at": NOW.isoformat()[:16]}, open(DIGEST, "w"))
