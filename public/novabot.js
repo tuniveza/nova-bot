@@ -344,13 +344,25 @@
   // NovaBot's opening lines. One is picked at random each visit.
   const GREETINGS = [
     "Welcome to Novacane. I'm NovaBot. How can I help with your session?",
-    "Yo, welcome to Novacane 🎙️ I'm NovaBot. What are we working on?",
     "NovaBot here. What can I help you with?",
     "Welcome to Novacane 🎙️ Recording, mixing, production or something else? NovaBot can point you in the right direction.",
-    "Hey! NovaBot here 👋 What brings you to Novacane?",
-    "Welcome to Novacane Studio. I'm NovaBot. Looking to book a session, check pricing or find out what we can do for your project?",
-    "What's good? 🎙️ NovaBot here. You making music, recording vocals, mixing a track or planning something bigger?",
-    "Yo, welcome to Novacane 🎙️ I'm NovaBot.\nWhat are we working on: recording, mixing, production, voiceover, studio hire or something else?",
+    "Welcome to Novacane Studios. I'm NovaBot. Looking to book a session, check pricing or find out what we can do for your project?",
+    "Welcome to Novacane Studios. I'm NovaBot, the studio assistant. How can I help with your project today?",
+    "Good to see you. I'm NovaBot from Novacane Studios. Are you looking to record, mix or produce?",
+    "Hello, and welcome to Novacane Studios. I can help you choose a session, check prices or answer any questions.",
+    "Welcome to Novacane Studios. Tell me a little about your project and I'll point you to the right session.",
+    "Hello, I'm NovaBot. Whether it's recording, mixing, mastering or production, I'm here to help you plan it.",
+    "Thanks for visiting Novacane Studios. What would you like to know about our sessions?",
+    "Welcome to Novacane Studios. I can talk you through our services, prices and availability. Where would you like to start?",
+    "Hello. I'm NovaBot, Novacane Studios' assistant. How can I help you get your next track finished?",
+    "Welcome. Planning a recording session? I can help you find the right option for your project.",
+    "Hello and welcome. I'm NovaBot. Ask me anything about recording, mixing, production or studio hire.",
+    "Welcome to Novacane Studios. Are you an artist, a band or a voiceover client? I'll help you find the best fit.",
+    "Hi, I'm NovaBot. I can help you compare sessions, explain what's included and get you ready to book.",
+    "Welcome to Novacane Studios, home of professional recording, mixing and production. How can I help?",
+    "Hello. Looking for studio time? I'm NovaBot, and I can help you choose the session that suits your project.",
+    "Welcome to Novacane Studios. If you have a question about a booking, a price or a service, just ask.",
+    "Good to have you here. I'm NovaBot. What are you hoping to create at Novacane Studios?",
   ];
 
   // Said when someone reopens the chat after already talking
