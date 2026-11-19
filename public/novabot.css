@@ -3206,3 +3206,9 @@ html.nv-site-cursor input, html.nv-site-cursor textarea, html.nv-site-cursor [co
 .nv-options section:first-of-type .nv-opt-now { display: inline-block; vertical-align: baseline; }
 .nv-options section:first-of-type .nv-opt-label { margin: 0 8px 0 0; }
 .nv-options section + section { margin-top: 6px; padding-top: 6px; }
+
+/* Sane defaults the website can't change: NovaBot's own base font and size (it took the page's
+   before), and the volume slider with no browser margin. Spacing everywhere else is set already. */
+#nv-chat { font-family: saira, "Jost", Arial, sans-serif; font-size: 16px; }
+#nv-chat-toggle, #nv-keep-closed { font-size: 16px; }
+#nv-volume { margin: 0; }
