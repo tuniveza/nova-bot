@@ -2796,6 +2796,12 @@ html.nv-page-locked body {
 /* (the cogwheel sits level with "Keep chat closed", which leaves room beside it; the privacy line
    below has the whole width) */
 .nv-gear { bottom: calc(40px + env(safe-area-inset-bottom)); }
+/* (the cogwheel level with the "keep closed" switch beside it, lined up with the Speak button's left
+   edge, and clear of the buttons above it: it sat 6px under them, and touched them on short windows) */
+.nv-gear { left: 18px; width: 36px; height: 36px; bottom: calc(35px + env(safe-area-inset-bottom)); }
+@media (min-width: 481px) and (max-height: 760px) {
+  .nv-gear { bottom: calc(27px + env(safe-area-inset-bottom)); }
+}
 .nv-options { bottom: calc(90px + env(safe-area-inset-bottom)); }
 /* (the subtitle and the footer's words on one line beside the bigger × and the cogwheel) */
 .nv-subtitle { font-size: 12px; letter-spacing: .1em; white-space: nowrap; }
